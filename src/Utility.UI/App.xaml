@@ -8,7 +8,11 @@
             <!-- Converters -->
             <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
             <conv:InverseBoolConverter x:Key="InverseBool" />
+            <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis" />
             <conv:StringToVisibilityConverter x:Key="StringToVis" />
+            <conv:BoolToIconConverter x:Key="BoolToIcon" />
+            <conv:BoolToBrushConverter x:Key="BoolToBrush" />
+            <conv:BoolToWeightConverter x:Key="BoolToWeight" />
 
             <!-- Status palette -->
             <SolidColorBrush x:Key="SuccessBrush" Color="#16A34A" />

@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using Utility.DropBox.Services;
 using Utility.Server;
+using Utility.Server.DropBoxSync;
 using Utility.Server.ML.Entities;
 using Utility.Server.ML.Services;
 using Utility.UI.Mvvm;
@@ -11,15 +12,18 @@ namespace Utility.UI.ViewModels;
 
 /// <summary>
 /// Read-only overview: database reachability, the Dropbox account, and a few
-/// aggregate figures read from the ml. schema.
+/// aggregate figures read from the ml. schema, plus the already-synced Dropbox tree.
 /// </summary>
 public sealed class DashboardViewModel(
     IDatabaseProbe databaseProbe,
     IMlDataService ml,
     IDropBoxDataService dropBox,
+    IDropBoxTreeService dropBoxTree,
     ILogSink log) : ViewModelBase
 {
     private AsyncRelayCommand? _refresh;
+    private AsyncRelayCommand? _expandAll;
+    private AsyncRelayCommand? _collapseAll;
 
     private string _databaseStatus = "Not checked";
     private string _databaseDetail = string.Empty;
@@ -34,7 +38,61 @@ public sealed class DashboardViewModel(
 
     public ObservableCollection<string> RecentExports { get; } = [];
 
+    /// <summary>
+    /// The already-synced Dropbox hierarchy, as a tree. Loaded from ml.DropBoxNode - no
+    /// Dropbox call - which is the payoff of having synced it.
+    /// </summary>
+    public ObservableCollection<DropBoxTreeNode> DropBoxTree { get; } = [];
+
     public AsyncRelayCommand RefreshCommand => _refresh ??= new AsyncRelayCommand(RefreshAsync);
+
+    public AsyncRelayCommand ExpandAllCommand => _expandAll ??= new AsyncRelayCommand(() =>
+    {
+        SetTreeExpanded(DropBoxTree, depthLimit: -1);
+        return Task.CompletedTask;
+    });
+
+    public AsyncRelayCommand CollapseAllCommand => _collapseAll ??= new AsyncRelayCommand(() =>
+    {
+        SetTreeExpanded(DropBoxTree, depthLimit: 1);
+        return Task.CompletedTask;
+    });
+    private int _treeFolders;
+    private int _treeFiles;
+    private int _treeWithDimensions;
+    private int _treeUnverified;
+    private string _treeSizeDisplay = "—";
+    private string _treeLastSyncDisplay = "never";
+    private bool _hasSyncedTree;
+
+    public bool HasSyncedTree
+    {
+        get => _hasSyncedTree;
+        private set => SetProperty(ref _hasSyncedTree, value);
+    }
+
+    public string TreeFoldersDisplay => _treeFolders.ToString("N0");
+
+    public string TreeFilesDisplay => _treeFiles.ToString("N0");
+
+    public string TreeWithDimensionsDisplay => _treeWithDimensions.ToString("N0");
+
+    public string TreeSizeDisplay
+    {
+        get => _treeSizeDisplay;
+        private set => SetProperty(ref _treeSizeDisplay, value);
+    }
+
+    public string TreeLastSyncDisplay
+    {
+        get => _treeLastSyncDisplay;
+        private set => SetProperty(ref _treeLastSyncDisplay, value);
+    }
+
+    /// <summary>Exposed so the view can expand/collapse without walking the collection twice.</summary>
+    public bool HasUnverifiedFolders => _treeUnverified > 0;
+
+    public int TreeUnverifiedCount => _treeUnverified;
 
     public string DatabaseStatus
     {
@@ -113,11 +171,94 @@ public sealed class DashboardViewModel(
         {
             await CheckDatabaseAsync();
             await CheckDropBoxAsync();
+            await LoadSyncedTreeAsync();
         }
         finally
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Loads the synced Dropbox hierarchy from the database. This is the point of having
+    /// synced it: the dashboard reads the table and never waits on the Dropbox API.
+    /// </summary>
+    private async Task LoadSyncedTreeAsync()
+    {
+        try
+        {
+            var (roots, summary) = await dropBoxTree.GetSyncedTreeAsync();
+
+            DropBoxTree.Clear();
+            foreach (var root in roots)
+            {
+                DropBoxTree.Add(root);
+            }
+
+            // Open the top two levels: enough to show the shape without dumping a
+            // nine-thousand-node tree into view.
+            SetTreeExpanded(DropBoxTree, depthLimit: 2);
+
+            _treeFolders = summary.Folders;
+            _treeFiles = summary.Files;
+            _treeWithDimensions = summary.WithDimensions;
+            _treeUnverified = summary.UnverifiedFolders;
+            TreeSizeDisplay = FormatSize(summary.TotalBytes);
+            TreeLastSyncDisplay = summary.LastSyncedUtc is null
+                ? "never"
+                : summary.LastSyncedUtc.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+            HasSyncedTree = DropBoxTree.Count > 0;
+
+            OnPropertyChanged(nameof(TreeFoldersDisplay));
+            OnPropertyChanged(nameof(TreeFilesDisplay));
+            OnPropertyChanged(nameof(TreeWithDimensionsDisplay));
+            OnPropertyChanged(nameof(HasUnverifiedFolders));
+            OnPropertyChanged(nameof(TreeUnverifiedCount));
+
+            log.Info($"Synced tree loaded from database: {summary.Folders} folder(s), " +
+                     $"{summary.Files} file(s), {summary.WithDimensions} with dimensions.");
+        }
+        catch (Exception ex)
+        {
+            HasSyncedTree = false;
+            log.Error($"Loading synced tree failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Sets expansion across the tree. <paramref name="depthLimit"/> of -1 opens every
+    /// level; a positive value opens only that many, which keeps a large sync from
+    /// materialising thousands of items in view at once.
+    /// </summary>
+    private static void SetTreeExpanded(
+        IEnumerable<DropBoxTreeNode> nodes, int depthLimit = -1, int depth = 1)
+    {
+        foreach (var node in nodes)
+        {
+            node.IsExpanded = depthLimit < 0 || depth < depthLimit;
+            SetTreeExpanded(node.Children, depthLimit, depth + 1);
+        }
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes >= 1_073_741_824)
+        {
+            return $"{bytes / 1_073_741_824.0:0.##} GB";
+        }
+
+        if (bytes >= 1_048_576)
+        {
+            return $"{bytes / 1_048_576.0:0.##} MB";
+        }
+
+        if (bytes >= 1024)
+        {
+            return $"{bytes / 1024.0:0.##} KB";
+        }
+
+        return $"{bytes} B";
     }
 
     private async Task CheckDatabaseAsync()

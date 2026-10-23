@@ -4,22 +4,41 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Utility.UI.ViewModels"
+             xmlns:tree="clr-namespace:Utility.Server.DropBoxSync;assembly=Utility.Server"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=vm:DashboardViewModel}">
+
+    <UserControl.Resources>
+        <!-- Accent by kind: folders amber, images violet, unverified red. -->
+        <SolidColorBrush x:Key="FolderBrush" Color="#B45309" />
+        <SolidColorBrush x:Key="ImageBrush" Color="#6D28D9" />
+        <SolidColorBrush x:Key="FileBrush" Color="#475569" />
+        <SolidColorBrush x:Key="WarnBrush" Color="#DC2626" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#64748B" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#1D4ED8" />
+
+        <!-- Row hover + selection for the tree. -->
+        <Style x:Key="TreeRowStyle" TargetType="TreeViewItem">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+            <Setter Property="Padding" Value="2,3" />
+            <Setter Property="Foreground" Value="#0F172A" />
+        </Style>
+    </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel>
 
-            <!-- Connections -->
+            <!-- ============ Connections ============ -->
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel>
                     <TextBlock Text="Connections" Style="{StaticResource HeaderText}" />
-                    <TextBlock Text="Both sources are read-only."
+                    <TextBlock Text="Dropbox credentials are read from the registry; SQL Server is read-only."
                                Style="{StaticResource SubHeaderText}" />
 
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
@@ -29,66 +48,194 @@
                         </Grid.RowDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="SQL Server"
-                                   FontWeight="SemiBold" Foreground="#374151" Margin="0,4,12,8" />
+                                   FontWeight="SemiBold" Foreground="#334155" Margin="0,4,12,8" />
                         <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DatabaseStatus}"
                                    FontWeight="SemiBold" Margin="0,4,0,0" />
                         <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DatabaseDetail}"
-                                   FontSize="12" Foreground="#6B7280" TextWrapping="Wrap" Margin="0,2,0,0" />
+                                   FontSize="12" Foreground="#64748B" TextWrapping="Wrap" Margin="0,2,0,0" />
 
                         <TextBlock Grid.Row="0" Grid.Column="2" Text="Dropbox"
-                                   FontWeight="SemiBold" Foreground="#374151" Margin="16,4,0,8" />
+                                   FontWeight="SemiBold" Foreground="#334155" Margin="16,4,0,8" />
                         <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding DropBoxStatus}"
                                    HorizontalAlignment="Right" FontWeight="SemiBold" Margin="0,4,0,0" />
                         <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding DropBoxDetail}"
-                                   FontSize="12" Foreground="#6B7280" TextWrapping="Wrap" Margin="16,2,0,0" />
+                                   FontSize="12" Foreground="#64748B" TextWrapping="Wrap" Margin="16,2,0,0" />
                     </Grid>
                 </StackPanel>
             </Border>
 
-            <!-- Library figures -->
+            <!-- ============ Synced Dropbox tree ============ -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Synced Dropbox tree" Style="{StaticResource HeaderText}" Margin="0" />
+                            <TextBlock Style="{StaticResource SubHeaderText}" Margin="0,2,0,0"
+                                       Text="Read straight from ml.DropBoxNode — no Dropbox call on this page." />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="Expand all" Command="{Binding ExpandAllCommand}"
+                                    IsEnabled="{Binding HasSyncedTree}" Margin="0,0,6,0" />
+                            <Button Content="Collapse all" Command="{Binding CollapseAllCommand}"
+                                    IsEnabled="{Binding HasSyncedTree}" Margin="0,0,6,0" />
+                            <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Stat strip -->
+                    <UniformGrid Columns="5" Margin="0,0,0,12">
+                        <Border Background="#F1F5F9" CornerRadius="8" Padding="12,8" Margin="0,0,8,0">
+                            <StackPanel>
+                                <TextBlock Text="FOLDERS" FontSize="10" Foreground="#64748B" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding TreeFoldersDisplay}" FontSize="20"
+                                           FontWeight="Bold" Foreground="#0F172A" />
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#F1F5F9" CornerRadius="8" Padding="12,8" Margin="0,0,8,0">
+                            <StackPanel>
+                                <TextBlock Text="FILES" FontSize="10" Foreground="#64748B" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding TreeFilesDisplay}" FontSize="20"
+                                           FontWeight="Bold" Foreground="#0F172A" />
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#F1F5F9" CornerRadius="8" Padding="12,8" Margin="0,0,8,0">
+                            <StackPanel>
+                                <TextBlock Text="WITH DIMENSIONS" FontSize="10" Foreground="#64748B" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding TreeWithDimensionsDisplay}" FontSize="20"
+                                           FontWeight="Bold" Foreground="#6D28D9" />
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#F1F5F9" CornerRadius="8" Padding="12,8" Margin="0,0,8,0">
+                            <StackPanel>
+                                <TextBlock Text="TOTAL SIZE" FontSize="10" Foreground="#64748B" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding TreeSizeDisplay}" FontSize="20"
+                                           FontWeight="Bold" Foreground="#0F172A" />
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#F1F5F9" CornerRadius="8" Padding="12,8">
+                            <StackPanel>
+                                <TextBlock Text="LAST SYNC" FontSize="10" Foreground="#64748B" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding TreeLastSyncDisplay}" FontSize="12"
+                                           FontWeight="SemiBold" Foreground="#0F172A" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </UniformGrid>
+
+                    <!-- Empty state -->
+                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1"
+                            CornerRadius="8" Padding="24"
+                            Visibility="{Binding HasSyncedTree, Converter={StaticResource InverseBoolToVis}}">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="Nothing synced yet" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="#334155" HorizontalAlignment="Center" />
+                            <TextBlock Text="Run a Dropbox sync and the hierarchy appears here, instantly — it is read from the database."
+                                       FontSize="12" Foreground="#64748B" Margin="0,4,0,0"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- The tree itself -->
+                    <Border Visibility="{Binding HasSyncedTree, Converter={StaticResource BoolToVis}}">
+                        <TreeView ItemsSource="{Binding DropBoxTree}"
+                                  ItemContainerStyle="{StaticResource TreeRowStyle}"
+                                  Background="Transparent" BorderThickness="0">
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}"
+                                                              DataType="{x:Type tree:DropBoxTreeNode}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="18" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Glyph -->
+                                        <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                                   FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                                   Text="{Binding IsFolder, Converter={StaticResource BoolToIcon}}"
+                                                   Foreground="{Binding IsFolder, Converter={StaticResource BoolToBrush}}" />
+
+                                        <!-- Name -->
+                                        <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
+                                                   FontWeight="{Binding IsFolder, Converter={StaticResource BoolToWeight}}"
+                                                   FontSize="13" Margin="4,0,10,0" />
+
+                                        <!-- Dimensions badge -->
+                                        <Border Grid.Column="2" Background="#F3E8FF" CornerRadius="4"
+                                                Padding="5,1" Margin="0,0,8,0"
+                                                Visibility="{Binding HasDimensions, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding DimensionsDisplay}" FontSize="10"
+                                                       Foreground="#6D28D9" FontFamily="Consolas" />
+                                        </Border>
+
+                                        <!-- Unverified flag: the sweep will not descend -->
+                                        <TextBlock Grid.Column="2" Text="not fully listed" FontSize="10"
+                                                   Foreground="{StaticResource WarnBrush}" VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"
+                                                   Visibility="{Binding IsUnverified, Converter={StaticResource BoolToVis}}" />
+
+                                        <!-- Size + modified -->
+                                        <TextBlock Grid.Column="3" Text="{Binding SizeDisplay}" FontSize="11"
+                                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
+                                                   MinWidth="72" TextAlignment="Right" Margin="0,0,10,0" />
+                                        <TextBlock Grid.Column="4" Text="{Binding ModifiedDisplay}" FontSize="11"
+                                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"
+                                                   FontFamily="Consolas" MinWidth="86" TextAlignment="Right" />
+                                    </Grid>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- ============ Library figures ============ -->
             <UniformGrid Columns="4" Margin="0,0,0,12">
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,8,0">
                     <StackPanel>
-                        <TextBlock Text="Media items" FontSize="12" Foreground="#6B7280" />
+                        <TextBlock Text="Media items" FontSize="12" Foreground="#64748B" />
                         <TextBlock Text="{Binding MediaCountDisplay}" FontSize="26" FontWeight="SemiBold"
-                                   Foreground="#111827" />
+                                   Foreground="#0F172A" />
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,8,0">
                     <StackPanel>
-                        <TextBlock Text="System ID" FontSize="12" Foreground="#6B7280" />
+                        <TextBlock Text="System ID" FontSize="12" Foreground="#64748B" />
                         <TextBlock Text="{Binding SystemId}" FontSize="26" FontWeight="SemiBold"
-                                   Foreground="#111827" />
+                                   Foreground="#0F172A" />
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource CardStyle}" Margin="0,0,8,0">
                     <StackPanel>
-                        <TextBlock Text="Library path" FontSize="12" Foreground="#6B7280" />
+                        <TextBlock Text="Library path" FontSize="12" Foreground="#64748B" />
                         <TextBlock Text="{Binding LibraryPath}" FontSize="13" FontWeight="SemiBold"
-                                   Foreground="#111827" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
+                                   Foreground="#0F172A" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource CardStyle}">
                     <StackPanel>
-                        <TextBlock Text="Export path" FontSize="12" Foreground="#6B7280" />
+                        <TextBlock Text="Export path" FontSize="12" Foreground="#64748B" />
                         <TextBlock Text="{Binding ExportPath}" FontSize="13" FontWeight="SemiBold"
-                                   Foreground="#111827" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
+                                   Foreground="#0F172A" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                 </Border>
             </UniformGrid>
 
-            <!-- Recent exports -->
+            <!-- ============ Recent exports ============ -->
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel>
                     <TextBlock Text="Recent exports" Style="{StaticResource HeaderText}" />
-                    <TextBlock Text="Latest rows from ml.ExportHeader."
-                               Style="{StaticResource SubHeaderText}" />
+                    <TextBlock Text="Latest rows from ml.ExportHeader." Style="{StaticResource SubHeaderText}" />
 
-                    <ItemsControl ItemsSource="{Binding RecentExports}" MaxHeight="200">
-                        <!--
-                          Default ItemsPanel: an ItemsControl with an explicit ControlTemplate
-                          does not lay out items unless the template supplies an ItemsPresenter.
-                        -->
+                    <ItemsControl ItemsSource="{Binding RecentExports}" MaxHeight="160">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding}" FontSize="12" Margin="0,1" TextWrapping="Wrap" />
@@ -97,9 +244,6 @@
                     </ItemsControl>
                 </StackPanel>
             </Border>
-
-            <Button Content="Refresh" Command="{Binding RefreshCommand}" HorizontalAlignment="Left"
-                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}" />
 
             <ProgressBar IsIndeterminate="True" Height="3" Margin="0,8,0,0"
                          Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />

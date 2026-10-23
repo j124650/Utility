@@ -102,6 +102,7 @@ public static class ServerServiceCollectionExtensions
         }, ServiceLifetime.Singleton);
 
         services.AddSingleton<IDropBoxSyncService, DropBoxSyncService>();
+        services.AddSingleton<IDropBoxTreeService, DropBoxTreeService>();
 
         return services;
     }
