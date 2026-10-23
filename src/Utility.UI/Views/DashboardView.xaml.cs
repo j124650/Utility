@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -24,7 +23,6 @@ public partial class DashboardView : UserControl
         // The tree is read once at startup, before this page exists, so the expansion has to
         // be re-applied whenever the shared node collection changes.
         state.Nodes.CollectionChanged += (_, _) => ScheduleSync();
-        _vm.PropertyChanged += OnVmPropertyChanged;
 
         // Loaded fires BEFORE the containers are generated. Wait for the generator instead of
         // guessing at dispatcher priorities - it is the only signal that reliably tells us
@@ -59,15 +57,6 @@ public partial class DashboardView : UserControl
         Dispatcher.BeginInvoke(
             () => WaitForContainers(attempt + 1),
             DispatcherPriority.ContextIdle);
-    }
-
-    private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(DashboardViewModel.ExpansionVersion))
-        {
-            // The model is now the truth; push it onto the containers.
-            SyncExpansion();
-        }
     }
 
     /// <summary>

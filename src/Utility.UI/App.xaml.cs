@@ -85,6 +85,12 @@ private static async Task WarmUpAsync(IServiceProvider services)
         builder.Services.AddSingleton<IAppStatus, AppStatus>();
         builder.Services.AddSingleton<IDropBoxTreeState, DropBoxTreeState>();
 
+        // The sync service is a singleton (registered in AddUtilityServer): a walk of the
+        // team folder takes a long time, and it must survive the user navigating away
+        // from the page that started it. It owns and publishes its own run state, so the
+        // busy screen binds to it directly - there is no second service copying the
+        // progress record out of it.
+
         // View models and pages are TRANSIENT: each page resolves its own view model,
         // which owns a private MlDbContext. Nothing is shared between pages, and
         // navigation away can never dispose a context another page is still using.

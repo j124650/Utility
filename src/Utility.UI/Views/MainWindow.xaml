@@ -58,6 +58,30 @@
                     <Setter Property="Margin" Value="0,0,4,0" />
                     <Setter Property="VerticalAlignment" Value="Stretch" />
                 </Style>
+
+                <!--
+                  Blur applied to the app while the busy screen is up.
+
+                  WPF has no backdrop filter: an element's Effect blurs THAT element,
+                  never what sits behind it. So the thing being covered has to carry the
+                  blur, and the overlay above it is left translucent - that is what lets
+                  the blurred shapes show through the dark scrim.
+
+                  The trigger reads IsBusy off the overlay's own DataContext (the sync
+                  service), so the blur and the scrim always appear and disappear
+                  together.
+                -->
+                <Style x:Key="BlurBehindOverlay" TargetType="FrameworkElement">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Sync.IsBusy, RelativeSource={RelativeSource AncestorType={x:Type Window}}}" Value="True">
+                            <Setter Property="Effect">
+                                <Setter.Value>
+                                    <BlurEffect Radius="10" />
+                                </Setter.Value>
+                            </Setter>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
             </Window.Resources>
 
     <Grid>
@@ -69,7 +93,7 @@
         </Grid.RowDefinitions>
 
         <!-- Title bar -->
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="16,12">
+        <Border Grid.Row="0" Style="{StaticResource BlurBehindOverlay}" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="16,12">
             <Grid>
                 <TextBlock Text="Utility" FontSize="18" FontWeight="SemiBold" Foreground="#111827"
                            VerticalAlignment="Center" />
@@ -79,7 +103,7 @@
         </Border>
 
         <!-- Navigation -->
-        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="8,6">
+        <Border Grid.Row="1" Style="{StaticResource BlurBehindOverlay}" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="8,6">
             <StackPanel Orientation="Horizontal">
                 <RadioButton x:Name="NavDashboard" GroupName="Nav" Content="Dashboard"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavDashboardClick" />
@@ -93,13 +117,13 @@
         </Border>
 
         <!-- Page host -->
-        <Grid Grid.Row="2" x:Name="PageHost" Margin="16,16,16,8" />
+        <Grid Grid.Row="2" x:Name="PageHost" Style="{StaticResource BlurBehindOverlay}" Margin="16,16,16,8" />
 
         <!--
           App status bar: separate sections, each with a hover hint. Bound to the singleton
           IAppStatus, so navigating between pages never re-reads these facts.
         -->
-        <Border Grid.Row="3" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0" Padding="14,7">
+        <Border Grid.Row="3" Style="{StaticResource BlurBehindOverlay}" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0" Padding="14,7">
             <StackPanel Orientation="Horizontal">
                 <!-- SQL Server: red/green dot only -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
@@ -138,5 +162,101 @@
                         Margin="14,0,0,0" Padding="10,3" FontSize="11" MinWidth="0" />
             </StackPanel>
         </Border>
+
+        <!--
+          Busy screen.
+
+          An overlay over the WHOLE window - title bar, navigation and status bar
+          included - for as long as a sync is running. The app behind it is not
+          clickable, so a multi-hour walk cannot be interrupted by a stray click on a
+          page that is about to be re-read anyway.
+
+          The scrim is a translucent dark grey, and the app content behind it carries a
+          blur (see the BlurBehindOverlay style), so the app shows through as soft
+          shapes rather than legible text. The panel is a slightly lighter grey and is
+          translucent too, so the same blurred backdrop reads through it.
+
+          Its DataContext is the sync service itself (assigned in code-behind), so it
+          binds straight to the service's live state: the level table, the counters and
+          the running flag are the service's own properties, not a copy of them.
+
+          The level table is an ItemsControl over the service's Levels list, one column
+          per level of the walk. Each column carries the level number, how many of its
+          folders have been listed, and how many records it has written.
+        -->
+        <Grid Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="100" x:Name="SyncOverlay"
+              Background="#B31E2023"
+              Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+
+            <Border Background="#26FFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1" CornerRadius="10"
+                    Padding="28,24" MaxWidth="1000" HorizontalAlignment="Center" VerticalAlignment="Center">
+
+                <StackPanel>
+
+                    <TextBlock Text="{Binding Headline}" FontSize="18" FontWeight="SemiBold"
+                               Foreground="#F3F4F6" HorizontalAlignment="Center" />
+
+                    <TextBlock Text="{Binding CurrentPath}" FontFamily="Consolas" FontSize="11"
+                               Foreground="#A8ADB2" HorizontalAlignment="Center" Margin="0,6,0,0"
+                               MaxWidth="900" TextTrimming="CharacterEllipsis" />
+
+                    <!-- Level table: one column per level of the walk. -->
+                    <ItemsControl ItemsSource="{Binding Levels}" Margin="0,20,0,0">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Width="150" Margin="0,0,16,0">
+                                    <TextBlock Text="{Binding DepthDisplay}" FontSize="12"
+                                               FontWeight="SemiBold" Foreground="#D4D7DA" />
+                                    <Border Height="1" Background="#40FFFFFF" Margin="0,4,0,6" />
+                                    <TextBlock Text="{Binding Fraction}" FontSize="15"
+                                               Foreground="#FFFFFF" />
+                                    <TextBlock Text="{Binding RecordsDisplay}" FontSize="11"
+                                               Foreground="#9BA1A6" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!--
+                      The bar is INDETERMINATE. There is no total to divide by: a level's
+                      folder count is only known once the level above it has finished, and
+                      the total number of levels is unknown until the walk ends.
+                    -->
+                    <ProgressBar IsIndeterminate="True" Height="4" Margin="0,20,0,0"
+                                 Foreground="#5B9CF8" Background="#33FFFFFF" />
+
+                    <TextBlock Text="{Binding OutcomeLine}" FontSize="13" Foreground="#5DD98A"
+                               HorizontalAlignment="Center" Margin="0,16,0,0" />
+
+                    <TextBlock Text="{Binding NotListedDisplay}" FontSize="12" Foreground="#E8B65A"
+                               HorizontalAlignment="Center" Margin="0,6,0,0" />
+
+                    <TextBlock Text="{Binding Error}" FontSize="11" Foreground="#F28B82"
+                               HorizontalAlignment="Center" Margin="0,6,0,0" MaxWidth="900"
+                               TextWrapping="Wrap" />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
+
+                        <!-- Buttons on the dark panel: a translucent fill with a light
+                             border, so they read as controls rather than white slabs. -->
+                        <Button Content="Stop" Click="OnStopSyncClick" Padding="20,7" MinWidth="100"
+                                Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
+                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}"
+                                ToolTip="Cancels the walk. Rows already written are kept." />
+
+                        <Button Content="Close" Click="OnCloseSyncClick" Padding="20,7" MinWidth="100"
+                                Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
+                                Visibility="{Binding HasPendingResult, Converter={StaticResource BoolToVis}}"
+                                ToolTip="Dismisses this screen and re-reads the tree." />
+
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

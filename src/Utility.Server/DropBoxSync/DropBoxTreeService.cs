@@ -24,7 +24,6 @@ public sealed class DropBoxTreeService(
 {
     public async Task<(IReadOnlyList<DropBoxTreeNode> Roots, DropBoxTreeSummary Summary)> GetSyncedTreeAsync(
         string? namespaceId = null,
-        int maxRows = 20000,
         CancellationToken ct = default)
     {
         await using var db = contextFactory.CreateDbContext();
@@ -37,9 +36,10 @@ public sealed class DropBoxTreeService(
             query = query.Where(n => n.NamespaceId == ns);
         }
 
+        // No row cap. The tree shows everything that has been synced - a cap would hide
+        // part of the tree without saying so.
         var rows = await query
             .OrderBy(n => n.PathLower)
-            .Take(maxRows)
             .ToListAsync(ct);
 
         var summary = new DropBoxTreeSummary(

@@ -21,7 +21,6 @@ namespace Utility.Server.DropBoxSync;
 public sealed class DropBoxTreeNode : INotifyPropertyChanged
 {
     private bool _isExpanded;
-    private bool _isSelected;
 
     public DropBoxTreeNode(
         long id,
@@ -94,13 +93,6 @@ public sealed class DropBoxTreeNode : INotifyPropertyChanged
     {
         get => _isExpanded;
         set => Set(ref _isExpanded, value);
-    }
-
-    /// <summary>Two-way bound to the TreeViewItem's IsSelected.</summary>
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set => Set(ref _isSelected, value);
     }
 
     /// <summary>Folders sort first, then alphabetically - mirrors the sync's own ordering.</summary>
@@ -188,6 +180,5 @@ public interface IDropBoxTreeService
     /// <returns>Root nodes, plus summary figures.</returns>
     Task<(IReadOnlyList<DropBoxTreeNode> Roots, DropBoxTreeSummary Summary)> GetSyncedTreeAsync(
         string? namespaceId = null,
-        int maxRows = 20000,
         CancellationToken ct = default);
 }
