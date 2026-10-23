@@ -1,7 +1,7 @@
 <!--
   Title is a literal, not a binding: a RelativeSource/AncestorType binding on Window.Title
   is evaluated before the code-behind assigns DataContext, so it fails silently and leaves
-  the title empty (which also makes the window undiscernible to automation tools).
+  the title empty (which also makes the window undiscoverable to automation tools).
 -->
 <Window x:Class="Utility.UI.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -10,12 +10,55 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:Utility.UI.ViewModels"
         xmlns:views="clr-namespace:Utility.UI.Views"
+        xmlns:svc="clr-namespace:Utility.UI.Services"
         mc:Ignorable="d"
         Title="Utility"
         Height="760" Width="1180"
         MinHeight="560" MinWidth="900"
         WindowStartupLocation="CenterScreen"
         Background="#F3F4F6">
+
+    <Window.Resources>
+        <Style x:Key="StatusDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="9" />
+            <Setter Property="Height" Value="9" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <!-- Green when connected, red when not. No timing, by request. -->
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsDatabaseOk}" Value="True">
+                    <Setter Property="Fill" Value="#16A34A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsDropBoxOk}" Value="True">
+                    <Setter Property="Fill" Value="#16A34A" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsDatabaseOk}" Value="False">
+                    <Setter Property="Fill" Value="#DC2626" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsDropBoxOk}" Value="False">
+                    <Setter Property="Fill" Value="#DC2626" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--
+                  Section text. A TextBlock cannot draw its own right-hand rule, so the dividers
+                  between sections are explicit Border elements.
+                -->
+                <Style x:Key="SectionText" TargetType="TextBlock">
+                    <Setter Property="FontSize" Value="12" />
+                    <Setter Property="Foreground" Value="#334155" />
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="Margin" Value="12,0,0,0" />
+                    <Setter Property="Padding" Value="12,0" />
+                </Style>
+
+                <Style x:Key="SectionDivider" TargetType="Border">
+                    <Setter Property="Width" Value="1" />
+                    <Setter Property="Background" Value="#E2E8F0" />
+                    <Setter Property="Margin" Value="0,0,4,0" />
+                    <Setter Property="VerticalAlignment" Value="Stretch" />
+                </Style>
+            </Window.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
@@ -52,9 +95,48 @@
         <!-- Page host -->
         <Grid Grid.Row="2" x:Name="PageHost" Margin="16,16,16,8" />
 
-        <!-- Status bar -->
-        <Border Grid.Row="3" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0" Padding="16,8">
-            <TextBlock x:Name="StatusText" FontSize="12" Foreground="#6B7280" />
+        <!--
+          App status bar: separate sections, each with a hover hint. Bound to the singleton
+          IAppStatus, so navigating between pages never re-reads these facts.
+        -->
+        <Border Grid.Row="3" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0" Padding="14,7">
+            <StackPanel Orientation="Horizontal">
+                <!-- SQL Server: red/green dot only -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                            ToolTip="{Binding DatabaseDetail, StringFormat=SQL Server — {0}}">
+                    <Ellipse Style="{StaticResource StatusDot}" Margin="0,0,6,0" />
+                                    </StackPanel>
+
+                                    <Border Style="{StaticResource SectionDivider}" />
+
+                                    <TextBlock Style="{StaticResource SectionText}"
+                           ToolTip="Total rows in ml.Media. Read once at startup, or with the status bar's Refresh."
+                           Text="{Binding MediaCountDisplay, StringFormat=Media items: {0:N0}}" />
+
+                <Border Style="{StaticResource SectionDivider}" />
+
+                <TextBlock Style="{StaticResource SectionText}"
+                           ToolTip="ml.Settings.SystemId — identifies this installation to the media system."
+                           Text="{Binding SystemId, StringFormat=System: {0}}" />
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0"
+                            ToolTip="{Binding LibraryPath}">
+                    <TextBlock Style="{StaticResource SectionText}" Text="Library:" Foreground="#64748B" />
+                    <TextBlock Text="{Binding LibraryPath}" FontSize="12" Foreground="#334155"
+                               VerticalAlignment="Center" MaxWidth="300"
+                               TextTrimming="CharacterEllipsis" Margin="4,0,0,0" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0"
+                            ToolTip="{Binding DropBoxDetail}">
+                    <Ellipse Style="{StaticResource StatusDot}" Margin="0,0,6,0" />
+                    <TextBlock Text="{Binding DropBoxDetail}" FontSize="12" Foreground="#334155"
+                               VerticalAlignment="Center" MaxWidth="170" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+
+                <Button Content="Refresh" Click="OnStatusRefreshClick"
+                        Margin="14,0,0,0" Padding="10,3" FontSize="11" MinWidth="0" />
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

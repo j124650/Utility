@@ -26,8 +26,13 @@ public partial class App : Application
             await _host.StartAsync();
 
             var window = _host.Services.GetRequiredService<MainWindow>();
-            MainWindow = window;
-            window.Show();
+                        MainWindow = window;
+                        window.Show();
+
+                        // Load the slow-changing facts ONCE, after the window is up so the status bar
+                        // can paint its pending state first. Fire-and-forget on purpose: a slow or
+                        // unreachable database must not block the shell from appearing.
+                        _ = WarmUpAsync(_host.Services);
         }
         catch (Exception ex)
         {
@@ -37,6 +42,24 @@ public partial class App : Application
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Shutdown(1);
+        }
+    }
+
+    /// <summary>
+/// Reads the app-wide status facts and the synced tree once at startup. Both are singletons,
+/// so navigating between pages afterwards never re-queries them.
+/// </summary>
+private static async Task WarmUpAsync(IServiceProvider services)
+    {
+        try
+        {
+            await services.GetRequiredService<IAppStatus>().LoadAsync();
+            await services.GetRequiredService<IDropBoxTreeState>().LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            // Never fatal: the shell stays usable and the status bar shows the failure.
+            services.GetRequiredService<ILogSink>().Error($"Startup warm-up failed: {ex.Message}");
         }
     }
 
@@ -59,6 +82,8 @@ public partial class App : Application
         builder.Services.AddSingleton<INavigationService, NavigationService>();
         builder.Services.AddSingleton<ISettingsService, SettingsService>();
         builder.Services.AddSingleton<ILogSink, LogSink>();
+        builder.Services.AddSingleton<IAppStatus, AppStatus>();
+        builder.Services.AddSingleton<IDropBoxTreeState, DropBoxTreeState>();
 
         // View models and pages are TRANSIENT: each page resolves its own view model,
         // which owns a private MlDbContext. Nothing is shared between pages, and

@@ -11,14 +11,20 @@ public partial class MainWindow : Window
 {
     private readonly INavigationService _navigation;
     private readonly IServiceProvider _services;
+    private readonly IAppStatus _status;
     private UserControl? _current;
 
-    public MainWindow(IServiceProvider services, INavigationService navigation)
+    public MainWindow(IServiceProvider services, INavigationService navigation, IAppStatus status)
     {
         _services = services;
         _navigation = navigation;
+        _status = status;
 
         InitializeComponent();
+
+        // The status bar binds to the app-wide status, not to whichever page happens to be
+        // showing - so navigating never re-reads these facts.
+        DataContext = status;
 
         // Setting IsChecked raises Checked, which navigates.
         NavDashboard.IsChecked = true;
@@ -32,13 +38,25 @@ public partial class MainWindow : Window
 
     private void OnNavSettingsClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Settings);
 
+    private async void OnStatusRefreshClick(object sender, RoutedEventArgs e)
+    {
+        IsEnabled = false;
+        try
+        {
+            await _status.LoadAsync();
+        }
+        finally
+        {
+            IsEnabled = true;
+        }
+    }
+
     private void ShowPage(string key)
     {
         _navigation.NavigateTo(key);
 
         if (_current is not null)
         {
-            TrackStatus(null);
             PageHost.Children.Remove(_current);
             (_current as IDisposable)?.Dispose();
         }
@@ -46,15 +64,11 @@ public partial class MainWindow : Window
         _current = (UserControl)_navigation.ResolvePage(key);
         PageHost.Children.Add(_current);
 
-        // Refresh the page's data every time it is shown.
-                var dataContext = _current.DataContext;
-                TrackStatus(dataContext);
-
-        switch (dataContext)
+        // Pages load their own data. The dashboard deliberately does NOT reload on
+        // navigation: its tree is read once and kept in the singleton tree state, so
+        // switching away and back does not re-query the database.
+        switch (_current.DataContext)
         {
-            case DashboardViewModel dashboard:
-                _ = dashboard.RefreshAsync();
-                break;
             case DropBoxViewModel dropBox:
                 _ = dropBox.RefreshAsync();
                 break;
@@ -65,41 +79,5 @@ public partial class MainWindow : Window
                 _ = settings.LoadAsync();
                 break;
         }
-    }
-
-    /// <summary>
-    /// Mirrors the current page's StatusMessage into the window status bar as it changes.
-    /// Without this the bar keeps the value from navigation time and looks frozen.
-    /// </summary>
-    private void TrackStatus(object? dataContext)
-    {
-        if (_tracked is not null)
-        {
-            _tracked.PropertyChanged -= OnStatusChanged;
-            _tracked = null;
-        }
-
-        if (dataContext is ViewModelBase vm)
-        {
-            _tracked = vm;
-            vm.PropertyChanged += OnStatusChanged;
-            StatusText.Text = vm.HasStatus ? vm.StatusMessage : Title;
-        }
-        else
-        {
-            StatusText.Text = Title;
-        }
-    }
-
-    private ViewModelBase? _tracked;
-
-    private void OnStatusChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(ViewModelBase.StatusMessage) || _tracked is null)
-        {
-            return;
-        }
-
-        StatusText.Text = _tracked.HasStatus ? _tracked.StatusMessage : Title;
     }
 }

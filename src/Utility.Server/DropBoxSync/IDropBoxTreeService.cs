@@ -79,7 +79,15 @@ public sealed class DropBoxTreeNode : INotifyPropertyChanged
 
     public string SyncStatus { get; }
 
-    public IReadOnlyList<DropBoxTreeNode> Children { get; init; } = [];
+    /// <summary>
+    /// Child nodes.
+    /// <para>
+    /// Named Children and typed as a List so the TreeView's ItemsControl discovers it
+    /// automatically. An IReadOnlyList here is silently ignored - the node renders as a
+    /// leaf with no expander, and nothing in the data or the model says why.
+    /// </para>
+    /// </summary>
+    public List<DropBoxTreeNode> Children { get; init; } = [];
 
     /// <summary>Two-way bound to the TreeViewItem's IsExpanded.</summary>
     public bool IsExpanded
@@ -102,7 +110,8 @@ public sealed class DropBoxTreeNode : INotifyPropertyChanged
         {
             if (!IsSynced)
             {
-                return "not synced";
+                // The row renders its own "not synced" marker column; don't say it twice.
+                return "";
             }
 
             return IsFolder

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Utility.Server.ML.Entities;
 using Utility.Server.ML.Services;
 using Utility.UI.Mvvm;
+using Utility.UI.Services;
 
 namespace Utility.UI.ViewModels;
 
