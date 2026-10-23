@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Utility.DropBox/Utility.DropBox.csproj" />
+    <Project Path="src/Utility.Server/Utility.Server.csproj" />
+    <Project Path="src/Utility.UI/Utility.UI.csproj" />
+  </Folder>
+</Solution>

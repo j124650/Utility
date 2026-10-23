@@ -1,0 +1,158 @@
+<UserControl x:Class="Utility.UI.Views.DropBoxView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Utility.UI.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:DropBoxViewModel}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar: namespace, path navigation, tree controls -->
+        <Border Grid.Row="0" Style="{StaticResource CardStyle}">
+            <StackPanel>
+                <TextBlock Text="Dropbox" Style="{StaticResource HeaderText}" />
+                <TextBlock Text="Browse folder structure and file metadata. Team folders only appear in their team namespace."
+                           Style="{StaticResource SubHeaderText}" />
+
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="Namespace" Style="{StaticResource FieldLabel}"
+                               VerticalAlignment="Center" Margin="0,0,8,0" />
+
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding Namespaces}"
+                              SelectedItem="{Binding SelectedNamespace}"
+                              DisplayMemberPath="DisplayLabel"
+                              MinWidth="260" Margin="0,0,8,0" Padding="6,4"
+                              ToolTip="Personal space, or a team root. Team folders are not visible in Personal." />
+
+                    <TextBlock Grid.Column="2" Text="{Binding SettingsSource}"
+                               FontSize="11" Foreground="#6B7280" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="320" />
+                </Grid>
+
+                <!-- Path bar -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <Button Grid.Column="0" Content="Up" Command="{Binding GoUpCommand}"
+                            IsEnabled="{Binding CanGoUp}" />
+
+                    <TextBox Grid.Column="1" Text="{Binding PathInput, UpdateSourceTrigger=PropertyChanged}"
+                             FontFamily="Consolas" Margin="8,0"
+                             KeyDown="OnPathKeyDown">
+                        <TextBox.ToolTip>
+                            <TextBlock Text="Type a path and press Enter, e.g. /Images-Catalogs Team Folder/LightBoxPics" />
+                        </TextBox.ToolTip>
+                    </TextBox>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button Content="Go" Command="{Binding GoToPathCommand}" />
+                        <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Tree JSON controls -->
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock Text="Tree depth" Style="{StaticResource FieldLabel}"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Text="{Binding TreeDepth}" Width="46" Margin="0,0,8,0"
+                             VerticalContentAlignment="Center" />
+
+                    <Button Content="Build tree JSON" Command="{Binding BuildTreeCommand}" />
+                    <Button Content="Save JSON…" Command="{Binding SaveJsonCommand}"
+                            IsEnabled="{Binding HasTreeJson}" />
+                    <Button Content="Download file…" Command="{Binding DownloadCommand}" />
+
+                    <TextBlock Text="{Binding TreeSummary}" FontSize="12" Foreground="#374151"
+                               VerticalAlignment="Center" Margin="12,0,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Listing + metadata detail -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="1*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Margin="0,0,0,8" MinHeight="180">
+                <DataGrid x:Name="FilesGrid" ItemsSource="{Binding Entries}"
+                          SelectionMode="Single"
+                          SelectionChanged="OnSelectionChanged"
+                          MouseDoubleClick="OnRowDoubleClick">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*" />
+                        <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="80" />
+                        <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedDisplay}" Width="140" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                          Background="Transparent" />
+
+            <!-- Metadata pane: per-file info, plus the JSON preview -->
+            <Border Grid.Column="2" Style="{StaticResource CardStyle}" Margin="8,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Text="Item info" Style="{StaticResource HeaderText}" />
+
+                    <TextBlock Grid.Row="1" Text="{Binding SelectedEntryDetails}"
+                               FontFamily="Consolas" FontSize="11" Foreground="#374151"
+                               TextWrapping="Wrap" Margin="0,0,0,10" />
+
+                    <Grid Grid.Row="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Text="Tree JSON (hierarchical)"
+                                   Style="{StaticResource FieldLabel}" />
+
+                        <TextBox Grid.Row="1" Text="{Binding TreeJson, Mode=OneWay}"
+                                 IsReadOnly="True" AcceptsReturn="True"
+                                 FontFamily="Consolas" FontSize="11"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 TextWrapping="NoWrap"
+                                 Visibility="{Binding HasTreeJson, Converter={StaticResource BoolToVis}}" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Status: directly under the content it describes, so it is never off-screen -->
+        <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                CornerRadius="6" Padding="10,6">
+            <StackPanel>
+                <ProgressBar IsIndeterminate="True" Height="2" Margin="0,0,0,6"
+                             Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="{Binding Status}" FontSize="12" Foreground="#6B7280" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

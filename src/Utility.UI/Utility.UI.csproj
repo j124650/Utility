@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!--
+      WinForms is deliberately NOT enabled: it makes the implicit
+      System.Windows.Forms using collide with WPF types (Application, UserControl).
+      File dialogs use Microsoft.Win32's built-in OpenFileDialog/SaveFileDialog instead.
+    -->
+    <RootNamespace>Utility.UI</RootNamespace>
+    <AssemblyName>Utility.UI</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Utility.Server\Utility.Server.csproj" />
+    <ProjectReference Include="..\Utility.DropBox\Utility.DropBox.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

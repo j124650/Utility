@@ -1,0 +1,66 @@
+<UserControl x:Class="Utility.UI.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Utility.UI.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:SettingsViewModel}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="SQL Server" Style="{StaticResource HeaderText}" />
+                    <TextBlock Text="Overrides are written to your user profile; the shipped appsettings.json is left alone. The app only reads — nothing is migrated."
+                               Style="{StaticResource SubHeaderText}" />
+
+                    <TextBlock Text="Connection string" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding ConnectionString}" FontFamily="Consolas" />
+
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Save" Command="{Binding SaveCommand}" />
+                        <Button Content="Test connection" Command="{Binding TestDatabaseCommand}" />
+                        <Button Content="Reload" Command="{Binding ReloadCommand}" />
+                    </StackPanel>
+
+                    <!--
+                      Status sits directly under the buttons, not at the bottom of the
+                      scroll viewer: down there it renders off-screen and the click looks dead.
+                    -->
+                    <ProgressBar IsIndeterminate="True" Height="2" Margin="0,10,0,6"
+                                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+
+                    <TextBlock Text="{Binding StatusMessage}"
+                               FontSize="12" Foreground="#374151" TextWrapping="Wrap"
+                               Visibility="{Binding StatusMessage, Converter={StaticResource StringToVis}}" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <TextBlock Text="Dropbox" Style="{StaticResource HeaderText}" />
+                    <TextBlock Text="Create an app at https://www.dropbox.com/developers/apps, then paste its App Key and a token."
+                               Style="{StaticResource SubHeaderText}" />
+
+                    <TextBlock Text="App key" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding DropBoxAppKey}" FontFamily="Consolas" />
+
+                    <TextBlock Text="Refresh token (recommended)" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding DropBoxRefreshToken}" FontFamily="Consolas" />
+
+                    <TextBlock Text="Access token (short-lived, optional)" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding DropBoxAccessToken}" FontFamily="Consolas" />
+
+                    <TextBlock Text="Root path (optional, e.g. /Apps/Utility)" Style="{StaticResource FieldLabel}" />
+                    <TextBox Text="{Binding DropBoxRootPath}" FontFamily="Consolas" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding SettingsFilePath}" FontFamily="Consolas" FontSize="11"
+                       Foreground="#6B7280" Margin="0,4,0,12" />
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
