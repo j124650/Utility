@@ -51,6 +51,26 @@ public sealed class DropBoxNode
 
     public string? ContentHash { get; set; }
 
+    /// <summary>
+    /// Image or video width in pixels. Null unless the sync requested media info AND
+    /// Dropbox returned real dimensions.
+    /// </summary>
+    public int? WidthPixels { get; set; }
+
+    /// <summary>Image or video height in pixels. See <see cref="WidthPixels"/>.</summary>
+    public int? HeightPixels { get; set; }
+
+    /// <summary>
+    /// What Dropbox said about this file's media nature, and the reason the two width and
+    /// height columns cannot speak for themselves:
+    /// <list type="bullet">
+    /// <item><description><c>null</c> - not an image or video, so never has dimensions.</description></item>
+    /// <item><description><c>pending</c> - Dropbox deferred it; a later read may succeed.</description></item>
+    /// <item><description><c>photo</c> / <c>video</c> - dimensions are authoritative.</description></item>
+    /// </list>
+    /// </summary>
+    public string? MediaInfoTag { get; set; }
+
     public DateTimeOffset? ServerModified { get; set; }
 
     public DateTimeOffset? ClientModified { get; set; }

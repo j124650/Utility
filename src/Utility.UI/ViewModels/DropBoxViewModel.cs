@@ -377,7 +377,7 @@ public sealed class DropBoxViewModel(
             var depth = Math.Clamp(TreeDepth, 1, 10);
             Status = $"Building tree from {PathDisplay} (depth {depth})…";
 
-            var tree = await dropBox.GetFolderTreeAsync(CurrentPath, ActiveNamespaceId, depth, 6, ct);
+            var tree = await dropBox.GetFolderTreeAsync(CurrentPath, ActiveNamespaceId, depth, 6, false, ct);
             if (ct.IsCancellationRequested)
             {
                 Status = "Tree build cancelled.";

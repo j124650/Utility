@@ -55,6 +55,7 @@ public sealed class DropBoxSyncService(
         int batchSize = 5,
         int maxDepth = 0,
         int maxConcurrency = 6,
+        bool enrichFileMetadata = true,
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(startPath);
@@ -88,7 +89,7 @@ public sealed class DropBoxSyncService(
             // it; List<T> is not thread-safe and concurrent Add can lose entries.
             var discovered = new System.Collections.Concurrent.ConcurrentBag<ChildRef>();
             await ExpandFolderAsync(ns, runId, rootPath, rootId, depth: 1,
-                                    unlimited, maxDepth, gate, counts, discovered,
+                                    unlimited, maxDepth, enrichFileMetadata, gate, counts, discovered,
                                     progress, sw, ct);
 
             // Each depth level is its own parallel fan-out: every folder discovered at this
@@ -108,7 +109,7 @@ public sealed class DropBoxSyncService(
                 await Task.WhenAll(toExpand.Select(async child =>
                 {
                     await ExpandFolderAsync(ns, runId, child.Path, child.Id, level,
-                                            unlimited, maxDepth, gate, counts, nextLevel,
+                                            unlimited, maxDepth, enrichFileMetadata, gate, counts, nextLevel,
                                             progress, sw, ct);
                 }));
 
@@ -132,8 +133,11 @@ public sealed class DropBoxSyncService(
 
             sw.Stop();
             logger.LogInformation(
-                "Dropbox sync of {Path} completed in {ElapsedMs} ms: {Folders} folder(s), {Files} file(s), {Skipped} folder(s) not fully listed, {Bounded} bounded by depth, {Swept} row(s) swept.",
+                "Dropbox sync of {Path} completed in {ElapsedMs} ms: {Folders} folder(s), {Files} file(s) " +
+                "({Enriched} with dimensions, {PendingMedia} pending, {EnrichFailed} enrichment failure(s)), " +
+                "{Skipped} folder(s) not fully listed, {Bounded} bounded by depth, {Swept} row(s) swept.",
                 rootPath, sw.ElapsedMilliseconds, counts.Folders, counts.Files,
+                counts.Enriched, counts.PendingMedia, counts.EnrichFailed,
                 counts.NotOk, counts.BoundedFolders, skipped);
 
             return new DropBoxSyncResult(
@@ -177,7 +181,8 @@ public sealed class DropBoxSyncService(
     /// </summary>
     private async Task ExpandFolderAsync(
         string ns, Guid runId, string path, long folderId, int depth,
-        bool unlimited, int maxDepth, SemaphoreSlim gate, SyncCounts counts,
+        bool unlimited, int maxDepth, bool enrichFileMetadata,
+        SemaphoreSlim gate, SyncCounts counts,
         System.Collections.Concurrent.ConcurrentBag<ChildRef> childrenOut,
         IProgress<DropBoxSyncProgress>? progress, Stopwatch sw, CancellationToken ct)
     {
@@ -192,7 +197,7 @@ public sealed class DropBoxSyncService(
             IReadOnlyList<FileEntry> entries;
             try
             {
-                entries = await dropBox.ListFolderAsync(path, ns, ct);
+                entries = await dropBox.ListFolderAsync(path, ns, false, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -235,7 +240,19 @@ public sealed class DropBoxSyncService(
                 else
                 {
                     // Files never carry a status.
-                    pending.Add(ToEntity(ns, runId, entry, folderId, null, null));
+                    var fileRow = ToEntity(ns, runId, entry, folderId, null, null);
+
+                    // The listing cannot supply dimensions - Dropbox ignores
+                    // include_media_info on files/list_folder. Only a per-file
+                    // get_metadata returns them, so that is where they come from.
+                    // Concurrent, and behind the SAME semaphore, so this adds no
+                    // unbounded request pressure beyond the walk's own limit.
+                    if (enrichFileMetadata)
+                    {
+                        await EnrichFileAsync(fileRow, ns, counts, gate, ct);
+                    }
+
+                    pending.Add(fileRow);
                     counts.AddFiles();
                 }
             }
@@ -331,6 +348,11 @@ public sealed class DropBoxSyncService(
         SizeBytes = entry.IsFolder ? null : entry.SizeBytes,
         Rev = entry.Rev,
         ContentHash = entry.ContentHash,
+        // Null unless the run requested media info; MediaInfoTag distinguishes
+        // "not an image" (null) from "ask again later" ('pending').
+        WidthPixels = entry.HasDimensions ? (int?)entry.WidthPixels : null,
+        HeightPixels = entry.HasDimensions ? (int?)entry.HeightPixels : null,
+        MediaInfoTag = entry.IsFolder ? null : entry.MediaKind,
         ServerModified = entry.IsFolder ? null : entry.ServerModified,
         ClientModified = entry.IsFolder ? null : entry.ClientModified,
         IsDownloadable = entry.IsFolder ? null : entry.IsDownloadable,
@@ -378,6 +400,13 @@ public sealed class DropBoxSyncService(
                     tracked.SizeBytes = row.SizeBytes;
                     tracked.Rev = row.Rev;
                     tracked.ContentHash = row.ContentHash;
+                    // Dimensions are overwritten unconditionally, including back to NULL.
+                    // A row synced with media info that is later re-synced without it must
+                    // NOT keep the old width/height: those would then describe an unknown
+                    // state that no read ever confirmed.
+                    tracked.WidthPixels = row.WidthPixels;
+                    tracked.HeightPixels = row.HeightPixels;
+                    tracked.MediaInfoTag = row.MediaInfoTag;
                     tracked.ServerModified = row.ServerModified;
                     tracked.ClientModified = row.ClientModified;
                     tracked.IsDownloadable = row.IsDownloadable;
@@ -413,7 +442,57 @@ public sealed class DropBoxSyncService(
         pending.Clear();
     }
 
-    /// <summary>Sets a folder's outcome for this run.</summary>
+    /// <summary>
+    /// Fills a file row's media metadata (dimensions, media kind) via a per-file
+    /// <c>get_metadata</c> call.
+    /// <para>
+    /// One extra call per file, which is the price of dimensions: Dropbox ignores
+    /// <c>include_media_info</c> on <c>list_folder</c> (verified) but honours it here.
+    /// A failure is non-fatal - the row is still written with whatever the listing knew,
+    /// and MediaInfoTag stays null, which reads as "not known" rather than "no
+    /// dimensions". Enrichment must never cost us the structural data.
+    /// </para>
+    /// </summary>
+    private async Task EnrichFileAsync(
+        DropBoxNodeEntity row, string ns, SyncCounts counts, SemaphoreSlim gate, CancellationToken ct)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            var info = await dropBox.GetFileInfoAsync(row.PathDisplay, ns, true, ct);
+
+            row.WidthPixels = info.HasDimensions ? (int?)info.WidthPixels : null;
+            row.HeightPixels = info.HasDimensions ? (int?)info.HeightPixels : null;
+            row.MediaInfoTag = info.MediaKind;
+
+            if (info.HasDimensions)
+            {
+                counts.AddEnriched();
+            }
+            else if (info.IsMediaInfoPending)
+            {
+                counts.AddPending();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Never let an enrichment failure abort the run or drop the row.
+            counts.AddEnrichFailed();
+            logger.LogDebug(ex, "Media enrichment failed for {Path}; row kept without dimensions.", row.PathDisplay);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Sets a folder's outcome for this run.
+    /// </summary>
     private async Task SetFolderStatusAsync(
         string ns, string path, string status, string? reason, CancellationToken ct)
     {
@@ -542,6 +621,9 @@ public sealed class DropBoxSyncService(
         private int _written;
         private int _notOk;
         private int _bounded;
+        private int _enriched;
+        private int _pendingMedia;
+        private int _enrichFailed;
 
         // Properties are plain reads; mutation goes through the Add* methods. A property
         // with an Interlocked side effect would increment on every log line that reads it.
@@ -550,12 +632,18 @@ public sealed class DropBoxSyncService(
         public int Written => Volatile.Read(ref _written);
         public int NotOk => Volatile.Read(ref _notOk);
         public int BoundedFolders => Volatile.Read(ref _bounded);
+        public int Enriched => Volatile.Read(ref _enriched);
+        public int PendingMedia => Volatile.Read(ref _pendingMedia);
+        public int EnrichFailed => Volatile.Read(ref _enrichFailed);
 
         public void AddFolders(int n = 1) => Interlocked.Add(ref _folders, n);
         public void AddFiles(int n = 1) => Interlocked.Add(ref _files, n);
         public void AddWritten(int n) => Interlocked.Add(ref _written, n);
         public void AddNotOk(int n = 1) => Interlocked.Add(ref _notOk, n);
         public void AddBounded(int n) => Interlocked.Add(ref _bounded, n);
+        public void AddEnriched(int n = 1) => Interlocked.Add(ref _enriched, n);
+        public void AddPending(int n = 1) => Interlocked.Add(ref _pendingMedia, n);
+        public void AddEnrichFailed(int n = 1) => Interlocked.Add(ref _enrichFailed, n);
     }
 
     private static string Truncate(string message, int max = 256) =>

@@ -61,6 +61,14 @@ public interface IDropBoxSyncService
     /// SyncStatus is not <c>Ok</c>: a skipped or failed folder's children are unverified,
     /// not absent.
     /// </para>
+    /// <para>
+    /// <paramref name="enrichFileMetadata"/> fetches each FILE's own metadata, which is
+    /// the only way to get image dimensions: Dropbox ignores <c>include_media_info</c> on
+    /// <c>files/list_folder</c> (verified across recursive, non-recursive and the personal
+    /// namespace) but honours it on <c>files/get_metadata</c>. That costs one extra
+    /// request per file, so it roughly doubles a walk - set it false for a fast
+    /// structure-only sync.
+    /// </para>
     /// </summary>
     Task<DropBoxSyncResult> SyncAsync(
         string startPath,
@@ -69,5 +77,6 @@ public interface IDropBoxSyncService
         int batchSize = 50,
         int maxDepth = 0,
         int maxConcurrency = 6,
+        bool enrichFileMetadata = true,
         CancellationToken ct = default);
 }

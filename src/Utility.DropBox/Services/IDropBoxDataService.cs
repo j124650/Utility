@@ -35,10 +35,15 @@ public interface IDropBoxDataService
     Task<IReadOnlyList<FileEntry>> ListFolderAsync(
         string path = "",
         string? namespaceId = null,
+        bool includeMediaInfo = false,
         CancellationToken ct = default);
 
     /// <summary>Full metadata for a single file or folder.</summary>
-    Task<FileEntry> GetFileInfoAsync(string path, string? namespaceId = null, CancellationToken ct = default);
+    Task<FileEntry> GetFileInfoAsync(
+        string path,
+        string? namespaceId = null,
+        bool includeMediaInfo = true,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Builds the folder tree under <paramref name="path"/> — structure plus per-file
@@ -55,6 +60,7 @@ public interface IDropBoxDataService
         string? namespaceId = null,
         int maxDepth = 3,
         int maxConcurrency = 6,
+        bool includeMediaInfo = false,
         CancellationToken ct = default);
 
     /// <summary>Downloads a file to disk, creating parent directories as needed.</summary>
@@ -99,14 +105,15 @@ public sealed class DropBoxDataService(
     }
 
     public async Task<IReadOnlyList<FileEntry>> ListFolderAsync(
-        string path = "", string? namespaceId = null, CancellationToken ct = default)
+        string path = "", string? namespaceId = null, bool includeMediaInfo = false,
+        CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
         // Scoping the client to the namespace is what makes team folders visible;
         // without it Dropbox resolves the path in the personal space and 404s.
         var client = await clientFactory.CreateClientForNamespaceAsync(namespaceId, ct);
-        var entries = await ListLevelAsync(client, path, ct);
+        var entries = await ListLevelAsync(client, path, includeMediaInfo, ct);
 
         return entries
             .OrderByDescending(x => x.IsFolder)
@@ -115,7 +122,8 @@ public sealed class DropBoxDataService(
     }
 
     public async Task<FileEntry> GetFileInfoAsync(
-        string path, string? namespaceId = null, CancellationToken ct = default)
+        string path, string? namespaceId = null, bool includeMediaInfo = true,
+        CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -125,7 +133,14 @@ public sealed class DropBoxDataService(
         }
 
         var client = await clientFactory.CreateClientForNamespaceAsync(namespaceId, ct);
-        var metadata = await client.Files.GetMetadataAsync(path);
+
+        // VERIFIED BEHAVIOUR, unlike list_folder: include_media_info is IGNORED by
+        // files/list_folder (tested non-recursive, recursive and in the personal namespace -
+        // all returned zero media_info). get_metadata DOES honour it and returns real
+        // dimensions, e.g. 2000x2500 plus time_taken. That is why per-file metadata is
+        // the only working route to dimensions, and why it costs one call per file.
+        var metadata = await client.Files.GetMetadataAsync(
+            path, includeMediaInfo: includeMediaInfo);
 
         return FileEntry.From(metadata);
     }
@@ -135,6 +150,7 @@ public sealed class DropBoxDataService(
         string? namespaceId = null,
         int maxDepth = 3,
         int maxConcurrency = 6,
+        bool includeMediaInfo = false,
         CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -152,7 +168,7 @@ public sealed class DropBoxDataService(
         var started = DateTimeOffset.UtcNow;
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var nodes = await BuildLevelAsync(client, path, depth: 1, maxDepth, gate, ct);
+        var nodes = await BuildLevelAsync(client, path, depth: 1, maxDepth, includeMediaInfo, gate, ct);
         sw.Stop();
 
         var folders = nodes.Where(x => x.IsFolder).ToList();
@@ -184,12 +200,13 @@ public sealed class DropBoxDataService(
         string path,
         int depth,
         int maxDepth,
+        bool includeMediaInfo,
         SemaphoreSlim gate,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
 
-        var entries = await ListLevelAsync(client, path, ct);
+        var entries = await ListLevelAsync(client, path, includeMediaInfo, ct);
 
         var fileNodes = entries
             .Where(x => !x.IsFolder)
@@ -213,7 +230,7 @@ public sealed class DropBoxDataService(
                 // folder.PathDisplay is already absolute within the namespace root —
                 // never re-prefix it, or Dropbox answers path/not_found.
                 var children = await BuildLevelAsync(
-                    client, folder.PathDisplay, depth + 1, maxDepth, gate, ct);
+                    client, folder.PathDisplay, depth + 1, maxDepth, includeMediaInfo, gate, ct);
 
                 return DropBoxNode.From(folder).WithChildren(children);
             }
@@ -233,9 +250,15 @@ public sealed class DropBoxDataService(
 
     /// <summary>Reads one folder level, following every cursor page to the end.</summary>
     private static async Task<List<FileEntry>> ListLevelAsync(
-        DropboxClient client, string path, CancellationToken ct)
+        DropboxClient client, string path, bool includeMediaInfo, CancellationToken ct)
     {
-        var result = await client.Files.ListFolderAsync(path, recursive: false);
+        // includeMediaInfo makes Dropbox do extra work per file, so it is opt-in and defaults
+        // to false. The cost on this account has NOT been measured - a benchmark attempt
+        // was abandoned as too slow. Do not flip the default without measuring it; see
+        // Sql/AlterAddImageDimensions.sql for the full warning and the MediaInfoTag
+        // semantics that make a NULL width/height honest.
+        var result = await client.Files.ListFolderAsync(
+            path, recursive: false, includeMediaInfo: includeMediaInfo);
         var entries = new List<FileEntry>(result.Entries.Count);
 
         foreach (var metadata in result.Entries)

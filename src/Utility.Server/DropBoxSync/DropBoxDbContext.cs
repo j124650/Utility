@@ -65,6 +65,9 @@ public class DropBoxDbContext(DbContextOptions<DropBoxDbContext> options) : DbCo
         node.Property(x => x.SizeBytes).HasColumnName("SizeBytes");
         node.Property(x => x.Rev).HasColumnName("Rev");
         node.Property(x => x.ContentHash).HasColumnName("ContentHash");
+        node.Property(x => x.WidthPixels).HasColumnName("WidthPixels");
+        node.Property(x => x.HeightPixels).HasColumnName("HeightPixels");
+        node.Property(x => x.MediaInfoTag).HasColumnName("MediaInfoTag");
         node.Property(x => x.ServerModified).HasColumnName("ServerModified");
         node.Property(x => x.ClientModified).HasColumnName("ClientModified");
         node.Property(x => x.IsDownloadable).HasColumnName("IsDownloadable");

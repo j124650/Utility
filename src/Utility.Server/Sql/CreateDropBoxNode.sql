@@ -82,6 +82,23 @@ CREATE TABLE ml.DropBoxNode
     SizeBytes       BIGINT          NULL,
     Rev             NVARCHAR(64)    NULL,
     ContentHash     NVARCHAR(64)    NULL,
+
+    -- Image/video dimensions. Populating these needs include_media_info=true on every
+    -- ListFolder call, which costs extra per-file work from Dropbox and is NOT yet
+    -- benchmarked on this account - so the sync defaults includeMediaInfo to FALSE and
+    -- these stay NULL until a run opts in.
+    --
+    -- MediaInfoTag is what makes a NULL width/height honest. Dropbox returns media info
+    -- as a union with three outcomes that must not be collapsed:
+    --   NULL       not an image/video (a .txt, a .pdf): never has dimensions
+    --   'pending'  Dropbox deferred it; a later read may still succeed
+    --   'photo'/'video'  dimensions are authoritative
+    -- Query for known dimensions with: MediaInfoTag IN ('photo','video').
+    WidthPixels     INT            NULL,
+    HeightPixels    INT            NULL,
+    MediaInfoTag    NVARCHAR(16)   NULL
+        CONSTRAINT CK_DropBoxNode_MediaInfoTag
+            CHECK (MediaInfoTag IS NULL OR MediaInfoTag IN ('photo','video','pending')),
     ServerModified  DATETIMEOFFSET  NULL,
     ClientModified  DATETIMEOFFSET  NULL,
     IsDownloadable  BIT             NULL,
@@ -141,4 +158,12 @@ CREATE NONCLUSTERED INDEX IX_DropBoxNode_SyncStatus
     ON ml.DropBoxNode (NamespaceId, SyncStatus)
     INCLUDE (PathLower)
     WHERE IsFolder = 1;
+GO
+
+-- Supports "every image" once dimensions are populated. Filtered to rows that actually
+-- have a media tag; rows without one can never match the predicate.
+CREATE NONCLUSTERED INDEX IX_DropBoxNode_Dimensions
+    ON ml.DropBoxNode (NamespaceId, WidthPixels, HeightPixels)
+    INCLUDE (PathDisplay, SizeBytes)
+    WHERE MediaInfoTag IS NOT NULL AND MediaInfoTag <> 'pending';
 GO

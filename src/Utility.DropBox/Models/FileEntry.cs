@@ -17,8 +17,24 @@ public sealed record FileEntry(
     string? ContentHash,
     DateTimeOffset ServerModified,
     DateTimeOffset ClientModified,
-    bool IsDownloadable)
+    bool IsDownloadable,
+    long? WidthPixels = null,
+    long? HeightPixels = null,
+    string? MediaKind = null)
 {
+    /// <summary>
+    /// True when the file is an image or video AND Dropbox actually returned dimensions.
+    /// <para>
+    /// <see cref="MediaKind"/> is what makes this trustworthy: it is null for a file with
+    /// no media info at all (a .txt), but 'pending' when Dropbox deferred the work. A
+    /// pending file is NOT known to be dimension-less - it just needs asking again.
+    /// </para>
+    /// </summary>
+    public bool HasDimensions => WidthPixels is not null && HeightPixels is not null;
+
+    /// <summary>True when Dropbox deferred media info and a later read may succeed.</summary>
+    public bool IsMediaInfoPending =>
+        string.Equals(MediaKind, "pending", StringComparison.OrdinalIgnoreCase);
     public string SizeDisplay => IsFolder
         ? string.Empty
         : FormatSize(SizeBytes);
@@ -56,6 +72,40 @@ public sealed record FileEntry(
         if (metadata.IsFile)
         {
             var file = metadata.AsFile;
+
+            // MediaInfo is a Stone union and is ONLY populated when the request asked for
+            // it (include_media_info). Three outcomes matter, and conflating them would be
+            // a silent correctness bug:
+            //   null      - not an image/video (or not requested): no dimensions, ever
+            //   'pending' - Dropbox deferred it; dimensions may be available on a re-read
+            //   'photo'/'video' - dimensions are real
+            long? width = null;
+            long? height = null;
+            string? mediaKind = null;
+
+            if (file.MediaInfo is not null)
+            {
+                if (file.MediaInfo.IsPending)
+                {
+                    mediaKind = "pending";
+                }
+                else if (file.MediaInfo.IsMetadata)
+                {
+                    // MediaInfo.Metadata is a wrapper type: the real MediaMetadata sits on
+                    // its Value property (verified by reflection, not guessed).
+                    var media = file.MediaInfo.AsMetadata.Value;
+                    mediaKind = media.IsPhoto ? "photo" : media.IsVideo ? "video" : null;
+
+                    // Dimensions live on MediaMetadata itself, common to photo and video.
+                    // Width/Height are UInt64 in the SDK.
+                    if (media.Dimensions is not null)
+                    {
+                        width = (long)media.Dimensions.Width;
+                        height = (long)media.Dimensions.Height;
+                    }
+                }
+            }
+
             return new FileEntry(
                 file.Name,
                 file.PathDisplay ?? file.PathLower ?? file.Name,
@@ -67,7 +117,10 @@ public sealed record FileEntry(
                 ContentHash: file.ContentHash,
                 ServerModified: new DateTimeOffset(file.ServerModified, TimeSpan.Zero),
                 ClientModified: new DateTimeOffset(file.ClientModified, TimeSpan.Zero),
-                IsDownloadable: file.IsDownloadable);
+                IsDownloadable: file.IsDownloadable,
+                WidthPixels: width,
+                HeightPixels: height,
+                MediaKind: mediaKind);
         }
 
         if (metadata.IsDeleted)
