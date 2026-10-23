@@ -150,8 +150,19 @@ public sealed class DropBoxSyncService(
         catch (Exception ex)
         {
             sw.Stop();
+
+            // Surface the whole exception chain. EF wraps the real cause (constraint
+            // name, SQL text, timeout) in an inner exception, and "An error occurred
+            // while saving the entity changes" alone is undiagnosable.
+            var chain = new System.Text.StringBuilder();
+            for (var e = ex; e is not null; e = e.InnerException)
+            {
+                chain.AppendLine($"  {e.GetType().Name}: {e.Message}");
+            }
+
             logger.LogError(ex, "Dropbox sync of {Path} failed; sweep skipped, existing rows kept.", startPath);
-            return new DropBoxSyncResult(false, false, counts.Folders, counts.Files, 0, level, sw.Elapsed, ex.Message);
+            return new DropBoxSyncResult(false, false, counts.Folders, counts.Files, 0,
+                                          level, sw.Elapsed, chain.ToString().Trim());
         }
     }
 
@@ -195,6 +206,13 @@ public sealed class DropBoxSyncService(
 
             var pending = new List<DropBoxNodeEntity>(entries.Count);
 
+            // Rows for the child folders of THIS listing, kept locally so their
+            // generated Ids can be read back after the flush. Deriving them from this local
+            // list matters: childrenOut is SHARED across the parallel workers on a level,
+            // so scanning or mutating it here would touch (and remove) other workers'
+            // entries.
+            var queuedFolders = new List<(ChildRef Ref, DropBoxNodeEntity Row)>();
+
             foreach (var entry in entries)
             {
                 ct.ThrowIfCancellationRequested();
@@ -204,20 +222,15 @@ public sealed class DropBoxSyncService(
                     // Depth cap: record the folder but do not expand it. Partial, so the
                     // sweep leaves whatever is beneath it alone.
                     var atCap = !unlimited && depth >= maxDepth;
-                    pending.Add(ToEntity(ns, runId, entry, folderId,
-                        atCap ? DropBoxSyncStatus.Partial : null, null));
+                    var folderRow = ToEntity(ns, runId, entry, folderId,
+                        atCap ? DropBoxSyncStatus.Partial : null, null);
+                    pending.Add(folderRow);
 
                     counts.AddFolders();
                     if (!atCap)
                     {
-                        // Queued for expansion. The Id is resolved when the next level
-                        // upserts the folder, and its status is set once it is listed.
-                        childrenOut.Add(new ChildRef(entry.PathDisplay, 0));
+                        queuedFolders.Add((new ChildRef(entry.PathDisplay, 0), folderRow));
                     }
-
-                    // At the cap: the row is stored with SyncStatus = Partial above. No
-                    // extra UPDATE here - it would run before the flush, so the row would
-                    // not exist yet.
                 }
                 else
                 {
@@ -228,6 +241,27 @@ public sealed class DropBoxSyncService(
             }
 
             await FlushAsync(ns, runId, folderId, path, pending, counts, ct);
+
+            // Hand the next level the REAL Ids. SaveChanges has just written
+            // entity.Id from the generated identity, so reading it back is exact and costs
+            // no extra query.
+            //
+            // Queuing a placeholder 0 instead is what broke the deeper levels: the next
+            // level then wrote every child with ParentId = 0, violating the self-referencing
+            // FK and failing the whole SaveChanges (2 of 8382 files survived that run).
+            foreach (var (queued, row) in queuedFolders)
+            {
+                if (row.Id > 0)
+                {
+                    childrenOut.Add(queued with { Id = row.Id });
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "Folder {Path} was written but has no identity; it will not be expanded.",
+                        queued.Path);
+                }
+            }
 
             // Listing succeeded: this folder is fully verified, so the sweep may clean
             // beneath it.
