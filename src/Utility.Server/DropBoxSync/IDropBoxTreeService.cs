@@ -11,6 +11,12 @@ namespace Utility.Server.DropBoxSync;
 /// the usual "subscribe and forward" workaround leaks a handler on every set and
 /// re-enters the very event it is trying to raise.
 /// </para>
+/// <para>
+/// <b>Nodes can be synthetic.</b> The hierarchy is derived from the full path, so a folder
+/// that was never synced still appears as an ancestor - otherwise a subtree synced from
+/// a deep start would render as a floating root with no context above it. Synthetic nodes
+/// have <see cref="IsSynced"/> false and no row of their own.
+/// </para>
 /// </summary>
 public sealed class DropBoxTreeNode : INotifyPropertyChanged
 {
@@ -28,7 +34,8 @@ public sealed class DropBoxTreeNode : INotifyPropertyChanged
         int? heightPixels,
         string? mediaInfoTag,
         DateTimeOffset? serverModified,
-        string syncStatus)
+        string syncStatus,
+        bool isSynced = true)
     {
         Id = id;
         Name = name;
@@ -41,10 +48,12 @@ public sealed class DropBoxTreeNode : INotifyPropertyChanged
         MediaInfoTag = mediaInfoTag;
         ServerModified = serverModified;
         SyncStatus = syncStatus;
+        IsSynced = isSynced;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>Row id, or 0 for a synthetic folder derived from the path alone.</summary>
     public long Id { get; }
 
     public string Name { get; }
@@ -52,6 +61,9 @@ public sealed class DropBoxTreeNode : INotifyPropertyChanged
     public string FullPath { get; }
 
     public bool IsFolder { get; }
+
+    /// <summary>False for a folder that exists only as an ancestor in a synced path.</summary>
+    public bool IsSynced { get; }
 
     public int ChildCount { get; }
 
@@ -84,9 +96,20 @@ public sealed class DropBoxTreeNode : INotifyPropertyChanged
     }
 
     /// <summary>Folders sort first, then alphabetically - mirrors the sync's own ordering.</summary>
-    public string SizeDisplay => IsFolder
-        ? (ChildCount > 0 ? $"{ChildCount} item{(ChildCount == 1 ? "" : "s")}" : "empty")
-        : FormatSize(SizeBytes);
+    public string SizeDisplay
+    {
+        get
+        {
+            if (!IsSynced)
+            {
+                return "not synced";
+            }
+
+            return IsFolder
+                ? (ChildCount > 0 ? $"{ChildCount} item{(ChildCount == 1 ? "" : "s")}" : "empty")
+                : FormatSize(SizeBytes);
+        }
+    }
 
     public string DimensionsDisplay =>
         WidthPixels is null || HeightPixels is null ? "" : $"{WidthPixels}×{HeightPixels}";
@@ -96,7 +119,7 @@ public sealed class DropBoxTreeNode : INotifyPropertyChanged
 
     /// <summary>A folder that was never fully listed - the sweep must not descend past it.</summary>
     public bool IsUnverified =>
-        IsFolder && !string.Equals(SyncStatus, DropBoxSyncStatus.Ok, StringComparison.Ordinal);
+        IsFolder && IsSynced && !string.Equals(SyncStatus, DropBoxSyncStatus.Ok, StringComparison.Ordinal);
 
     /// <summary>True for image/video rows whose dimensions are known.</summary>
     public bool HasDimensions => WidthPixels is not null && HeightPixels is not null;
@@ -145,12 +168,17 @@ public sealed record DropBoxTreeSummary(
 public interface IDropBoxTreeService
 {
     /// <summary>
-    /// Reads the ALREADY-SYNCED hierarchy from ml.DropBoxNode. No Dropbox call is made:
-    /// this renders what is in the table, which is the point of syncing it.
+    /// Builds the hierarchy from the ALREADY-SYNCED rows in ml.DropBoxNode, deriving
+    /// structure from the full path. No Dropbox call is made.
+    /// <para>
+    /// Deriving from the path rather than following ParentId means a subtree synced from
+    /// a deep start still renders with its full ancestry above it, instead of appearing as
+    /// a floating root.
+    /// </para>
     /// </summary>
-    /// <returns>Root nodes of the synced forest, plus the summary figures.</returns>
+    /// <returns>Root nodes, plus summary figures.</returns>
     Task<(IReadOnlyList<DropBoxTreeNode> Roots, DropBoxTreeSummary Summary)> GetSyncedTreeAsync(
         string? namespaceId = null,
-        int maxNodes = 5000,
+        int maxRows = 20000,
         CancellationToken ct = default);
 }

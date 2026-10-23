@@ -163,10 +163,14 @@
                                                    Text="{Binding IsFolder, Converter={StaticResource BoolToIcon}}"
                                                    Foreground="{Binding IsFolder, Converter={StaticResource BoolToBrush}}" />
 
-                                        <!-- Name -->
-                                        <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
+                                        <!-- Name. Synthetic (never-synced) ancestors render italic and muted so the
+                                             distinction from a real synced folder is obvious. -->
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                                   FontSize="13" Margin="4,0,10,0"
+                                                   Text="{Binding Name}"
+                                                   FontStyle="{Binding IsSynced, Converter={StaticResource BoolToFontStyle}}"
                                                    FontWeight="{Binding IsFolder, Converter={StaticResource BoolToWeight}}"
-                                                   FontSize="13" Margin="4,0,10,0" />
+                                                   Foreground="{Binding IsSynced, Converter={StaticResource BoolToTextBrush}}" />
 
                                         <!-- Dimensions badge -->
                                         <Border Grid.Column="2" Background="#F3E8FF" CornerRadius="4"

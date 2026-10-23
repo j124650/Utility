@@ -5,14 +5,17 @@ using Utility.Server.DropBoxSync.Entities;
 namespace Utility.Server.DropBoxSync;
 
 /// <summary>
-/// Builds a display tree from the rows already stored in ml.DropBoxNode.
+/// Builds a display tree from the rows already stored in ml.DropBoxNode, deriving the
+/// hierarchy from each row's FULL PATH.
 /// <para>
-/// Reads the database only - it never calls Dropbox. That is the whole value of syncing:
-/// the dashboard renders instantly from the table instead of walking the API.
+/// Why the path and not ParentId: a sync that starts deep leaves the ancestors above it
+/// unsynced, so those rows have ParentId = NULL. Following ParentId alone would render
+/// the deepest synced folder as a floating root with no context above it. Splitting the
+/// path rebuilds the full chain and marks the never-synced ancestors as synthetic, so the
+/// tree reads correctly for any subset that has been synced.
 /// </para>
 /// <para>
-/// The table is a flat adjacency list (ParentId), so the tree is assembled in memory from
-/// one ordered query rather than with a recursive CTE per node - which would be N+1.
+/// Reads the database only - it never calls Dropbox.
 /// </para>
 /// </summary>
 public sealed class DropBoxTreeService(
@@ -21,7 +24,7 @@ public sealed class DropBoxTreeService(
 {
     public async Task<(IReadOnlyList<DropBoxTreeNode> Roots, DropBoxTreeSummary Summary)> GetSyncedTreeAsync(
         string? namespaceId = null,
-        int maxNodes = 5000,
+        int maxRows = 20000,
         CancellationToken ct = default)
     {
         await using var db = contextFactory.CreateDbContext();
@@ -36,7 +39,7 @@ public sealed class DropBoxTreeService(
 
         var rows = await query
             .OrderBy(n => n.PathLower)
-            .Take(maxNodes)
+            .Take(maxRows)
             .ToListAsync(ct);
 
         var summary = new DropBoxTreeSummary(
@@ -54,78 +57,142 @@ public sealed class DropBoxTreeService(
             return ([], summary);
         }
 
-        var byId = rows.ToDictionary(r => r.Id);
-        var childrenOf = new Dictionary<long, List<long>>();
+        // A mutable scaffold keyed by the ORIGINAL-CASE segment as it appears in the path.
+        // Keyed on the lowercased form so "DC_SHOES" and "dc_shoes" resolve to one node -
+        // Dropbox's own path_lower is the canonical comparison key, and a single folder can
+        // legitimately appear with different case in two parents.
+        var roots = new List<Scaffold>();
 
         foreach (var row in rows)
         {
-            if (row.ParentId is null)
+            var segments = SplitPath(row.PathDisplay);
+            if (segments.Count == 0)
             {
                 continue;
             }
 
-            // Guard against a parent that fell outside the page: an orphan must become a
-            // root rather than silently vanish from the tree.
-            if (!byId.ContainsKey(row.ParentId.Value))
+            var level = roots;
+            Scaffold? node = null;
+            var builtPath = new System.Text.StringBuilder();
+
+            for (var i = 0; i < segments.Count; i++)
             {
-                continue;
+                var segment = segments[i];
+
+                if (i > 0)
+                {
+                    builtPath.Append('/');
+                }
+
+                builtPath.Append(segment);
+
+                var found = level.FirstOrDefault(
+                    c => string.Equals(c.Segment, segment, StringComparison.OrdinalIgnoreCase));
+
+                if (found is null)
+                {
+                    found = new Scaffold(segment, "/" + builtPath);
+                    level.Add(found);
+                }
+
+                node = found;
+                level = found.Children;
             }
 
-            if (!childrenOf.TryGetValue(row.ParentId.Value, out var list))
+            // The last segment is this row itself.
+            if (node is not null)
             {
-                list = [];
-                childrenOf[row.ParentId.Value] = list;
+                node.Row = row;
             }
-
-            list.Add(row.Id);
         }
 
-        var built = new Dictionary<long, DropBoxTreeNode>(rows.Count);
-
-        DropBoxTreeNode Build(long id)
+        var built = new List<DropBoxTreeNode>(roots.Count);
+        foreach (var root in roots)
         {
-            if (built.TryGetValue(id, out var cached))
-            {
-                return cached;
-            }
-
-            var row = byId[id];
-
-            var childIds = childrenOf.TryGetValue(id, out var kids) ? kids : [];
-            var children = childIds
-                .Select(Build)
-                .OrderByDescending(c => c.IsFolder)
-                .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            var node = new DropBoxTreeNode(
-                row.Id,
-                row.Name,
-                row.PathDisplay,
-                row.IsFolder,
-                childIds.Count,
-                row.SizeBytes ?? 0,
-                row.WidthPixels,
-                row.HeightPixels,
-                row.MediaInfoTag,
-                row.ServerModified,
-                row.SyncStatus ?? "(none)")
-            {
-                Children = children
-            };
-
-            built[id] = node;
-            return node;
+            built.Add(Build(root));
         }
 
-        // Rows with no parent, plus orphans whose parent was not in the page.
-        var roots = rows
-            .Where(r => r.ParentId is null || !byId.ContainsKey(r.ParentId.Value))
-            .Select(r => Build(r.Id))
+        var ordered = built
             .OrderByDescending(r => r.IsFolder)
             .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return (roots, summary);
+        return (ordered, summary);
+    }
+
+    /// <summary>
+    /// Splits a Dropbox path into its segments. Dropbox returns namespace-absolute paths,
+    /// so the split is unambiguous and never needs the parent row to interpret it.
+    /// </summary>
+    private static List<string> SplitPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path == "/")
+        {
+            return [];
+        }
+
+        return path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries).ToList();
+    }
+
+    private static DropBoxTreeNode Build(Scaffold scaffold)
+    {
+        var children = scaffold.Children
+            .Select(Build)
+            .OrderByDescending(c => c.IsFolder)
+            .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var row = scaffold.Row;
+
+        if (row is null)
+        {
+            // An ancestor that exists only in the path - never synced itself.
+            return new DropBoxTreeNode(
+                id: 0,
+                name: scaffold.Segment,
+                fullPath: scaffold.FullPath,
+                isFolder: true,
+                childCount: children.Count,
+                sizeBytes: 0,
+                widthPixels: null,
+                heightPixels: null,
+                mediaInfoTag: null,
+                serverModified: null,
+                syncStatus: "(not synced)",
+                isSynced: false)
+            {
+                Children = children
+            };
+        }
+
+        return new DropBoxTreeNode(
+            id: row.Id,
+            name: row.Name,
+            fullPath: row.PathDisplay,
+            isFolder: row.IsFolder,
+            childCount: children.Count,
+            sizeBytes: row.SizeBytes ?? 0,
+            widthPixels: row.WidthPixels,
+            heightPixels: row.HeightPixels,
+            mediaInfoTag: row.MediaInfoTag,
+            serverModified: row.ServerModified,
+            syncStatus: row.SyncStatus ?? "(none)",
+            isSynced: true)
+        {
+            Children = children
+        };
+    }
+
+    /// <summary>Mutable node used while assembling the tree from paths.</summary>
+    private sealed class Scaffold(string segment, string fullPath)
+    {
+        public string Segment { get; } = segment;
+
+        public string FullPath { get; } = fullPath;
+
+        public List<Scaffold> Children { get; } = [];
+
+        /// <summary>The synced row at this exact path, or null for a synthetic ancestor.</summary>
+        public DropBoxNode? Row { get; set; }
     }
 }

@@ -13,6 +13,8 @@
             <conv:BoolToIconConverter x:Key="BoolToIcon" />
             <conv:BoolToBrushConverter x:Key="BoolToBrush" />
             <conv:BoolToWeightConverter x:Key="BoolToWeight" />
+            <conv:BoolToFontStyleConverter x:Key="BoolToFontStyle" />
+            <conv:BoolToTextBrushConverter x:Key="BoolToTextBrush" />
 
             <!-- Status palette -->
             <SolidColorBrush x:Key="SuccessBrush" Color="#16A34A" />

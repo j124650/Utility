@@ -101,3 +101,42 @@ public sealed class BoolToWeightConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>true -> Normal, false -> Italic. Marks synthetic (never-synced) ancestors.</summary>
+public sealed class BoolToFontStyleConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is true ? FontStyles.Normal : FontStyles.Italic;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>
+/// true -> a strong foreground, false -> a muted one. The colour arrives as a converter
+/// parameter so the palette stays in one place.
+/// </summary>
+public sealed class BoolToTextBrushConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var isTrue = value is true;
+
+        if (parameter is not string hex || hex.Length == 0)
+        {
+            return isTrue ? Brushes.Black : Brushes.Gray;
+        }
+
+        try
+        {
+            return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)!);
+        }
+        catch (FormatException)
+        {
+            return isTrue ? Brushes.Black : Brushes.Gray;
+        }
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
