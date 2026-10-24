@@ -167,3 +167,16 @@ CREATE NONCLUSTERED INDEX IX_DropBoxNode_Dimensions
     INCLUDE (PathDisplay, SizeBytes)
     WHERE MediaInfoTag IS NOT NULL AND MediaInfoTag <> 'pending';
 GO
+
+-- Serves "which files are called this name" - the Finder's candidate lookup joins
+-- ml.Media.FileName to this column. Not speculative: that join is the Finder's one
+-- query over the whole index, and without it the join has no path to Name.
+-- The INCLUDEs are the candidate's own fields, so the lookup is covered by the
+-- index alone.
+--
+-- Name and ml.Media.FileName are both CI_AS, so the equality join is case-insensitive
+-- and needs no collation override.
+CREATE NONCLUSTERED INDEX IX_DropBoxNode_Name
+    ON ml.DropBoxNode (Name)
+    INCLUDE (IsFolder, SizeBytes, WidthPixels, HeightPixels, ServerModified);
+GO
