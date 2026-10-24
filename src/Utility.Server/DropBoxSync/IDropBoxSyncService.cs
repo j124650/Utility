@@ -72,6 +72,29 @@ public interface IDropBoxSyncService : INotifyPropertyChanged
     /// <summary>True when a run has finished and its result has not been acknowledged yet.</summary>
     bool HasPendingResult { get; }
 
+    /// <summary>
+    /// True while a stop has been requested but the walk is still winding down.
+    /// <para>
+    /// The walk cannot be killed outright: the Dropbox SDK's calls do not take a
+    /// cancellation token, so a request that has already been sent runs to completion.
+    /// This is true for that window, and it is why the busy screen shows how many
+    /// downloaders are still running instead of offering a Close button.
+    /// </para>
+    /// </summary>
+    bool IsStopping { get; }
+
+    /// <summary>
+    /// True while the walk is running and has not been asked to stop. The Stop button
+    /// is bound to this, so it disappears the moment the stop is requested.
+    /// </summary>
+    bool CanStop { get; }
+
+    /// <summary>
+    /// Dropbox calls still in flight. Every request that has been sent but not yet
+    /// returned counts as one, so the number falls to zero as the walk winds down.
+    /// </summary>
+    int ActiveDownloaders { get; }
+
     /// <summary>The folder currently being listed.</summary>
     string CurrentPath { get; }
 

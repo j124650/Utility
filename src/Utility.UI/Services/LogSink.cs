@@ -20,10 +20,8 @@ public interface ILogSink
     ObservableCollection<string> Lines { get; }
 }
 
-public sealed class LogSink : ILogSink
+public sealed class LogSink(FileLog fileLog) : ILogSink
 {
-    private const int MaxLines = 500;
-
     public ObservableCollection<string> Lines { get; } = [];
 
     public void Info(string message) => Add("INFO", message);
@@ -35,6 +33,19 @@ public sealed class LogSink : ILogSink
     private void Add(string level, string message)
     {
         var line = $"{DateTime.Now:HH:mm:ss} [{level}] {message}";
+
+        // To the FILE first, and synchronously: the file is the record that has to
+        // survive the run, and this sink is where the app's own messages go. Writing
+        // it after the dispatcher post would lose the tail of the log to a crash.
+        fileLog.Write(
+            level switch
+            {
+                "INFO" => Microsoft.Extensions.Logging.LogLevel.Information,
+                "WARN" => Microsoft.Extensions.Logging.LogLevel.Warning,
+                _ => Microsoft.Extensions.Logging.LogLevel.Error
+            },
+            "Utility",
+            message);
 
         // Log lines can arrive from a background thread; the collection is bound to the
         // UI, so the insert must happen on the dispatcher.
@@ -48,12 +59,5 @@ public sealed class LogSink : ILogSink
         Insert(line);
     }
 
-    private void Insert(string line)
-    {
-        Lines.Insert(0, line);
-        while (Lines.Count > MaxLines)
-        {
-            Lines.RemoveAt(Lines.Count - 1);
-        }
-    }
+    private void Insert(string line) => Lines.Insert(0, line);
 }

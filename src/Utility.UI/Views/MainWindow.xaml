@@ -242,11 +242,14 @@
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
 
-                        <!-- Buttons on the dark panel: a translucent fill with a light
-                             border, so they read as controls rather than white slabs. -->
+                        <!--
+                          Stop disappears the moment it is pressed: the screen then shows
+                          how many downloaders are still running, and the walk closes the
+                          screen itself once they are all done.
+                        -->
                         <Button Content="Stop" Click="OnStopSyncClick" Padding="20,7" MinWidth="100"
                                 Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
-                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}"
+                                Visibility="{Binding CanStop, Converter={StaticResource BoolToVis}}"
                                 ToolTip="Cancels the walk. Rows already written are kept." />
 
                         <Button Content="Close" Click="OnCloseSyncClick" Padding="20,7" MinWidth="100"

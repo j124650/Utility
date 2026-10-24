@@ -92,6 +92,22 @@ public sealed class DropBoxSyncService(
     private string? _pendingError;
 
     /// <summary>
+    /// True once a stop has been requested, until the walk has fully wound down.
+    /// <para>
+    /// Kept apart from <see cref="_isRunning"/> because the two mean different things:
+    /// the walk is still RUNNING while it unwinds, but the user has already asked it to
+    /// stop, and the screen must not offer a Close button in that window.
+    /// </para>
+    /// </summary>
+    private volatile bool _stopRequested;
+
+    /// <summary>
+    /// Dropbox calls sent but not yet returned. Incremented before a request goes out
+    /// and decremented when it comes back, so the count falls as the walk unwinds.
+    /// </summary>
+    private int _activeDownloaders;
+
+    /// <summary>
     /// Counts the runs. A snapshot carries the number of the run that produced it, so a
     /// snapshot left over from a previous run is discarded instead of overwriting the
     /// state of the current one.
@@ -131,6 +147,22 @@ public sealed class DropBoxSyncService(
 
     /// <summary>True when a run has finished and its result has not been acknowledged yet.</summary>
     public bool HasPendingResult => _hasPendingResult;
+
+    /// <summary>
+    /// True while a stop has been requested but the walk is still winding down.
+    /// <para>
+    /// The walk is still running in this state, but it is on its way out, so the screen
+    /// must not offer a Close button: the user would be closing a screen whose walk had
+    /// not finished unwinding.
+    /// </para>
+    /// </summary>
+    public bool IsStopping => _isRunning && _stopRequested;
+
+    /// <summary>True while the walk is running and has not been asked to stop.</summary>
+    public bool CanStop => _isRunning && !_stopRequested;
+
+    /// <summary>Dropbox calls still in flight.</summary>
+    public int ActiveDownloaders => Volatile.Read(ref _activeDownloaders);
 
     /// <summary>The folder currently being listed.</summary>
     public string CurrentPath => Volatile.Read(ref _currentPath);
@@ -198,6 +230,13 @@ public sealed class DropBoxSyncService(
     {
         get
         {
+            if (IsStopping)
+            {
+                // The count is the number of Dropbox calls still in flight. It falls to
+                // zero as they return, and the screen closes itself when it does.
+                return $"Stopping downloads {ActiveDownloaders:N0}";
+            }
+
             if (_isRunning)
             {
                 return "Syncing from Dropbox";
@@ -411,7 +450,12 @@ public sealed class DropBoxSyncService(
             sw.Stop();
             logger.LogWarning("Dropbox sync of {Path} cancelled; rows already written are kept.", rootPath);
             _pendingRunning = false;
-            _pendingHasResult = true;
+
+            // A CANCELLED run does NOT leave a pending result. The user asked for the
+            // screen to close itself once the walk has unwound, and a pending result is
+            // what puts a Close button on it. The reason is still carried on the result
+            // object, so the caller can report it.
+            _pendingHasResult = false;
             _pendingError = "Cancelled.";
             var cancelled = new DropBoxSyncResult(
                 false, counts.Folders, counts.Files, level, sw.Elapsed, "Cancelled.");
@@ -460,6 +504,13 @@ public sealed class DropBoxSyncService(
         {
             return;
         }
+
+        // The stop is a REQUEST, not a kill. The walk keeps running until the calls that
+        // are already in flight return, and the busy screen has to show that. Set the
+        // flag and publish it BEFORE cancelling, so the screen switches to the stopping
+        // state immediately instead of sitting on "Syncing" until the wind-down ends.
+        _stopRequested = true;
+        Publish(force: true);
 
         cts.Cancel();
     }
@@ -642,11 +693,38 @@ public sealed class DropBoxSyncService(
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            return await dropBox.ListFolderAsync(path, ns, false, ct).ConfigureAwait(false);
+            // Counted as a downloader for the same reason as the metadata call: the
+            // request is in flight until it returns, and cannot be aborted.
+            Interlocked.Increment(ref _activeDownloaders);
+            try
+            {
+                return await dropBox.ListFolderAsync(path, ns, false, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeDownloaders);
+                PublishDownloads();
+            }
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Publishes the downloader count after one finishes.
+    /// <para>
+    /// Only while stopping: the count is what the busy screen shows, and the screen is
+    /// the only thing that displays it. Publishing on every request would flood the
+    /// dispatcher for a number nobody is looking at.
+    /// </para>
+    /// </summary>
+    private void PublishDownloads()
+    {
+        if (_stopRequested)
+        {
+            Publish(force: true);
         }
     }
 
@@ -744,6 +822,9 @@ public sealed class DropBoxSyncService(
         Raise(nameof(IsRunning));
         Raise(nameof(IsBusy));
         Raise(nameof(HasPendingResult));
+        Raise(nameof(IsStopping));
+        Raise(nameof(CanStop));
+        Raise(nameof(ActiveDownloaders));
         Raise(nameof(LastResult));
         Raise(nameof(Error));
         Raise(nameof(Headline));
@@ -768,6 +849,10 @@ public sealed class DropBoxSyncService(
 
         _levels.Clear();
         Volatile.Write(ref _currentPath, string.Empty);
+
+        // A new run is not a stopped run: the flag belongs to the previous walk.
+        _stopRequested = false;
+
         _pendingLastResult = null;
         _pendingError = null;
         _lastResult = null;
@@ -964,7 +1049,20 @@ public sealed class DropBoxSyncService(
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var info = await dropBox.GetFileInfoAsync(row.PathDisplay, ns, true, ct).ConfigureAwait(false);
+            // Counted as a downloader: the get_metadata call is in flight from here until
+            // it returns, and the SDK does not take a cancellation token, so a stop has
+            // to wait for it.
+            Interlocked.Increment(ref _activeDownloaders);
+            FileEntry info;
+            try
+            {
+                info = await dropBox.GetFileInfoAsync(row.PathDisplay, ns, true, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeDownloaders);
+                PublishDownloads();
+            }
 
             row.WidthPixels = info.HasDimensions ? (int?)info.WidthPixels : null;
             row.HeightPixels = info.HasDimensions ? (int?)info.HeightPixels : null;

@@ -1,3 +1,4 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +29,8 @@ public static class ServerServiceCollectionExtensions
                       "Server:ConnectionString must be configured.")
             .Validate(o => o.CommandTimeoutSeconds > 0,
                       "Server:CommandTimeoutSeconds must be positive.")
+            .Validate(o => o.ConnectTimeoutSeconds > 0,
+                      "Server:ConnectTimeoutSeconds must be positive.")
             .ValidateOnStart();
 
         // MlDbContext and the services that use it are TRANSIENT, so every page (and every
@@ -39,7 +42,7 @@ public static class ServerServiceCollectionExtensions
         {
             var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ServerOptions>>().Value;
 
-            db.UseSqlServer(opts.ConnectionString, sql =>
+            db.UseSqlServer(WithConnectTimeout(opts), sql =>
             {
                 sql.CommandTimeout(opts.CommandTimeoutSeconds);
 
@@ -86,11 +89,13 @@ public static class ServerServiceCollectionExtensions
         {
             var opts = sp.GetRequiredService<IOptions<ServerOptions>>().Value;
 
-            db.UseSqlServer(opts.ConnectionString, sql =>
+            db.UseSqlServer(WithConnectTimeout(opts), sql =>
             {
-                // A long walk commits in batches, so give each command room but keep a
-                // ceiling: a hung sweep should surface as an error, not a hang.
-                sql.CommandTimeout(Math.Max(opts.CommandTimeoutSeconds, 120));
+                // Same timeout as every other command. The sync used to raise it to a
+                // floor of 120s; with one global value there is nothing to raise it to,
+                // and two timeouts in one app is how the wrong one ends up being the
+                // one that fires.
+                sql.CommandTimeout(opts.CommandTimeoutSeconds);
 
                 if (opts.EnableRetryOnFailure)
                 {
@@ -105,6 +110,32 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<IDropBoxTreeService, DropBoxTreeService>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Rewrites the configured connection string so it carries a Connect Timeout.
+    /// <para>
+    /// The connect timeout is SqlClient's, and it is NOT what EF's
+    /// <c>CommandTimeout</c> sets. It bounds the whole login handshake - the
+    /// pre-login exchange and the server's post-login work - so it is the timeout that
+    /// fires when the server is under memory pressure and holding logins open. Left
+    /// unset it defaults to 15 seconds, which is short enough to end a walk that was
+    /// hours in.
+    /// </para>
+    /// <para>
+    /// Written through <see cref="SqlConnectionStringBuilder"/> rather than appended as
+    /// text so an existing Connect Timeout is replaced instead of duplicated, and a
+    /// connection string without one gains it.
+    /// </para>
+    /// </summary>
+    private static string WithConnectTimeout(ServerOptions opts)
+    {
+        var builder = new SqlConnectionStringBuilder(opts.ConnectionString)
+        {
+            ConnectTimeout = opts.ConnectTimeoutSeconds
+        };
+
+        return builder.ConnectionString;
     }
 
     /// <summary>

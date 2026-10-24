@@ -67,6 +67,25 @@ private static async Task WarmUpAsync(IServiceProvider services)
     {
         var builder = Host.CreateApplicationBuilder();
 
+        // The app's OWN log file, opened before the host so the very first log line
+        // already lands in it. One file per run, named for the moment the app
+        // started: a run's file says which run it belongs to.
+        //
+        // The file is opened here rather than lazily, because "when the app started"
+        // is a fact about THIS process, not about when something first needed
+        // logging.
+        var logDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Utility",
+            "logs");
+
+        var fileLog = FileLog.TryOpen(logDirectory, DateTime.Now);
+        builder.Logging.AddProvider(new FileLoggerProvider(fileLog));
+
+        // The same file instance, shared with the app's own LogSink, so the two
+        // channels (the logging pipeline and the sink) land in one file in order.
+        builder.Services.AddSingleton(fileLog);
+
         // appsettings.json next to the exe, then machine/user overrides.
         builder.Configuration
             .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)

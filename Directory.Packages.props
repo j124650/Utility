@@ -24,6 +24,12 @@
   <ItemGroup>
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.13" />
+    <!--
+      Referenced directly (not just transitively through EF Core) so the connection
+      string can be rewritten to carry a Connect Timeout. The connect timeout is
+      SqlClient's, and EF's options builder does not expose it.
+    -->
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.7" />
   </ItemGroup>
 
   <!-- Dropbox official SDK (Dropbox.Api v2) -->
