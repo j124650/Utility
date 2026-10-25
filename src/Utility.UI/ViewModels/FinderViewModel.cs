@@ -17,6 +17,7 @@ namespace Utility.UI.ViewModels;
 /// </summary>
 public sealed class FinderViewModel(
     IFinderService finder,
+    IFinderScanState scanState,
     IDropBoxPreviewClient preview,
     ILogSink log) : ViewModelBase
 {
@@ -29,7 +30,9 @@ public sealed class FinderViewModel(
     private string _filterText = string.Empty;
     private FinderVerdict? _verdictFilter;
     private string _summary = string.Empty;
-    private bool _hasRun;
+
+    /// <summary>The filter, as the server owns it (§14.3).</summary>
+    private readonly FinderFilter _filter = new();
 
     /// <summary>Every row the pass produced. The filters narrow this list in memory.</summary>
     public ObservableCollection<FinderRow> AllRows { get; } = [];
@@ -41,21 +44,19 @@ public sealed class FinderViewModel(
     public ObservableCollection<FinderCandidate> Candidates { get; } = [];
 
     /// <summary>
-    /// The checks the verdict rests on (§18.6) — one line each, so the reader sees why the
+    /// The rules the verdict rests on (§18.6) - one line each, so the reader sees why the
     /// verdict came out the way it did.
     /// </summary>
-    public ObservableCollection<FinderCheck> Checks { get; } = [];
+    public ObservableCollection<FinderRule> Rules { get; } = [];
 
     /// <summary>The verdicts the table can be filtered by.</summary>
-    public IReadOnlyList<FinderVerdict> VerdictFilterOptions { get; } =
-    [
-        FinderVerdict.NothingToDo,
-        FinderVerdict.RestoreParent,
-        FinderVerdict.RegenerateChild,
-        FinderVerdict.RestoreParentThenRegenerateChild,
-        FinderVerdict.NoOriginalNeedsDecision,
-        FinderVerdict.CannotRestore
-    ];
+    public IReadOnlyList<FinderVerdict> VerdictFilterOptions { get; } = FinderVerdict.All;
+
+    /// <summary>The parent states the table can be filtered by.</summary>
+    public IReadOnlyList<FileState> ParentStateFilterOptions { get; } = FileState.All;
+
+    /// <summary>The child states the table can be filtered by.</summary>
+    public IReadOnlyList<FileState> ChildStateFilterOptions { get; } = FileState.All;
 
     public AsyncRelayCommand RunCommand => _run ??= new AsyncRelayCommand(RunAsync);
 
@@ -72,24 +73,26 @@ public sealed class FinderViewModel(
                 OnPropertyChanged(nameof(HasSelection));
                 OnPropertyChanged(nameof(ParentFileName));
                 OnPropertyChanged(nameof(ParentState));
+                OnPropertyChanged(nameof(ParentSize));
                 OnPropertyChanged(nameof(ParentSizeCheck));
                 OnPropertyChanged(nameof(ParentDimensions));
-                OnPropertyChanged(nameof(ParentSize));
                 OnPropertyChanged(nameof(ParentFault));
                 OnPropertyChanged(nameof(HasParentFault));
                 OnPropertyChanged(nameof(ChildState));
+                OnPropertyChanged(nameof(ChildSize));
                 OnPropertyChanged(nameof(ChildSizeCheck));
                 OnPropertyChanged(nameof(ChildDimensions));
-                OnPropertyChanged(nameof(ChildSize));
                 OnPropertyChanged(nameof(ChildFault));
                 OnPropertyChanged(nameof(HasChildFault));
                 OnPropertyChanged(nameof(VerdictText));
+                OnPropertyChanged(nameof(VerdictIcon));
                 OnPropertyChanged(nameof(NoteText));
                 OnPropertyChanged(nameof(HasCandidates));
                 OnPropertyChanged(nameof(HasPreviewImage));
 
                 Candidates.Clear();
-                Checks.Clear();
+                Rules.Clear();
+
                 if (value is not null)
                 {
                     foreach (var candidate in value.Candidates)
@@ -97,12 +100,10 @@ public sealed class FinderViewModel(
                         Candidates.Add(candidate);
                     }
 
-                    // The checks the verdict rests on, in the order of §7 — ✓ where the rule is
-                    // respected, ✕ where it is not.
-                    Checks.Add(new FinderCheck(value.CheckParentOpens, "parent file opens"));
-                    Checks.Add(new FinderCheck(value.CheckChildOpens, "child file opens"));
-                    Checks.Add(new FinderCheck(value.CheckCandidatesFound, "candidates found"));
-                    Checks.Add(new FinderCheck(value.CheckOriginalConfirmed, "original confirmed by size"));
+                    foreach (var rule in FinderVerdictRules.ChecksFor(value))
+                    {
+                        Rules.Add(rule);
+                    }
                 }
 
                 ClearPreview();
@@ -114,41 +115,44 @@ public sealed class FinderViewModel(
 
     public string ParentFileName => Selected?.ParentFileName ?? string.Empty;
 
-    public string ParentState => Selected is null ? string.Empty : Describe(Selected.Parent);
+    public string ParentState => Selected?.Parent.State.Text ?? string.Empty;
 
-    public string ParentSizeCheck => Selected is null ? string.Empty : SizeCheckText(Selected.Parent);
+    public string ParentSize => Selected?.Parent.Size?.ToString("N0") ?? string.Empty;
 
-    public string ParentDimensions => Selected is null ? string.Empty : Selected.Parent.DimensionsDisplay;
+    public string ParentSizeCheck => Selected?.Parent.SizeCheck?.Text ?? string.Empty;
 
-    /// <summary>The parent's recorded size in bytes.</summary>
-    public string ParentSize => Selected?.Parent.SizeDisplay ?? string.Empty;
+    public string ParentDimensions => Selected?.Parent.Dimensions ?? string.Empty;
 
-    /// <summary>Why the parent would not open — worth a reader's attention when it is there but broken.</summary>
+    /// <summary>Why the parent would not open - worth a reader's attention when it is there but broken.</summary>
     public string ParentFault => Selected?.Parent.Fault ?? string.Empty;
 
     public bool HasParentFault => !string.IsNullOrEmpty(ParentFault);
 
-    public string ChildState => Selected is null ? string.Empty : Describe(Selected.Child);
+    public string ChildState => Selected?.Child.State.Text ?? string.Empty;
 
-    public string ChildSizeCheck => Selected is null ? string.Empty : SizeCheckText(Selected.Child);
+    public string ChildSize => Selected?.Child.Size?.ToString("N0") ?? string.Empty;
 
-    public string ChildDimensions => Selected is null ? string.Empty : Selected.Child.DimensionsDisplay;
+    public string ChildSizeCheck => Selected?.Child.SizeCheck?.Text ?? string.Empty;
 
-    /// <summary>The child's recorded size in bytes.</summary>
-    public string ChildSize => Selected?.Child.SizeDisplay ?? string.Empty;
+    public string ChildDimensions => Selected?.Child.Dimensions ?? string.Empty;
 
     /// <summary>Why the child would not open.</summary>
     public string ChildFault => Selected?.Child.Fault ?? string.Empty;
 
     public bool HasChildFault => !string.IsNullOrEmpty(ChildFault);
 
-    public string VerdictText => Selected?.Verdict.ToString() ?? string.Empty;
+    public string VerdictText => Selected?.Verdict.Text ?? string.Empty;
 
-    public string NoteText => Selected?.Note ?? string.Empty;
+    public string VerdictIcon => Selected?.VerdictIcon ?? string.Empty;
+
+    public string NoteText => Selected?.VerdictNote ?? string.Empty;
 
     public bool HasCandidates => Candidates.Count > 0;
 
-    /// <summary>Free-text filter over the file name and the folder.</summary>
+    /// <summary>
+    /// Free-text filter over the file name, the folder, a candidate's path or a candidate's
+    /// name (§14.3).
+    /// </summary>
     public string FilterText
     {
         get => _filterText;
@@ -156,6 +160,7 @@ public sealed class FinderViewModel(
         {
             if (SetProperty(ref _filterText, value))
             {
+                _filter.Text = value;
                 ApplyFilters();
             }
         }
@@ -169,6 +174,12 @@ public sealed class FinderViewModel(
         {
             if (SetProperty(ref _verdictFilter, value))
             {
+                _filter.Verdicts.Clear();
+                if (value.HasValue)
+                {
+                    _filter.Verdicts.Add(value.Value);
+                }
+
                 ApplyFilters();
             }
         }
@@ -219,7 +230,7 @@ public sealed class FinderViewModel(
                 SetStatus($"{info.Stage}: {info.Detail}");
             });
 
-            var rows = await finder.GetRowsAsync(new ProgressAdapter(progress));
+            var rows = await finder.GetMediaPairsAsync(new ProgressAdapter(progress), force: true);
 
             AllRows.Clear();
             foreach (var row in rows)
@@ -227,7 +238,6 @@ public sealed class FinderViewModel(
                 AllRows.Add(row);
             }
 
-            _hasRun = true;
             ApplyFilters();
 
             var counts = rows
@@ -235,8 +245,8 @@ public sealed class FinderViewModel(
                 .ToDictionary(g => g.Key, g => g.Count());
 
             Summary = $"{rows.Count:N0} pair(s). " +
-                      string.Join("  ", counts.OrderBy(c => c.Key)
-                          .Select(c => $"{c.Key} {c.Value:N0}"));
+                      string.Join("  ", counts.OrderBy(c => c.Key.Id)
+                          .Select(c => $"{c.Key.Text} {c.Value:N0}"));
 
             SetStatus($"Finder pass finished — {rows.Count:N0} pair(s).");
         }
@@ -296,28 +306,13 @@ public sealed class FinderViewModel(
     /// <summary>Applies the filters to the rows the pass produced.</summary>
     private void ApplyFilters()
     {
-        var text = FilterText?.Trim();
-
-        var filtered = AllRows.Where(row =>
-        {
-            if (VerdictFilter.HasValue && row.Verdict != VerdictFilter.Value)
-            {
-                return false;
-            }
-
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return true;
-            }
-
-            return row.ParentFileName.Contains(text, StringComparison.OrdinalIgnoreCase)
-                || row.ParentFolder.Contains(text, StringComparison.OrdinalIgnoreCase);
-        });
-
         Rows.Clear();
-        foreach (var row in filtered)
+        foreach (var row in AllRows)
         {
-            Rows.Add(row);
+            if (_filter.Matches(row))
+            {
+                Rows.Add(row);
+            }
         }
 
         OnPropertyChanged(nameof(RowsDisplay));
@@ -331,35 +326,9 @@ public sealed class FinderViewModel(
         PreviewState = string.Empty;
     }
 
-    private static string Describe(FinderFileState state) => state.State switch
-    {
-        FileState.Ok => "ok",
-        FileState.Missing => "missing",
-        FileState.Corrupted => "corrupted",
-        _ => string.Empty
-    };
-
-    private static string SizeCheckText(FinderFileState state) => state.SizeCheck switch
-    {
-        Server.Finder.SizeCheck.Match => "match",
-        Server.Finder.SizeCheck.Differs => "differs",
-        _ => string.Empty
-    };
-
     /// <summary>Carries the server's progress callback onto the UI thread.</summary>
     private sealed class ProgressAdapter(IProgress<FinderProgressInfo> inner) : IFinderProgress
     {
         public void Report(FinderProgressInfo info) => inner.Report(info);
     }
-}
-
-/// <summary>
-/// One check the verdict rests on, with the mark that says whether the rule is respected.
-/// </summary>
-/// <param name="Respected">True where the rule holds, false where it does not.</param>
-/// <param name="Text">What the check is about.</param>
-public sealed record FinderCheck(bool Respected, string Text)
-{
-    /// <summary>✓ where the rule is respected, ✕ where it is not.</summary>
-    public string Mark => Respected ? "✓" : "✕";
 }

@@ -61,8 +61,10 @@ public static class ServerServiceCollectionExtensions
 
         // The Finder: one service that gathers the pairs and computes their verdicts. The
         // library service reads the media library on disk; the preview client fetches a
-        // candidate's image from Dropbox and discards it.
+        // candidate's image from Dropbox and discards it. The scan state is a SINGLETON so
+        // the Finder tab and Liem's List share one pass.
         services.AddTransient<IFinderService, FinderService>();
+        services.AddSingleton<IFinderScanState, FinderScanState>();
         services.AddSingleton<IFinderLibraryService, FinderLibraryService>();
         services.AddTransient<IDropBoxPreviewClient, DropBoxPreviewClient>();
 

@@ -63,6 +63,8 @@ public partial class MainWindow : Window
 
     private void OnNavFinderClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Finder);
 
+    private void OnNavLiemListClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.LiemList);
+
     private void OnNavSettingsClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Settings);
 
     private async void OnStatusRefreshClick(object sender, RoutedEventArgs e)

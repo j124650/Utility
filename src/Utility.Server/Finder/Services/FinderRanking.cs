@@ -49,8 +49,7 @@ public static class FinderRanking
                 WhatMatched = WhatMatched(x.NameMatches, x.SizeMatches),
                 Name = x.Seed.Name,
                 Size = x.Seed.Size,
-                Width = x.Seed.Width,
-                Height = x.Seed.Height,
+                Dimensions = FinderFileState.FormatDimensions(x.Seed.Width, x.Seed.Height),
                 Path = x.Seed.Path,
                 Modified = x.Seed.Modified
             })

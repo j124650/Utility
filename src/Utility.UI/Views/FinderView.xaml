@@ -79,14 +79,20 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                        <TextBlock Text="File name or folder contains" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="File name, folder or candidate" Style="{StaticResource FieldLabel}" />
                         <TextBox Text="{Binding FilterText}" Margin="0" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Margin="0,0,10,0" MinWidth="170">
                         <TextBlock Text="Verdict" Style="{StaticResource FieldLabel}" />
                         <ComboBox ItemsSource="{Binding VerdictFilterOptions}"
-                                  SelectedItem="{Binding VerdictFilter}" />
+                                  SelectedItem="{Binding VerdictFilter}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Text}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                     </StackPanel>
 
                     <StackPanel Grid.Column="2" Margin="0,0,10,0" VerticalAlignment="Bottom">
@@ -134,20 +140,40 @@
                     <DataGridTemplateColumn Header="" Width="46">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Style="{StaticResource IconCell}" Text="{Binding Icon}" />
+                                <TextBlock Style="{StaticResource IconCell}" Text="{Binding VerdictIcon}" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <DataGridTextColumn Header="File name" Binding="{Binding ParentFileName}" Width="2*" />
-                    <DataGridTextColumn Header="Folder" Binding="{Binding ParentFolder}" Width="*" />
-                    <DataGridTextColumn Header="Parent" Binding="{Binding Parent.State}" Width="80" />
-                    <DataGridTextColumn Header="Parent size" Binding="{Binding Parent.SizeCheck}" Width="90" />
-                    <DataGridTextColumn Header="Child" Binding="{Binding Child.State}" Width="80" />
-                    <DataGridTextColumn Header="Child size" Binding="{Binding Child.SizeCheck}" Width="90" />
-                    <DataGridTextColumn Header="Candidates" Binding="{Binding CandidateCount}" Width="80" />
+                    <!-- Pair -->
+                    <DataGridTextColumn Header="Parent file name" Binding="{Binding ParentFileName}" Width="2*" />
+                    <DataGridTextColumn Header="Parent folder" Binding="{Binding ParentFolder}" Width="*" />
+                    <DataGridTextColumn Header="Parent id" Binding="{Binding ParentId}" Width="1.4*" />
+                    <DataGridTextColumn Header="Child id" Binding="{Binding ChildId}" Width="1.4*" />
+
+                    <!-- What each side needs -->
+                    <DataGridTextColumn Header="Parent size" Binding="{Binding Parent.Size}" Width="100" />
+                    <DataGridTextColumn Header="Parent dims" Binding="{Binding Parent.Dimensions}" Width="100" />
+                    <DataGridTextColumn Header="Parent state" Binding="{Binding Parent.State}" Width="85" />
+                    <DataGridTextColumn Header="Parent size check" Binding="{Binding Parent.SizeCheck}" Width="105" />
+                    <DataGridTextColumn Header="Child category" Binding="{Binding ChildCategory}" Width="90" />
+                    <DataGridTextColumn Header="Child variant" Binding="{Binding ChildVariant}" Width="90" />
+                    <DataGridTextColumn Header="Child size" Binding="{Binding Child.Size}" Width="100" />
+                    <DataGridTextColumn Header="Child dims" Binding="{Binding Child.Dimensions}" Width="100" />
+                    <DataGridTextColumn Header="Child state" Binding="{Binding Child.State}" Width="85" />
+                    <DataGridTextColumn Header="Child size check" Binding="{Binding Child.SizeCheck}" Width="105" />
+
+                    <!-- Verdict -->
                     <DataGridTextColumn Header="Verdict" Binding="{Binding Verdict}" Width="1.4*" />
-                    <DataGridTextColumn Header="Note" Binding="{Binding Note}" Width="*" />
+                    <DataGridTextColumn Header="Note" Binding="{Binding VerdictNote}" Width="*" />
+
+                    <!-- Candidates -->
+                    <DataGridTextColumn Header="Candidates" Binding="{Binding CandidateCount}" Width="85" />
+                    <DataGridTextColumn Header="Best rank" Binding="{Binding BestCandidate.Rank}" Width="80" />
+                    <DataGridTextColumn Header="Best name" Binding="{Binding BestCandidate.Name}" Width="2*" />
+                    <DataGridTextColumn Header="Best size" Binding="{Binding BestCandidate.Size}" Width="100" />
+                    <DataGridTextColumn Header="Best dims" Binding="{Binding BestCandidate.Dimensions}" Width="100" />
+                    <DataGridTextColumn Header="Best path" Binding="{Binding BestCandidate.Path}" Width="2*" />
                 </DataGrid.Columns>
             </DataGrid>
 
@@ -265,7 +291,7 @@
                                 </StackPanel>
                             </Expander>
 
-                            <!-- Verdict and the checks it rests on -->
+                            <!-- Verdict and the rules it rests on -->
                             <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
@@ -277,11 +303,14 @@
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel Margin="0,6,0,8">
-                                    <TextBlock Text="{Binding VerdictText}" Style="{StaticResource InfoValue}" FontWeight="SemiBold" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding VerdictIcon}" FontSize="13" Margin="0,0,6,0" />
+                                        <TextBlock Text="{Binding VerdictText}" Style="{StaticResource InfoValue}" FontWeight="SemiBold" />
+                                    </StackPanel>
                                     <TextBlock Text="{Binding NoteText}" Style="{StaticResource InfoValue}" Foreground="#6B7280" Margin="0,2,0,0" />
 
-                                    <!-- The checks: ✓ where the rule is respected, ✕ where it is not. -->
-                                    <ItemsControl ItemsSource="{Binding Checks}" Margin="0,8,0,0">
+                                    <!-- The rules: ✓ where the rule is respected, ✕ where it is not. -->
+                                    <ItemsControl ItemsSource="{Binding Rules}" Margin="0,8,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal" Margin="0,1">
@@ -326,7 +355,7 @@
                                                     </StackPanel>
                                                     <TextBlock Text="{Binding WhatMatched}" FontSize="10" Foreground="#6B7280" />
                                                     <TextBlock Text="{Binding SizeDisplay}" FontSize="10" Foreground="#6B7280" />
-                                                    <TextBlock Text="{Binding DimensionsDisplay}" FontSize="10" Foreground="#6B7280" />
+                                                    <TextBlock Text="{Binding Dimensions}" FontSize="10" Foreground="#6B7280" />
                                                     <TextBlock Text="{Binding ModifiedDisplay}" FontSize="10" Foreground="#6B7280" />
                                                     <TextBlock Text="{Binding Path}" FontSize="10" Foreground="#94A3B8"
                                                                TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />

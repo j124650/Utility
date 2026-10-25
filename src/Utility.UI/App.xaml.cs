@@ -117,6 +117,7 @@ private static async Task WarmUpAsync(IServiceProvider services)
         builder.Services.AddTransient<DropBoxViewModel>();
         builder.Services.AddTransient<MediaViewModel>();
         builder.Services.AddTransient<FinderViewModel>();
+        builder.Services.AddTransient<LiemListViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
 
         builder.Services.AddSingleton<MainWindow>();
@@ -124,6 +125,7 @@ private static async Task WarmUpAsync(IServiceProvider services)
         builder.Services.AddTransient<DropBoxView>();
         builder.Services.AddTransient<MediaView>();
         builder.Services.AddTransient<FinderView>();
+        builder.Services.AddTransient<LiemListView>();
         builder.Services.AddTransient<SettingsView>();
 
         builder.Logging.AddSimpleConsole();

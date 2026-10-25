@@ -61,8 +61,7 @@ public sealed class FinderLibraryService : IFinderLibraryService
                 State = FileState.Missing,
                 Size = recordedSize,
                 SizeCheck = null,
-                Width = recordedWidth,
-                Height = recordedHeight
+                Dimensions = FinderFileState.FormatDimensions(recordedWidth, recordedHeight)
             };
         }
 
@@ -80,8 +79,7 @@ public sealed class FinderLibraryService : IFinderLibraryService
                 State = FileState.Missing,
                 Size = recordedSize,
                 SizeCheck = null,
-                Width = recordedWidth,
-                Height = recordedHeight,
+                Dimensions = FinderFileState.FormatDimensions(recordedWidth, recordedHeight),
                 Fault = ex.Message
             };
         }
@@ -97,8 +95,7 @@ public sealed class FinderLibraryService : IFinderLibraryService
             State = state,
             Size = recordedSize,
             SizeCheck = sizeCheck,
-            Width = recordedWidth,
-            Height = recordedHeight,
+            Dimensions = FinderFileState.FormatDimensions(recordedWidth, recordedHeight),
             Fault = fault
         };
     }

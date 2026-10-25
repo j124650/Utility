@@ -689,8 +689,10 @@ through a delegate.
 
 - **`Utility.Server`** — a Finder service, service-based access with intent-named methods, in
   the style of `IMlDataService`: `GetMediaPairsAsync(...)`, `GetDropBoxCandidatesAsync(...)`,
-  `GetLiemListAsync(...)`. Reads go through `MlDbContext` (read-only) and `DropBoxDbContext`
-  (`ml.DropBoxNode`).
+  `GetLiemListAsync(...)`. Reads go through `IMlDataService` for the `ml` schema's own surface
+  (the settings, the media folders), and one raw ADO.NET connection for the set-based queries —
+  they need a CTE, a temp table and a single round trip, which the query builder does not give.
+  `ml.DropBoxNode` is read through the same connection.
 - **One set-based query** for the pairs and their name-matched candidates (§19.3, §19.4). The
   lookup is a join over the Dropbox index, and the index carries
   `IX_DropBoxNode_Name` on `Name`, so both the join and the per-parent seeks have a path to it.
@@ -721,8 +723,9 @@ through a delegate.
 - Writing findings back to `ml.media` — read-only to this app. Nothing that depends on
   `ml.media` needs to follow the Finder.
 - Re-running the Dropbox sync.
-- Any change to the `ml` schema — the only index this spec adds is
-  `IX_DropBoxNode_Name` on the table this app owns (§16).
+- Any change to the `ml` schema — the only changes this spec adds are on the table this app
+  owns (§16): `IX_DropBoxNode_Name` on `Name`, and `IX_DropBoxNode_NameKey` on the
+  `NameKey` computed column, which the similarity widening joins on.
 
 ---
 

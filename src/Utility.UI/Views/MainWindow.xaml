@@ -118,6 +118,8 @@
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavMediaClick" />
                 <RadioButton x:Name="NavFinder" GroupName="Nav" Content="Finder"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavFinderClick" />
+                <RadioButton x:Name="NavLiemList" GroupName="Nav" Content="Liem's List"
+                             Style="{StaticResource NavButtonStyle}" Checked="OnNavLiemListClick" />
                 <RadioButton x:Name="NavSettings" GroupName="Nav" Content="Settings"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavSettingsClick" />
             </StackPanel>

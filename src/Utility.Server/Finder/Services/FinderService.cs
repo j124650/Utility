@@ -22,13 +22,22 @@ namespace Utility.Server.Finder.Services;
 public sealed class FinderService(
     IMlDataService ml,
     IFinderLibraryService library,
+    IFinderScanState scanState,
     IOptions<ServerOptions> options) : IFinderService
 {
-    public async Task<IReadOnlyList<FinderRow>> GetRowsAsync(
+    public async Task<IReadOnlyList<FinderRow>> GetMediaPairsAsync(
         IFinderProgress? progress = null,
-        int? maxPairs = null,
+        bool force = false,
         CancellationToken ct = default)
     {
+        // The rows are kept so the Finder tab and Liem's List share one pass. A second pass
+        // is run only when the caller asks for one.
+        if (!force && scanState.IsLoaded)
+        {
+            progress?.Report(new FinderProgressInfo("Reading pairs", 1, 1, $"{scanState.Rows.Count} pair(s), from the last pass"));
+            return scanState.Rows;
+        }
+
         var settings = await ml.GetSettingsAsync(ct);
         var configuredRoot = settings?.MediaLibraryLocalPath;
 
@@ -49,7 +58,7 @@ public sealed class FinderService(
         // ---- Phase 1: one set-based query for the pairs and their name-matched candidates ----
         progress?.Report(new FinderProgressInfo("Reading pairs", 0, 1, "Querying ml.media and ml.DropBoxNode"));
 
-        var pairs = await LoadPairsAsync(libraryRoot, maxPairs, ct);
+        var pairs = await LoadPairsAsync(ct);
         progress?.Report(new FinderProgressInfo("Reading pairs", 1, 1, $"{pairs.Count} pair(s)"));
 
         // ---- Phase 2: visit every file on disk ----
@@ -111,7 +120,7 @@ public sealed class FinderService(
             var checkChildOpens = state.Child.State == FileState.Ok;
             var checkCandidatesFound = candidates.Count > 0;
             var checkOriginalConfirmed = exact.Count > 0;
-            bool? checkTiebreak = exact.Count > 1 ? true : null;
+            var tiebreakApplied = exact.Count > 1;
 
             var verdict = FinderVerdictRules.Decide(
                 checkParentOpens, checkChildOpens, checkCandidatesFound, checkOriginalConfirmed);
@@ -127,19 +136,69 @@ public sealed class FinderService(
                 Parent = state.Parent,
                 Child = state.Child,
                 Verdict = verdict,
-                Note = FinderVerdictRules.Note(
-                    verdict, checkOriginalConfirmed, state.Parent.Fault, state.Child.Fault),
+                VerdictNote = FinderVerdictRules.Note(
+                    verdict, checkOriginalConfirmed, state.Parent.Fault, state.Child.Fault, tiebreakApplied),
                 CheckParentOpens = checkParentOpens,
                 CheckChildOpens = checkChildOpens,
                 CheckCandidatesFound = checkCandidatesFound,
                 CheckOriginalConfirmed = checkOriginalConfirmed,
-                CheckTiebreakApplied = checkTiebreak,
+                CheckTiebreakApplied = tiebreakApplied ? FinderCheck.Yes : null,
                 Candidates = candidates
             });
         }
 
+        var summary = new FinderScanSummary(
+            rows.Count,
+            rows.GroupBy(r => r.Verdict).ToDictionary(g => g.Key, g => g.Count()));
+
+        scanState.Publish(rows, summary);
+
         progress?.Report(new FinderProgressInfo("Done", rows.Count, rows.Count, $"{rows.Count} pair(s)"));
         return rows;
+    }
+
+    public async Task<IReadOnlyList<FinderCandidate>> GetDropBoxCandidatesAsync(
+        string parentFileName,
+        long? parentSize = null,
+        CancellationToken ct = default)
+    {
+        var seed = new PairSeed
+        {
+            ParentId = Guid.Empty,
+            ParentFileName = parentFileName,
+            ParentFolder = string.Empty,
+            ParentSize = parentSize,
+            ChildId = Guid.Empty,
+            ChildFolder = string.Empty,
+            NameMatchedCandidates = []
+        };
+
+        // The name matches come from one indexed seek on the name, and the widening adds the
+        // similar ones when the name matched nothing (§9.3).
+        await LoadNameMatchesAsync(seed, ct);
+
+        if (seed.NameMatchedCandidates.Count == 0)
+        {
+            await WidenCandidatesAsync([seed], ct);
+        }
+
+        return FinderRanking.Rank(
+            seed.NameMatchedCandidates
+                .Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified))
+                .ToList(),
+            parentFileName,
+            parentSize);
+    }
+
+    public async Task<IReadOnlyList<FinderRow>> GetLiemListAsync(
+        IFinderProgress? progress = null,
+        CancellationToken ct = default)
+    {
+        // Liem's List is a report on the SAME scan (§11), so it runs the pass only when
+        // there is no scan to report on.
+        var rows = await GetMediaPairsAsync(progress, force: false, ct);
+
+        return rows.Where(r => FinderVerdictRules.LeavesUnresolved(r.Verdict)).ToList();
     }
 
     /// <summary>
@@ -150,20 +209,12 @@ public sealed class FinderService(
     /// The join runs over the whole index, because <c>ml.DropBoxNode.Name</c> has an index and
     /// the query is a join - a per-parent lookup would scan the index once per pair.
     /// </remarks>
-    private async Task<List<PairSeed>> LoadPairsAsync(string libraryRoot, int? maxPairs, CancellationToken ct)
+    private async Task<List<PairSeed>> LoadPairsAsync(CancellationToken ct)
     {
-        var connectionString = options.Value.ConnectionString;
-        var builder = new SqlConnectionStringBuilder(connectionString)
-        {
-            ConnectTimeout = options.Value.ConnectTimeoutSeconds
-        };
-
-        await using var connection = new SqlConnection(builder.ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
 
         const string sql = """
-            SELECT {TOP}
-                   p.Id                AS ParentId,
+            SELECT p.Id                AS ParentId,
                    p.FileName          AS ParentFileName,
                    p.Path              AS ParentFolder,
                    p.Size              AS ParentSize,
@@ -186,12 +237,9 @@ public sealed class FinderService(
             ORDER BY p.Id
             """;
 
-        // TOP bounds the joined rows, which is what the pass needs - one row is one pair.
-        var query = sql.Replace("{TOP}", maxPairs.HasValue ? $"TOP ({maxPairs.Value})" : string.Empty);
-
         var pairs = new List<PairSeed>();
 
-        await using (var command = new SqlCommand(query, connection))
+        await using (var command = new SqlCommand(sql, connection))
         {
             command.CommandTimeout = options.Value.CommandTimeoutSeconds;
 
@@ -220,15 +268,16 @@ public sealed class FinderService(
 
         // The candidates that matched by name, for the same parents - one more set-based query,
         // because a per-parent lookup would scan the index once per pair.
-        await LoadNameMatchedCandidatesAsync(connection, pairs, maxPairs, ct);
+        await LoadNameMatchedCandidatesAsync(pairs, ct);
 
         return pairs;
     }
 
+    /// <summary>
+    /// The candidates whose name matches the parent's file name, for a set of pairs.
+    /// </summary>
     private async Task LoadNameMatchedCandidatesAsync(
-        SqlConnection connection,
-        List<PairSeed> pairs,
-        int? maxPairs,
+        IReadOnlyList<PairSeed> pairs,
         CancellationToken ct)
     {
         if (pairs.Count == 0)
@@ -236,33 +285,21 @@ public sealed class FinderService(
             return;
         }
 
-        // The candidate query runs off the SAME parent set as the pair query, so a bounded pass
-        // gets candidates for exactly the parents it loaded - not for the first N candidate
-        // rows in the library, which would be a different N parents entirely.
-        //
-        // The CTE's ORDER BY is only there to make TOP pick the same parents the pair query
-        // picked, so it needs a TOP of its own. Without one, SQL Server rejects the ORDER BY.
-        const string candidateSql = """
-            WITH top_parents AS (
-                SELECT {TOP} p.Id, p.FileName
-                FROM ml.media p
-                WHERE p.OriginalMediaId IS NULL
-                  AND p.ExternalKey IS NOT NULL
-                  AND p.MediaTypeId IN (1, 2, 15)
-                ORDER BY p.Id
-            )
-            SELECT d.Name, d.SizeBytes, d.WidthPixels, d.HeightPixels, d.PathDisplay, d.ServerModified, tp.Id
-            FROM ml.DropBoxNode d
-            JOIN top_parents tp ON tp.FileName = d.Name
-            WHERE d.IsFolder = 0
-            """;
+        await using var connection = await OpenConnectionAsync(ct);
 
-        var top = maxPairs.HasValue ? $"TOP ({maxPairs.Value})" : "TOP (9223372036854775807)";
-        var candidateQuery = candidateSql.Replace("{TOP}", top);
+        const string sql = """
+            SELECT d.Name, d.SizeBytes, d.WidthPixels, d.HeightPixels, d.PathDisplay, d.ServerModified, p.Id
+            FROM ml.DropBoxNode d
+            JOIN ml.media p ON p.FileName = d.Name
+            WHERE d.IsFolder = 0
+              AND p.OriginalMediaId IS NULL
+              AND p.ExternalKey IS NOT NULL
+              AND p.MediaTypeId IN (1, 2, 15)
+            """;
 
         var byParent = pairs.ToDictionary(p => p.ParentId);
 
-        await using var command = new SqlCommand(candidateQuery, connection);
+        await using var command = new SqlCommand(sql, connection);
         command.CommandTimeout = options.Value.CommandTimeoutSeconds;
 
         await using var reader = await command.ExecuteReaderAsync(ct);
@@ -274,6 +311,43 @@ public sealed class FinderService(
                 continue;
             }
 
+            pair.NameMatchedCandidates.Add(new CandidateRow
+            {
+                Name = reader.GetString(0),
+                Size = reader.IsDBNull(1) ? null : reader.GetInt64(1),
+                Width = reader.IsDBNull(2) ? null : reader.GetInt32(2),
+                Height = reader.IsDBNull(3) ? null : reader.GetInt32(3),
+                Path = reader.GetString(4),
+                Modified = reader.IsDBNull(5) ? null : reader.GetDateTimeOffset(5)
+            });
+        }
+    }
+
+    /// <summary>
+    /// The candidates whose name matches one parent's file name.
+    /// </summary>
+    /// <remarks>
+    /// One indexed seek on the name - <c>IX_DropBoxNode_Name</c> - rather than the pair
+    /// query's join, because there is no pair set to join against.
+    /// </remarks>
+    private async Task LoadNameMatchesAsync(PairSeed pair, CancellationToken ct)
+    {
+        await using var connection = await OpenConnectionAsync(ct);
+
+        const string sql = """
+            SELECT Name, SizeBytes, WidthPixels, HeightPixels, PathDisplay, ServerModified
+            FROM ml.DropBoxNode
+            WHERE IsFolder = 0
+              AND Name = @name
+            """;
+
+        await using var command = new SqlCommand(sql, connection);
+        command.CommandTimeout = options.Value.CommandTimeoutSeconds;
+        command.Parameters.AddWithValue("@name", pair.ParentFileName);
+
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
             pair.NameMatchedCandidates.Add(new CandidateRow
             {
                 Name = reader.GetString(0),
@@ -304,11 +378,7 @@ public sealed class FinderService(
     /// </remarks>
     private async Task WidenCandidatesAsync(List<PairSeed> pairs, CancellationToken ct)
     {
-        await using var connection = new SqlConnection(new SqlConnectionStringBuilder(options.Value.ConnectionString)
-        {
-            ConnectTimeout = options.Value.ConnectTimeoutSeconds
-        }.ConnectionString);
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
 
         await using (var create = new SqlCommand(
             """
@@ -429,6 +499,17 @@ public sealed class FinderService(
 
         var upper = stem.ToUpperInvariant();
         return upper.Length <= 8 ? upper : upper[..8];
+    }
+
+    private async Task<SqlConnection> OpenConnectionAsync(CancellationToken ct)
+    {
+        var connection = new SqlConnection(new SqlConnectionStringBuilder(options.Value.ConnectionString)
+        {
+            ConnectTimeout = options.Value.ConnectTimeoutSeconds
+        }.ConnectionString);
+
+        await connection.OpenAsync(ct);
+        return connection;
     }
 
     private sealed record FileStates(FinderFileState Parent, FinderFileState Child);
