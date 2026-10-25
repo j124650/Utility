@@ -1110,6 +1110,11 @@ corrupted and whose name matched nothing, the candidate set is widened by simila
 
 Phase 2 is where the time goes. Phase 1 is one set-based pass over the database.
 
+**Measured on the live library**, the pass takes 52 seconds: the pairs query 1.5 s, the file
+check 35.6 s, the widening 13.8 s, the row building 1.4 s. Of the file check, about 12 s is
+asking whether each of the 727,712 files is there — and almost all of them are not — and about
+17 s is decoding the 215 that are.
+
 **The file pass is SEQUENTIAL.** The database pass finishes before the first file is opened,
 and the files are visited one at a time — one pair, then the next, with the parent and the
 child of each pair read in turn. Nothing runs beside anything else. That is what the busy
