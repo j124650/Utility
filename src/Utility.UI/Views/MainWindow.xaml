@@ -60,7 +60,7 @@
                 </Style>
 
                 <!--
-                  Blur applied to the app while the busy screen is up.
+                  Blur applied to the app while a busy screen is up.
 
                   WPF has no backdrop filter: an element's Effect blurs THAT element,
                   never what sits behind it. So the thing being covered has to carry the
@@ -69,11 +69,19 @@
 
                   The trigger reads IsBusy off the overlay's own DataContext (the sync
                   service), so the blur and the scrim always appear and disappear
-                  together.
+                  together. The Finder's pass gets the same treatment: a second trigger,
+                  and the last one that matches wins.
                 -->
                 <Style x:Key="BlurBehindOverlay" TargetType="FrameworkElement">
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding Sync.IsBusy, RelativeSource={RelativeSource AncestorType={x:Type Window}}}" Value="True">
+                            <Setter Property="Effect">
+                                <Setter.Value>
+                                    <BlurEffect Radius="10" />
+                                </Setter.Value>
+                            </Setter>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Finder.IsPassing, RelativeSource={RelativeSource AncestorType={x:Type Window}}}" Value="True">
                             <Setter Property="Effect">
                                 <Setter.Value>
                                     <BlurEffect Radius="10" />
@@ -308,8 +316,8 @@
                         <TextBlock Text="{Binding PassStage}" FontSize="18" FontWeight="SemiBold"
                                    Foreground="#F3F4F6" HorizontalAlignment="Center" />
 
-                        <TextBlock Text="{Binding PassDetail}" FontSize="12" Foreground="#A8ADB2"
-                                   HorizontalAlignment="Center" Margin="0,6,0,0"
+                        <TextBlock Text="{Binding PassDetail}" FontSize="14" Foreground="#E5E7EB"
+                                   HorizontalAlignment="Center" Margin="0,8,0,0"
                                    MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
 
                         <ProgressBar Height="4" Margin="0,20,0,0" Minimum="0" Maximum="100"

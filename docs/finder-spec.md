@@ -1026,9 +1026,14 @@ runs, the window is covered by a **busy screen**.
 - It is a **translucent dark scrim** with a **panel** in the middle: the stage, a progress bar,
   the counts and the cancel. The shape follows the app's existing busy screen (the sync
   overlay), so the two look like the same thing.
+- The app behind the scrim is **blurred**, the way the sync overlay blurs it. The app shows
+  through as soft shapes rather than legible text, so the panel is the only thing the reader
+  has to look at.
 - The panel is **half the window wide**, and it stays that width. It is **centred** — the
   middle half of the window, not the left half. Its width does not depend on what it says, so
   it does not jump about when the stage changes.
+- The stage name is the **brightest** thing on the panel; the counter under it is a clear
+  light gray, large enough to read at a glance.
 - It carries **the stage** — what the pass is doing right now: *Reading pairs*, *Checking
   files*, *Finding Candidates*, *Building rows*.
 - It carries **progress**, and the progress is **determinate for three of the four stages**:

@@ -15,6 +15,7 @@ public partial class MainWindow : Window
     private readonly IAppStatus _status;
     private readonly IDropBoxSyncService _sync;
     private readonly IDropBoxTreeState _treeState;
+    private readonly FinderViewModel _finder;
     private UserControl? _current;
 
     /// <summary>
@@ -25,6 +26,13 @@ public partial class MainWindow : Window
     /// </para>
     /// </summary>
     public IDropBoxSyncService Sync => _sync;
+
+    /// <summary>
+    /// The Finder's view model, exposed for the same reason the sync service is: the app
+    /// content BEHIND the Finder's busy screen needs to know whether the pass is running,
+    /// because that is what decides whether the blur is applied.
+    /// </summary>
+    public FinderViewModel Finder => _finder;
 
     public MainWindow(
         IServiceProvider services,
@@ -38,6 +46,7 @@ public partial class MainWindow : Window
         _status = status;
         _sync = sync;
         _treeState = treeState;
+        _finder = services.GetRequiredService<FinderViewModel>();
 
         InitializeComponent();
 
@@ -52,7 +61,7 @@ public partial class MainWindow : Window
 
         // The FINDER's busy screen binds to the Finder's view model, which is also a
         // singleton (§14.1) - the same pattern as the sync overlay above.
-        FinderOverlay.DataContext = services.GetRequiredService<FinderViewModel>();
+        FinderOverlay.DataContext = _finder;
 
         // Setting IsChecked raises Checked, which navigates. The Dashboard tab is hidden,
         // so the app opens on the Finder.
