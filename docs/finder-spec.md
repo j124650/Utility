@@ -328,7 +328,8 @@ the Finder only identifies it, because the verdict turns on whether it was found
    (`ml.Media.Path`). The importer stored `file.Length`, so an exact size match is the file most
    probably imported. The same filename sits in several folders as different crops; size tells
    them apart, and the folder says which copy was the one that was imported — the library's
-   folder *is* the Dropbox product folder.
+   folder *is* the Dropbox product folder. **A path that is unknown on either side passes the
+   check**: the rule removes a candidate only when its location is known to be somewhere else.
 3. **Tiebreak.** If more than one size match survives, take the most probable candidate. A
 candidate is identified by its **file name and its folder**. The most probable is the one
 whose path contains **`final`** (case-insensitive); where several do, the **most recently
@@ -406,6 +407,13 @@ confirmed original.
 Measured on the live library: of the 160,629 rank-0 candidates, **every one** is in the right
 folder, and of the 15,462 name-only candidates, **none** is. The condition is a guard that
 today never demotes a confirmed original and never fires on the real data.
+
+**An unknown path on either side passes the check.** The rule removes a candidate only when
+its location is **known** to be somewhere else: a parent with no folder says nothing about
+where its original was, and a candidate with no path has not been shown to be elsewhere. On the
+live library neither case arises — `ml.DropBoxNode.PathDisplay` is `NOT NULL` and never blank
+(214,882 files), and `ml.media.Path` is nullable in the schema but never null or blank for the
+363,897 parents — so this is the rule behaving as it should rather than a branch taken today.
 
 Within a rank, order by: `final` in path first → **most recently modified** → path depth →
 `PathLower` ascending.

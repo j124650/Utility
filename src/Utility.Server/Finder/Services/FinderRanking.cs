@@ -10,18 +10,22 @@ public static class FinderRanking
     /// </summary>
     /// <remarks>
     /// The library's <c>ml.Media.Path</c> IS the Dropbox product folder, so a candidate's
-    /// path contains it when the candidate is the file that was imported (§9.1 rule 3). A
-    /// candidate with no known folder cannot be disproved, so it counts as a match.
+    /// path contains it when the candidate is the file that was imported (§9.1 rule 3).
+    /// <para>
+    /// An unknown path on EITHER side cannot disprove anything, so the check passes: the
+    /// rule removes a candidate only when its location is KNOWN to be somewhere else. A
+    /// parent with no folder says nothing about where its original was, and a candidate
+    /// with no path has not been shown to be elsewhere.
+    /// </para>
     /// </remarks>
     public static bool FolderMatches(string? parentFolder, string? candidatePath)
     {
-        if (string.IsNullOrEmpty(parentFolder))
+        if (string.IsNullOrWhiteSpace(parentFolder) || string.IsNullOrWhiteSpace(candidatePath))
         {
             return true;
         }
 
-        return candidatePath is not null
-            && candidatePath.Contains(parentFolder, StringComparison.OrdinalIgnoreCase);
+        return candidatePath.Contains(parentFolder, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
