@@ -322,19 +322,21 @@ the Finder only identifies it, because the verdict turns on whether it was found
 
 ### 9.1 The rules
 
-1. **Candidates** = indexed Dropbox files whose `Name` matches the parent's `FileName`.
-2. **Select by size, and by folder.** Keep only candidates whose `SizeBytes` equals the parent's
-   `ml.Media.Size` **and** whose path contains the media library's folder for the parent
-   (`ml.Media.Path`). The importer stored `file.Length`, so an exact size match is the file most
+1. **Candidates** = indexed Dropbox files whose `Name` matches the parent's `FileName` **and**
+   whose path contains the media library's folder for the parent (`ml.Media.Path`). A candidate
+   is identified by its file name **and** its folder, and the library's folder *is* the Dropbox
+   product folder — so a file that shares the name but sits in another product's folder is not a
+   candidate for this parent at all. A path that is unknown on either side passes the check:
+   the rule removes a candidate only when its location is known to be somewhere else.
+2. **Select by size.** Keep only candidates whose `SizeBytes` equals the parent's
+   `ml.Media.Size`. The importer stored `file.Length`, so an exact size match is the file most
    probably imported. The same filename sits in several folders as different crops; size tells
-   them apart, and the folder says which copy was the one that was imported — the library's
-   folder *is* the Dropbox product folder. **A path that is unknown on either side passes the
-   check**: the rule removes a candidate only when its location is known to be somewhere else.
+   them apart.
 3. **Tiebreak.** If more than one size match survives, take the most probable candidate. A
 candidate is identified by its **file name and its folder**. The most probable is the one
 whose path contains **`final`** (case-insensitive); where several do, the **most recently
 modified** one (§10). **To be discussed — §13.1.**
-4. **No size-and-folder match → do not restore.** The pair goes on Liem's List.
+4. **No size match → do not restore.** The pair goes on Liem's List.
 
 **Assumption.** The Dropbox index is taken to be complete. If a filename is not found and its
 folder turns out never to have been listed, the index is re-synced and the Finder re-run —
@@ -405,15 +407,37 @@ matches and labelled **`name and size, different folder`**, so it is never mista
 confirmed original.
 
 Measured on the live library: of the 160,629 rank-0 candidates, **every one** is in the right
-folder, and of the 15,462 name-only candidates, **none** is. The condition is a guard that
-today never demotes a confirmed original and never fires on the real data.
+folder. The condition is a guard that never demotes a confirmed original.
 
 **An unknown path on either side passes the check.** The rule removes a candidate only when
 its location is **known** to be somewhere else: a parent with no folder says nothing about
 where its original was, and a candidate with no path has not been shown to be elsewhere. On the
 live library neither case arises — `ml.DropBoxNode.PathDisplay` is `NOT NULL` and never blank
-(214,882 files), and `ml.media.Path` is nullable in the schema but never null or blank for the
+(214,882 files), and `ml.Media.Path` is nullable in the schema but never null or blank for the
 363,897 parents — so this is the rule behaving as it should rather than a branch taken today.
+
+**The folder check is applied where the candidates enter the pair**, so no candidate anywhere in
+the records is outside its parent's product folder. Measured after the change: every one of the
+233,843 candidates in the records is in its parent's folder — 160,629 name-and-size, 53,585
+similar-name, 15,462 name-only, 4,167 size-only.
+
+What it removed, and what it did to the verdicts:
+
+| | before | after |
+|---|---:|---:|
+| candidates in the records | 326,976 | 233,843 |
+| rows carrying a candidate | 182,343 | 176,420 |
+| similar-name candidates | 145,597 | 53,585 |
+| size-only candidates | 5,288 | 4,167 |
+| **no original — needs a decision** | 22,434 | **16,511** |
+| **cannot restore** | 181,494 | **187,417** |
+| **unresolved in total** | 203,928 | **203,928** |
+
+The 92,012 candidates that went were the widening's wrong-product near-misses — a different
+product code one character away, in its own folder. The 5,923 pairs that moved from *needs a
+decision* to *cannot restore* are the pairs whose **only** candidates were those: nothing of
+their product is in Dropbox, so there is nothing to decide about and nothing to restore from.
+The unresolved total is unchanged.
 
 Within a rank, order by: `final` in path first → **most recently modified** → path depth →
 `PathLower` ascending.

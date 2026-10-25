@@ -355,6 +355,15 @@ public sealed class FinderService(
                 continue;
             }
 
+            // A candidate has to be in the library's folder to be a candidate at all
+            // (§9.1 rule 1): the library's folder IS the Dropbox product folder, so a
+            // candidate somewhere else is a different file that happens to share the name.
+            var path = reader.GetString(4);
+            if (!FinderRanking.FolderMatches(pair.ParentFolder, path))
+            {
+                continue;
+            }
+
             pair.NameMatchedCandidates.Add(new CandidateRow
             {
                 Name = reader.GetString(0),
@@ -608,6 +617,15 @@ public sealed class FinderService(
             }
 
             if (!FinderSimilarity.IsSimilar(pair.ParentFileName, row.Name))
+            {
+                continue;
+            }
+
+            // The same rule as the name matches (§9.1 rule 1): a candidate has to be in the
+            // library's folder to be a candidate at all. Without it, the widening's loose
+            // pool hands over the neighbours of the product code - a different product that
+            // happens to be one character away - and those are not restore sources.
+            if (!FinderRanking.FolderMatches(pair.ParentFolder, row.Path))
             {
                 continue;
             }
