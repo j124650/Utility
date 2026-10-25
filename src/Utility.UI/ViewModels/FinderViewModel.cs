@@ -87,8 +87,6 @@ public sealed class FinderViewModel(
                 OnPropertyChanged(nameof(VerdictText));
                 OnPropertyChanged(nameof(VerdictIcon));
                 OnPropertyChanged(nameof(NoteText));
-                OnPropertyChanged(nameof(HasCandidates));
-                OnPropertyChanged(nameof(HasPreviewImage));
 
                 Candidates.Clear();
                 Rules.Clear();
@@ -105,6 +103,12 @@ public sealed class FinderViewModel(
                         Rules.Add(rule);
                     }
                 }
+
+                // These two depend on the lists above, so they are raised AFTER the lists
+                // are filled. Raising them first would leave the pane showing the
+                // previous selection's answer.
+                OnPropertyChanged(nameof(HasCandidates));
+                OnPropertyChanged(nameof(HasPreviewImage));
 
                 ClearPreview();
             }

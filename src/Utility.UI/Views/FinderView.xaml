@@ -20,6 +20,16 @@
             <Setter Property="ToolTip" Value="Verdict" />
         </Style>
 
+        <!--
+          A cell's text. It TRUNCATES with an ellipsis rather than clipping, the way the
+          record is drawn in §18.4 ("D17343ED…"), so a narrow column still shows that the
+          value continues.
+        -->
+        <Style x:Key="CellText" TargetType="TextBlock">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
         <Style x:Key="InfoHeader" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -134,6 +144,9 @@
                       VirtualizingPanel.IsVirtualizing="True"
                       VirtualizingPanel.VirtualizationMode="Recycling"
                       ScrollViewer.CanContentScroll="True"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                      CanUserSortColumns="True"
                       AutoGenerateColumns="False">
                 <DataGrid.Columns>
                     <!-- The leading icon says the verdict. No colour anywhere. -->
@@ -146,34 +159,40 @@
                     </DataGridTemplateColumn>
 
                     <!-- Pair -->
-                    <DataGridTextColumn Header="Parent file name" Binding="{Binding ParentFileName}" Width="2*" />
-                    <DataGridTextColumn Header="Parent folder" Binding="{Binding ParentFolder}" Width="*" />
-                    <DataGridTextColumn Header="Parent id" Binding="{Binding ParentId}" Width="1.4*" />
-                    <DataGridTextColumn Header="Child id" Binding="{Binding ChildId}" Width="1.4*" />
+                    <DataGridTextColumn Header="Parent file name" Binding="{Binding ParentFileName}" Width="190" ElementStyle="{StaticResource CellText}" />
+                    <DataGridTextColumn Header="Parent folder" Binding="{Binding ParentFolder}" Width="130" ElementStyle="{StaticResource CellText}" />
+                    <DataGridTextColumn Header="Parent id" Binding="{Binding ParentId}" Width="180" ElementStyle="{StaticResource CellText}" />
+                    <DataGridTextColumn Header="Child id" Binding="{Binding ChildId}" Width="180" ElementStyle="{StaticResource CellText}" />
 
-                    <!-- What each side needs -->
-                    <DataGridTextColumn Header="Parent size" Binding="{Binding Parent.Size}" Width="100" />
-                    <DataGridTextColumn Header="Parent dims" Binding="{Binding Parent.Dimensions}" Width="100" />
-                    <DataGridTextColumn Header="Parent state" Binding="{Binding Parent.State}" Width="85" />
+                    <!--
+                      The two states side by side (§18.4), so the shape of the damage reads
+                      off the row without counting columns. The size checks follow, one for
+                      each side.
+                    -->
+                    <DataGridTextColumn Header="Parent state" Binding="{Binding Parent.State}" Width="90" />
+                    <DataGridTextColumn Header="Child state" Binding="{Binding Child.State}" Width="90" />
                     <DataGridTextColumn Header="Parent size check" Binding="{Binding Parent.SizeCheck}" Width="105" />
-                    <DataGridTextColumn Header="Child category" Binding="{Binding ChildCategory}" Width="90" />
-                    <DataGridTextColumn Header="Child variant" Binding="{Binding ChildVariant}" Width="90" />
-                    <DataGridTextColumn Header="Child size" Binding="{Binding Child.Size}" Width="100" />
-                    <DataGridTextColumn Header="Child dims" Binding="{Binding Child.Dimensions}" Width="100" />
-                    <DataGridTextColumn Header="Child state" Binding="{Binding Child.State}" Width="85" />
                     <DataGridTextColumn Header="Child size check" Binding="{Binding Child.SizeCheck}" Width="105" />
 
+                    <!-- The reference the candidates are judged against (§14.2). -->
+                    <DataGridTextColumn Header="Parent size" Binding="{Binding Parent.Size}" Width="100" />
+                    <DataGridTextColumn Header="Parent dims" Binding="{Binding Parent.Dimensions}" Width="105" />
+                    <DataGridTextColumn Header="Child size" Binding="{Binding Child.Size}" Width="100" />
+                    <DataGridTextColumn Header="Child dims" Binding="{Binding Child.Dimensions}" Width="105" />
+                    <DataGridTextColumn Header="Child category" Binding="{Binding ChildCategory}" Width="90" />
+                    <DataGridTextColumn Header="Child variant" Binding="{Binding ChildVariant}" Width="90" />
+
                     <!-- Verdict -->
-                    <DataGridTextColumn Header="Verdict" Binding="{Binding Verdict}" Width="1.4*" />
-                    <DataGridTextColumn Header="Note" Binding="{Binding VerdictNote}" Width="*" />
+                    <DataGridTextColumn Header="Verdict" Binding="{Binding Verdict}" Width="230" ElementStyle="{StaticResource CellText}" />
+                    <DataGridTextColumn Header="Note" Binding="{Binding VerdictNote}" Width="140" ElementStyle="{StaticResource CellText}" />
 
                     <!-- Candidates -->
                     <DataGridTextColumn Header="Candidates" Binding="{Binding CandidateCount}" Width="85" />
-                    <DataGridTextColumn Header="Best rank" Binding="{Binding BestCandidate.Rank}" Width="80" />
-                    <DataGridTextColumn Header="Best name" Binding="{Binding BestCandidate.Name}" Width="2*" />
+                    <DataGridTextColumn Header="Best rank" Binding="{Binding BestCandidate.Rank}" Width="75" />
+                    <DataGridTextColumn Header="Best name" Binding="{Binding BestCandidate.Name}" Width="190" ElementStyle="{StaticResource CellText}" />
                     <DataGridTextColumn Header="Best size" Binding="{Binding BestCandidate.Size}" Width="100" />
-                    <DataGridTextColumn Header="Best dims" Binding="{Binding BestCandidate.Dimensions}" Width="100" />
-                    <DataGridTextColumn Header="Best path" Binding="{Binding BestCandidate.Path}" Width="2*" />
+                    <DataGridTextColumn Header="Best dims" Binding="{Binding BestCandidate.Dimensions}" Width="105" />
+                    <DataGridTextColumn Header="Best path" Binding="{Binding BestCandidate.Path}" Width="320" ElementStyle="{StaticResource CellText}" />
                 </DataGrid.Columns>
             </DataGrid>
 

@@ -550,7 +550,8 @@ with progress and can be cancelled. The grid populates as verdicts arrive.
 ### 14.2 Columns
 
 One row per pair. Every column is a field of the row record (§19.1) — nothing here is
-re-derived. The columns are grouped by what the reader needs them for.
+re-derived. The columns are grouped by what the reader needs them for. The **order** they
+appear in the table is §18.4's; the groups below say what each one is for.
 
 **Status**
 
@@ -822,6 +823,9 @@ One row = one pair. What the row shows and how it is laid out.
 - **Candidates** — how many there are, and the best one's name, size, dimensions and path.
   Every pair carries the candidates that matched by name; a pair that needs a decision also
   carries the ones found by similarity (§19.4).
+- A value longer than its column is **truncated with an ellipsis**, the way the record is
+  drawn above (`D17343ED…`). The whole value is in the info area, and the column widens with
+  the table, so nothing is lost — the reader scrolls to it (§18.3).
 
 **The icon column.** One icon per row, in front of all the fields, showing what the pair needs:
 
