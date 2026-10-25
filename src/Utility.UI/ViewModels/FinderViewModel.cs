@@ -22,10 +22,12 @@ public sealed class FinderViewModel(
     IFinderService finder,
     IFinderScanState scanState,
     IDropBoxPreviewClient preview,
+    ILiemListReportPresenter reports,
     ILogSink log) : ViewModelBase
 {
     private AsyncRelayCommand? _run;
     private AsyncRelayCommand? _previewCommand;
+    private AsyncRelayCommand? _showLiemList;
     private RelayCommand? _cancelPass;
 
     private CancellationTokenSource? _passCts;
@@ -176,8 +178,39 @@ public sealed class FinderViewModel(
 
     public AsyncRelayCommand PreviewCommand => _previewCommand ??= new AsyncRelayCommand(PreviewAsync);
 
+    /// <summary>
+    /// Liem's List: the report of the pairs the verdict leaves unresolved (§14.5).
+    /// </summary>
+    /// <remarks>
+    /// The report is written to a temporary file and shown in a window of the app. It is
+    /// a report on the SAME pass this tab runs, so it is only as fresh as that pass.
+    /// </remarks>
+    public AsyncRelayCommand ShowLiemListCommand => _showLiemList ??= new AsyncRelayCommand(ShowLiemListAsync);
+
     /// <summary>Stops the running pass (§18.8).</summary>
     public RelayCommand CancelPassCommand => _cancelPass ??= new RelayCommand(_ => CancelPass());
+
+    /// <summary>
+    /// Writes Liem's List and shows it in a window (§14.5).
+    /// </summary>
+    /// <remarks>
+    /// The report is written to a temporary file and opened in the app's own window. The
+    /// window is modal, so the Finder cannot be used while the report is up.
+    /// </remarks>
+    private async Task ShowLiemListAsync()
+    {
+        try
+        {
+            var path = await reports.ShowAsync();
+
+            SetStatus($"Liem's List written to {path}.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message);
+            log.Error($"Liem's List failed: {ex}");
+        }
+    }
 
     /// <summary>The row the info area shows.</summary>
     public FinderRow? Selected

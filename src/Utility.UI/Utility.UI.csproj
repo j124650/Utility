@@ -20,6 +20,11 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
   </ItemGroup>
 
+  <!-- The report window's engine (docs/liems-list-spec.md §6.7). -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Utility.Server\Utility.Server.csproj" />
     <ProjectReference Include="..\Utility.DropBox\Utility.DropBox.csproj" />

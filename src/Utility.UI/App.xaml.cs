@@ -104,6 +104,9 @@ private static async Task WarmUpAsync(IServiceProvider services)
         builder.Services.AddSingleton<IAppStatus, AppStatus>();
         builder.Services.AddSingleton<IDropBoxTreeState, DropBoxTreeState>();
 
+        // Liem's List: the report is written to a file and shown in the app's own window.
+        builder.Services.AddTransient<ILiemListReportPresenter, LiemListReportPresenter>();
+
         // The sync service is a singleton (registered in AddUtilityServer): a walk of the
         // team folder takes a long time, and it must survive the user navigating away
         // from the page that started it. It owns and publishes its own run state, so the

@@ -184,7 +184,8 @@ public sealed class FinderService(
 
         var summary = new FinderScanSummary(
             rows.Count,
-            rows.GroupBy(r => r.Verdict).ToDictionary(g => g.Key, g => g.Count()));
+            rows.GroupBy(r => r.Verdict).ToDictionary(g => g.Key, g => g.Count()),
+            DateTimeOffset.Now);
 
         scanState.Publish(rows, summary);
 
@@ -307,7 +308,13 @@ public sealed class FinderService(
                     ChildVariant = reader.IsDBNull(12) ? (short?)null : reader.GetInt16(12),
                     ChildCategoryName = reader.IsDBNull(13) ? string.Empty : reader.GetString(13),
                     ChildVariantName = reader.IsDBNull(14) ? string.Empty : reader.GetString(14),
-                    ParentDateAdded = reader.IsDBNull(15) ? null : reader.GetDateTimeOffset(15),
+                    // ml.media.DateAdded is datetime2, which arrives as a DateTime and
+                    // carries no offset of its own. It is read as UTC and given that
+                    // offset, so the row's date is a DateTimeOffset like the rest of the
+                    // app's dates.
+                    ParentDateAdded = reader.IsDBNull(15)
+                        ? null
+                        : new DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(15), DateTimeKind.Utc)),
                     NameMatchedCandidates = []
                 });
             }

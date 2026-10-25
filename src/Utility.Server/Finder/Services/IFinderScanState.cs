@@ -26,4 +26,11 @@ public interface IFinderScanState
 /// <summary>What a pass found.</summary>
 /// <param name="Pairs">How many pairs the pass covered.</param>
 /// <param name="ByVerdict">How many pairs carry each verdict.</param>
-public sealed record FinderScanSummary(int Pairs, IReadOnlyDictionary<FinderVerdict, int> ByVerdict);
+/// <param name="At">
+/// When the pass finished - the moment the rows were published. A report on the pass
+/// names it, so the report says which pass it is on and when that pass was.
+/// </param>
+public sealed record FinderScanSummary(
+    int Pairs,
+    IReadOnlyDictionary<FinderVerdict, int> ByVerdict,
+    DateTimeOffset At);

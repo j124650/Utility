@@ -86,7 +86,7 @@ public sealed class DropBoxClientFactory(
 
         // Cheap round-trip that also proves the token works and has the right scopes.
         var account = await client.Users.GetCurrentAccountAsync();
-        logger.LogInformation("Dropbox client ready for account {AccountId}.", account.AccountId);
+        logger.LogInformation($"Dropbox client ready for account {account.Email}.");
 
         return client;
     }

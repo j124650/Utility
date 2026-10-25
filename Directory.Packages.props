@@ -46,6 +46,15 @@
     <PackageVersion Include="magick.net-q8-x64" Version="15.0.0" />
   </ItemGroup>
 
+  <!--
+    The report window's engine: the HTML report is read in a WebView2 (docs/liems-list-spec.md
+    §6.7). The Evergreen runtime is a shared system component; the package here is only the
+    control.
+  -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+  </ItemGroup>
+
   <!-- Crypto: pin patched version over vulnerable transitive 9.x -->
   <ItemGroup>
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />

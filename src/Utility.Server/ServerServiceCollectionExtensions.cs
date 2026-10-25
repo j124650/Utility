@@ -73,6 +73,10 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<IFinderLibraryService, FinderLibraryService>();
         services.AddTransient<IDropBoxPreviewClient, DropBoxPreviewClient>();
 
+        // Liem's List: the report of the pairs the verdict leaves unresolved. It reads the
+        // rows the pass gathered - it runs no pass of its own.
+        services.AddTransient<ILiemListReportService, LiemListReportService>();
+
         services.AddUtilityDropBoxSync(configuration);
 
         return services;
