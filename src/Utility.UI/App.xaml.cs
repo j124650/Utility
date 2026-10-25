@@ -116,9 +116,15 @@ private static async Task WarmUpAsync(IServiceProvider services)
         builder.Services.AddTransient<DashboardViewModel>();
         builder.Services.AddTransient<DropBoxViewModel>();
         builder.Services.AddTransient<MediaViewModel>();
-        builder.Services.AddTransient<FinderViewModel>();
-        builder.Services.AddTransient<LiemListViewModel>();
         builder.Services.AddTransient<SettingsViewModel>();
+
+        // The FINDER's view model is a SINGLETON, and so is Liem's List's. They hold no
+        // DbContext - they talk to services - and what they hold is expensive to rebuild:
+        // the rows of a pass over the whole library, the filter, the selected row. The
+        // Finder tab is loaded once and then looked at (§14.1), so switching tabs and
+        // coming back must not throw that away.
+        builder.Services.AddSingleton<FinderViewModel>();
+        builder.Services.AddSingleton<LiemListViewModel>();
 
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddTransient<DashboardView>();

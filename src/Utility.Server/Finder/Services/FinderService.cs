@@ -56,7 +56,9 @@ public sealed class FinderService(
             configuredRoot, settings?.MediaLibraryUncPath, mediaFolders);
 
         // ---- Phase 1: one set-based query for the pairs and their name-matched candidates ----
-        progress?.Report(new FinderProgressInfo("Reading pairs", 0, 1, "Querying ml.media and ml.DropBoxNode"));
+        // Total 0: the row count is not known until the query returns, so this stage's bar
+        // is indeterminate (§18.8).
+        progress?.Report(new FinderProgressInfo("Reading pairs", 0, 0, "Querying ml.media and ml.DropBoxNode"));
 
         var pairs = await LoadPairsAsync(ct);
         progress?.Report(new FinderProgressInfo("Reading pairs", 1, 1, $"{pairs.Count} pair(s)"));
@@ -100,6 +102,8 @@ public sealed class FinderService(
 
         // ---- Phase 4: the checks, the verdict and the row ----
         var rows = new List<FinderRow>(pairs.Count);
+        progress?.Report(new FinderProgressInfo("Building rows", 0, pairs.Count, $"{pairs.Count} row(s)"));
+
         for (var i = 0; i < pairs.Count; i++)
         {
             var pair = pairs[i];
@@ -147,6 +151,11 @@ public sealed class FinderService(
                 CheckTiebreakApplied = tiebreakApplied ? FinderCheck.Yes : null,
                 Candidates = candidates
             });
+
+            if ((i + 1) % 5000 == 0 || i + 1 == pairs.Count)
+            {
+                progress?.Report(new FinderProgressInfo("Building rows", i + 1, pairs.Count, $"{i + 1} of {pairs.Count}"));
+            }
         }
 
         var summary = new FinderScanSummary(

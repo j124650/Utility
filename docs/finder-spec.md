@@ -548,6 +548,14 @@ whose path contains **`final`**. Where several do, the **most recently modified*
   set rather than over a page (§14.3). The Dashboard tree keeps virtualization off because of
   TreeView expansion state; that constraint does not apply to a flat grid.
 
+**The pass runs by itself the first time the tab is shown.** The tab is where the app opens,
+and a pass is the only way to have anything to show, so the reader should not have to ask for
+it. The **Run the pass** button stays, for a re-run.
+
+**The tab keeps what it loaded.** Switching to another tab and back does not throw the rows
+away: the rows, the filter and the selected row are all still there. A pass is long and a
+re-run is not free, so the tab is a thing that is loaded once and then looked at.
+
 The load is a full pass over the library on local storage (§12.6), so it runs in the background
 with progress and can be cancelled. The grid populates as verdicts arrive.
 
@@ -795,11 +803,11 @@ later (§17), and the strip exists so they have a place.
 ```
 
 - Buttons are grouped left, separated by dividers.
-- The right side carries **status text** — how many pairs are loaded, and where the scan has
-  reached.
+- The right side carries **status text** — how many pairs are loaded.
 - The **filter controls** (§14.3) live here, so filtering is reachable without leaving the
   table.
-- During the scan (§14.1) the status text carries the progress and the cancel.
+- During a pass the **busy screen** (§18.8) takes over the tab's work area: it carries the
+  progress and the cancel.
 
 ### 18.3 Table
 
@@ -929,10 +937,11 @@ time. It is the place where the reader decides, so it carries more than the tabl
   list is the only place a reader sees them, and it shows every one of them rather than only
   the best.
 - The **preview** (§18.7) is the last section.
-- **Every section header carries a collapse/expand button**, at its left. The button collapses
+- **Every section header carries ONE collapse/expand button**, at its left. The button collapses
   that section's body and leaves the header standing, so a reader can fold away what they do
   not need and keep what they are working on. Each section collapses on its own; the sections
-  are independent of each other.
+  are independent of each other. The button points down while the section is open and right
+  while it is closed.
 - **Scrolls vertically**, so a pair with many candidates does not push the verdict out of view.
 - **Empty state** — with no row selected, a short prompt naming what to select.
 
@@ -1004,6 +1013,28 @@ what lets a reader judge a candidate by looking at it rather than by reading its
   dimensions beneath it.
 - **Nothing is written.** The image is fetched, shown and discarded — never written to the
   media library, never to `ml`.
+
+### 18.8 The busy screen
+
+A pass opens every parent and child file in the library, so it takes a while (§19.2). While it
+runs, the tab's work area is covered by a **busy screen**.
+
+- It covers the **tab's work area** — the table and the info area — not the whole window. It
+  is the Finder's own work, and the rest of the app stays usable.
+- It is a **translucent dark scrim** with a **panel** in the middle: the stage, a progress bar,
+  the counts and the cancel. The shape follows the app's existing busy screen (the sync
+  overlay), so the two look like the same thing.
+- It carries **the stage** — what the pass is doing right now: *Reading pairs*, *Checking
+  files*, *Widening candidates*, *Building rows*.
+- It carries **progress**, and the progress is **determinate for three of the four stages**:
+  - *Reading pairs* — **indeterminate**. The row count is not known until the query returns.
+  - *Checking files* — **determinate**: the pair count is known, so the bar is `done of total`.
+  - *Widening candidates* — **determinate**: the pairs that need widening are known.
+  - *Building rows* — **determinate**: one row per pair.
+- It carries a **Cancel**. A pass that cannot be stopped is not something to put in front of a
+  reader. Cancelling leaves the tab as it was — whatever was already loaded stays loaded.
+- The busy screen is **the tab's state**, so it survives switching tabs: a pass that is running
+  when the reader leaves shows its progress when they come back.
 
 ---
 
@@ -1078,6 +1109,16 @@ corrupted and whose name matched nothing, the candidate set is widened by simila
 (§19.8), the verdict is read off them (§7), and the row is assembled (§19.9).
 
 Phase 2 is where the time goes. Phase 1 is one set-based pass over the database.
+
+**The file pass is SEQUENTIAL.** The database pass finishes before the first file is opened,
+and the files are visited one at a time — one pair, then the next, with the parent and the
+child of each pair read in turn. Nothing runs beside anything else. That is what the busy
+screen's *Checking files* stage is counting.
+
+The stages report progress as they go (§18.8): the file pass knows how many pairs it has and
+how many it has done; the widening pass knows how many pairs it is widening; the row pass
+knows how many rows it is building. Only the database pass has no number, because the row
+count is not known until the query returns.
 
 ### 19.3 The pair query
 

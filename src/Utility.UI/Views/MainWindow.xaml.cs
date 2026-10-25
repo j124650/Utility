@@ -118,8 +118,11 @@ public partial class MainWindow : Window
 
         // Pages load their own data. The dashboard deliberately does NOT reload on
         // navigation: its tree is read once and kept in the singleton tree state, so
-        // switching away and back does not re-query the database. The Finder does not
-        // reload either: its pass is long and runs when the user asks for it.
+        // switching away and back does not re-query the database.
+        //
+        // The FINDER runs its pass by itself the first time the tab is shown (§14.1), and
+        // does not run it again: its view model is a singleton, so the rows it loaded, the
+        // filter and the selected row are all still there when the reader comes back.
         switch (_current.DataContext)
         {
             case DropBoxViewModel dropBox:
@@ -127,6 +130,9 @@ public partial class MainWindow : Window
                 break;
             case MediaViewModel media:
                 _ = media.SearchAsync();
+                break;
+            case FinderViewModel finder:
+                _ = finder.EnsurePassAsync();
                 break;
             case SettingsViewModel settings:
                 _ = settings.LoadAsync();

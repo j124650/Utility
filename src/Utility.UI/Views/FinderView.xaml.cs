@@ -17,8 +17,8 @@ public partial class FinderView : UserControl
         // double and "Auto" is not a number.
         PairsGrid.RowHeight = double.NaN;
 
-        // FinderViewModel is transient, so every page instance owns its own services and
-        // disposing it on navigation is safe.
+        // The view model is a singleton (§14.1), so the rows, the filter and the selected
+        // row survive switching tabs. The view itself is transient - it is just a view.
         DataContext = services.GetRequiredService<FinderViewModel>();
     }
 }

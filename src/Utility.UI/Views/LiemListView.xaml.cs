@@ -15,8 +15,8 @@ public partial class LiemListView : UserControl
         // value; it cannot be written in XAML, because RowHeight is a plain double.
         ListGrid.RowHeight = double.NaN;
 
-        // LiemListViewModel is transient, so every page instance owns its own services and
-        // disposing it on navigation is safe.
+        // The view model is a singleton (§14.1), so the list survives switching tabs. The
+        // view itself is transient - it is just a view.
         DataContext = services.GetRequiredService<LiemListViewModel>();
     }
 }

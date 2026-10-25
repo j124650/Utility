@@ -60,21 +60,74 @@
         </Style>
 
         <!--
+          The section header's collapse/expand control.
+
+          It is the Expander's OWN header button, given a template that shows the arrow and
+          the header's content side by side and nothing else. So the header shows ONE arrow,
+          and the whole header - arrow and name - is the thing that collapses the section.
+
+          The arrow points down while the section is open and right while it is closed
+          (§18.5).
+        -->
+        <Style x:Key="SectionToggle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <TextBlock x:Name="Arrow" Text="▾" FontSize="10" Margin="0,0,6,0"
+                                       VerticalAlignment="Center" />
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="False">
+                                <Setter TargetName="Arrow" Property="Text" Value="▸" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
           A collapsible section. The header carries the collapse/expand button at its left,
           and the body folds away under it. Each section collapses on its own.
+
+          The Expander's default template is replaced: it puts a SECOND toggle - with its own
+          arrow - around the header, so the header would show two collapse/expand controls.
+          This template uses the header button above instead, so there is exactly one, and the
+          whole header is clickable (§18.5).
         -->
         <Style x:Key="InfoSection" TargetType="Expander">
             <Setter Property="Margin" Value="0,0,0,4" />
             <Setter Property="Foreground" Value="#334155" />
-        </Style>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-        <Style x:Key="SectionToggle" TargetType="ToggleButton">
-            <Setter Property="FontSize" Value="10" />
-            <Setter Property="Padding" Value="2,0" />
-            <Setter Property="Margin" Value="0,0,6,0" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Cursor" Value="Hand" />
+                            <ToggleButton Grid.Row="0" x:Name="HeaderSite"
+                                          Style="{StaticResource SectionToggle}"
+                                          Content="{TemplateBinding Header}"
+                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
+
+                            <ContentPresenter Grid.Row="1" x:Name="ExpandSite"
+                                              ContentSource="Content" RecognizesAccessKey="True" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="False">
+                                <Setter TargetName="ExpandSite" Property="Visibility" Value="Collapsed" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </UserControl.Resources>
 
@@ -310,10 +363,6 @@
                             <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <ToggleButton Style="{StaticResource SectionToggle}"
-                                                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType={x:Type Expander}}, Mode=TwoWay}">
-                                            <TextBlock Text="▾" />
-                                        </ToggleButton>
                                         <TextBlock Text="PARENT" Style="{StaticResource InfoHeader}" />
                                     </StackPanel>
                                 </Expander.Header>
@@ -357,10 +406,6 @@
                             <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <ToggleButton Style="{StaticResource SectionToggle}"
-                                                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType={x:Type Expander}}, Mode=TwoWay}">
-                                            <TextBlock Text="▾" />
-                                        </ToggleButton>
                                         <TextBlock Text="CHILD" Style="{StaticResource InfoHeader}" />
                                     </StackPanel>
                                 </Expander.Header>
@@ -412,10 +457,6 @@
                             <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <ToggleButton Style="{StaticResource SectionToggle}"
-                                                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType={x:Type Expander}}, Mode=TwoWay}">
-                                            <TextBlock Text="▾" />
-                                        </ToggleButton>
                                         <TextBlock Text="VERDICT" Style="{StaticResource InfoHeader}" />
                                     </StackPanel>
                                 </Expander.Header>
@@ -444,10 +485,6 @@
                             <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <ToggleButton Style="{StaticResource SectionToggle}"
-                                                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType={x:Type Expander}}, Mode=TwoWay}">
-                                            <TextBlock Text="▾" />
-                                        </ToggleButton>
                                         <TextBlock Text="CANDIDATES" Style="{StaticResource InfoHeader}" />
                                         <TextBlock Text="{Binding Candidates.Count, StringFormat=({0})}" Style="{StaticResource InfoLabel}"
                                                    Margin="6,0,0,0" />
@@ -489,10 +526,6 @@
                                       Visibility="{Binding HasCandidates, Converter={StaticResource BoolToVis}}">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <ToggleButton Style="{StaticResource SectionToggle}"
-                                                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType={x:Type Expander}}, Mode=TwoWay}">
-                                            <TextBlock Text="▾" />
-                                        </ToggleButton>
                                         <TextBlock Text="PREVIEW" Style="{StaticResource InfoHeader}" />
                                     </StackPanel>
                                 </Expander.Header>
@@ -523,6 +556,47 @@
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
+            </Border>
+        </Grid>
+
+        <!--
+          The busy screen (§18.8).
+
+          It covers the tab's WORK AREA - the table and the info area - not the whole window:
+          this is the Finder's own work, and the rest of the app stays usable. It follows the
+          shape of the app's existing busy screen, the sync overlay, so the two look like the
+          same thing.
+
+          The bar is determinate for three of the four stages and indeterminate for the
+          database pass, which has no total until its query returns.
+        -->
+        <Grid Grid.Row="1" Panel.ZIndex="50" Background="#B31E2023"
+              Visibility="{Binding IsPassing, Converter={StaticResource BoolToVis}}">
+
+            <Border Background="#26FFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1" CornerRadius="10"
+                    Padding="28,24" MaxWidth="620" HorizontalAlignment="Center" VerticalAlignment="Center">
+
+                <StackPanel>
+
+                    <TextBlock Text="{Binding PassStage}" FontSize="18" FontWeight="SemiBold"
+                               Foreground="#F3F4F6" HorizontalAlignment="Center" />
+
+                    <TextBlock Text="{Binding PassDetail}" FontSize="12" Foreground="#A8ADB2"
+                               HorizontalAlignment="Center" Margin="0,6,0,0"
+                               MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+
+                    <ProgressBar Height="4" Margin="0,20,0,0" Minimum="0" Maximum="100"
+                                 Value="{Binding PassPercent, Mode=OneWay}"
+                                 IsIndeterminate="{Binding PassIsIndeterminate}"
+                                 Foreground="#5B9CF8" Background="#33FFFFFF" />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
+                        <Button Content="Cancel" Command="{Binding CancelPassCommand}"
+                                Padding="20,7" MinWidth="100"
+                                Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
+                                ToolTip="Stops the pass. Whatever was already loaded stays loaded." />
+                    </StackPanel>
+                </StackPanel>
             </Border>
         </Grid>
     </Grid>

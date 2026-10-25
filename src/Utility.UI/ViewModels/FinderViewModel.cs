@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 using Utility.Server.Finder;
@@ -23,6 +24,16 @@ public sealed class FinderViewModel(
 {
     private AsyncRelayCommand? _run;
     private AsyncRelayCommand? _previewCommand;
+    private RelayCommand? _cancelPass;
+
+    private CancellationTokenSource? _passCts;
+    private bool _hasRunPass;
+
+    private string _passStage = string.Empty;
+    private string _passDetail = string.Empty;
+    private int _passDone;
+    private int _passTotal;
+    private bool _passIsIndeterminate = true;
 
     private FinderRow? _selected;
     private FinderCandidate? _selectedCandidate;
@@ -62,6 +73,9 @@ public sealed class FinderViewModel(
     public AsyncRelayCommand RunCommand => _run ??= new AsyncRelayCommand(RunAsync);
 
     public AsyncRelayCommand PreviewCommand => _previewCommand ??= new AsyncRelayCommand(PreviewAsync);
+
+    /// <summary>Stops the running pass (§18.8).</summary>
+    public RelayCommand CancelPassCommand => _cancelPass ??= new RelayCommand(_ => CancelPass());
 
     /// <summary>The row the info area shows.</summary>
     public FinderRow? Selected
@@ -124,6 +138,67 @@ public sealed class FinderViewModel(
     }
 
     public bool HasSelection => Selected is not null;
+
+    // ---- the busy screen (§18.8) ----
+
+    /// <summary>True while a pass is running. Drives the busy screen.</summary>
+    public bool IsPassing => IsBusy;
+
+    /// <summary>What the pass is doing right now: Reading pairs, Checking files, ...</summary>
+    public string PassStage
+    {
+        get => _passStage;
+        private set => SetProperty(ref _passStage, value);
+    }
+
+    /// <summary>The stage's own words: "N of M".</summary>
+    public string PassDetail
+    {
+        get => _passDetail;
+        private set => SetProperty(ref _passDetail, value);
+    }
+
+    /// <summary>
+    /// True while the stage has no total to divide by — only the database pass (§18.8).
+    /// </summary>
+    public bool PassIsIndeterminate
+    {
+        get => _passIsIndeterminate;
+        private set => SetProperty(ref _passIsIndeterminate, value);
+    }
+
+    /// <summary>How far the stage has got.</summary>
+    public int PassDone
+    {
+        get => _passDone;
+        private set
+        {
+            if (SetProperty(ref _passDone, value))
+            {
+                OnPropertyChanged(nameof(PassPercent));
+            }
+        }
+    }
+
+    /// <summary>What the stage is counting towards.</summary>
+    public int PassTotal
+    {
+        get => _passTotal;
+        private set
+        {
+            if (SetProperty(ref _passTotal, value))
+            {
+                OnPropertyChanged(nameof(PassPercent));
+            }
+        }
+    }
+
+    /// <summary>The bar's value, as a percentage. Zero while the stage is indeterminate.</summary>
+    public double PassPercent =>
+        PassIsIndeterminate || PassTotal <= 0 ? 0 : Math.Clamp(PassDone * 100.0 / PassTotal, 0, 100);
+
+    /// <summary>True while there is a pass to cancel.</summary>
+    public bool CanCancelPass => IsBusy;
 
     public string ParentFileName => Selected?.ParentFileName ?? string.Empty;
 
@@ -255,19 +330,58 @@ public sealed class FinderViewModel(
     /// </summary>
     /// <remarks>
     /// The pass opens every parent and child file in the library, so it is long. It runs off
-    /// the UI thread and reports progress through the status line.
+    /// the UI thread and reports progress through the busy screen (§18.8).
     /// </remarks>
-    public async Task RunAsync()
+    public Task RunAsync() => RunPassAsync(force: true);
+
+    /// <summary>
+    /// Runs the pass the first time the tab is shown (§14.1).
+    /// </summary>
+    /// <remarks>
+    /// It does not force a pass: if the scan state already holds one — because Liem's List
+    /// ran it, or because this tab was left and came back — those rows are used instead.
+    /// </remarks>
+    public async Task EnsurePassAsync()
     {
+        if (_hasRunPass || IsBusy)
+        {
+            return;
+        }
+
+        // Set before the await, so a pass that fails or is cancelled is not retried behind
+        // the reader's back. The Run the pass button is there for another attempt.
+        _hasRunPass = true;
+
+        await RunPassAsync(force: false);
+    }
+
+    /// <summary>Stops the running pass. Whatever was already loaded stays loaded (§18.8).</summary>
+    public void CancelPass() => _passCts?.Cancel();
+
+    private async Task RunPassAsync(bool force)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
         IsBusy = true;
+        PassStage = "Starting";
+        PassDetail = string.Empty;
+        PassDone = 0;
+        PassTotal = 0;
+        PassIsIndeterminate = true;
+        OnPropertyChanged(nameof(IsPassing));
+        OnPropertyChanged(nameof(CanCancelPass));
+
+        _passCts = new CancellationTokenSource();
+
         try
         {
-            var progress = new Progress<FinderProgressInfo>(info =>
-            {
-                SetStatus($"{info.Stage}: {info.Detail}");
-            });
+            var progress = new Progress<FinderProgressInfo>(OnProgress);
 
-            var rows = await finder.GetMediaPairsAsync(new ProgressAdapter(progress), force: true);
+            var rows = await finder.GetMediaPairsAsync(
+                new ProgressAdapter(progress), force: force, ct: _passCts.Token);
 
             AllRows.Clear();
             foreach (var row in rows)
@@ -287,6 +401,11 @@ public sealed class FinderViewModel(
 
             SetStatus($"Finder pass finished — {rows.Count:N0} pair(s).");
         }
+        catch (OperationCanceledException)
+        {
+            SetStatus("Finder pass cancelled.");
+            log.Info("Finder pass cancelled.");
+        }
         catch (Exception ex)
         {
             SetStatus(ex.Message);
@@ -294,8 +413,31 @@ public sealed class FinderViewModel(
         }
         finally
         {
+            _passCts.Dispose();
+            _passCts = null;
             IsBusy = false;
+
+            // IsPassing is derived from IsBusy, and the base class only announces IsBusy.
+            OnPropertyChanged(nameof(IsPassing));
+            OnPropertyChanged(nameof(CanCancelPass));
         }
+    }
+
+    /// <summary>
+    /// Carries a progress report onto the busy screen (§18.8).
+    /// </summary>
+    private void OnProgress(FinderProgressInfo info)
+    {
+        PassStage = info.Stage;
+        PassDetail = info.Detail;
+        PassDone = info.Done;
+        PassTotal = info.Total;
+
+        // Only the database pass has no total: the row count is not known until the query
+        // returns. The other three stages count towards a number they already have.
+        PassIsIndeterminate = info.Total <= 0;
+
+        SetStatus($"{info.Stage}: {info.Detail}");
     }
 
     /// <summary>
