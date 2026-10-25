@@ -36,7 +36,7 @@ public sealed class FinderService(
         // is run only when the caller asks for one.
         if (!force && scanState.IsLoaded)
         {
-            progress?.Report(new FinderProgressInfo("Reading pairs", 1, 1, $"{scanState.Rows.Count} pair(s), from the last pass"));
+            progress?.Report(new FinderProgressInfo("Reading Pairs", 1, 1, $"{scanState.Rows.Count} pair(s), from the last pass"));
             return scanState.Rows;
         }
 
@@ -60,10 +60,14 @@ public sealed class FinderService(
         // ---- Phase 1: one set-based query for the pairs and their name-matched candidates ----
         // Total 0: the row count is not known until the query returns, so this stage's bar
         // is indeterminate (§18.8).
-        progress?.Report(new FinderProgressInfo("Reading pairs", 0, 0, "Querying ml.media and ml.DropBoxNode"));
+        //
+        // The message names what is being read, not the tables it is read from: the reader
+        // of this screen is a person, and ml.media and ml.DropBoxNode are not their
+        // vocabulary.
+        progress?.Report(new FinderProgressInfo("Reading Pairs", 0, 0, "Querying the media library and the DropBox Index"));
 
         var pairs = await LoadPairsAsync(ct);
-        progress?.Report(new FinderProgressInfo("Reading pairs", 1, 1, $"{pairs.Count} pair(s)"));
+        progress?.Report(new FinderProgressInfo("Reading Pairs", 1, 1, $"{pairs.Count} pair(s)"));
 
         // ---- Phase 2: visit every file on disk ----
         //
@@ -96,7 +100,7 @@ public sealed class FinderService(
                 var n = Interlocked.Increment(ref done);
                 if (n % 500 == 0 || n == pairs.Count)
                 {
-                    progress?.Report(new FinderProgressInfo("Checking files", n, pairs.Count, $"{n} of {pairs.Count}"));
+                    progress?.Report(new FinderProgressInfo("Checking Files", n, pairs.Count, $"{n} of {pairs.Count}"));
                 }
             });
 
@@ -117,7 +121,7 @@ public sealed class FinderService(
 
         // ---- Phase 4: the checks, the verdict and the row ----
         var rows = new List<FinderRow>(pairs.Count);
-        progress?.Report(new FinderProgressInfo("Building rows", 0, pairs.Count, $"{pairs.Count} row(s)"));
+        progress?.Report(new FinderProgressInfo("Building Rows", 0, pairs.Count, $"{pairs.Count} row(s)"));
 
         for (var i = 0; i < pairs.Count; i++)
         {
@@ -169,7 +173,7 @@ public sealed class FinderService(
 
             if ((i + 1) % 5000 == 0 || i + 1 == pairs.Count)
             {
-                progress?.Report(new FinderProgressInfo("Building rows", i + 1, pairs.Count, $"{i + 1} of {pairs.Count}"));
+                progress?.Report(new FinderProgressInfo("Building Rows", i + 1, pairs.Count, $"{i + 1} of {pairs.Count}"));
             }
         }
 

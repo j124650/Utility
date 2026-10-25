@@ -1034,18 +1034,18 @@ runs, the window is covered by a **busy screen**.
   it does not jump about when the stage changes.
 - The stage name is the **brightest** thing on the panel; the counter under it is a clear
   light gray, large enough to read at a glance.
-- It carries **the stage** — what the pass is doing right now: *Reading pairs*, *Checking
-  files*, *Finding Candidates*, *Building rows*.
+- It carries **the stage** — what the pass is doing right now: *Reading Pairs*, *Checking
+  Files*, *Finding Candidates*, *Building Rows*.
 - It carries **progress**, and the progress is **determinate for three of the four stages**:
-  - *Reading pairs* — **indeterminate**. The row count is not known until the query returns.
-  - *Checking files* — **determinate**: the pair count is known, so the bar is `done of total`.
+  - *Reading Pairs* — **indeterminate**. The row count is not known until the query returns.
+  - *Checking Files* — **determinate**: the pair count is known, so the bar is `done of total`.
   - *Finding Candidates* — **determinate**. One counter: the pairs whose candidates are
     known, out of the pairs that need them. It only ever goes **up** — the chunks are looked
     for at the same time, and a report carrying a smaller number than the bar already shows
     is dropped, so the bar never jumps back. The counter is never reset: a pair is counted
     once, when its candidates are known, and a pair whose name matched nothing in the index
     is counted too — no candidates IS its answer.
-  - *Building rows* — **determinate**: one row per pair.
+  - *Building Rows* — **determinate**: one row per pair.
 - It carries a **Cancel**. A pass that cannot be stopped is not something to put in front of a
   reader. Cancelling leaves the tab as it was — whatever was already loaded stays loaded.
 - While it is up, the app behind it cannot be clicked, so a long pass cannot be interrupted by
