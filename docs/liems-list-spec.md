@@ -66,6 +66,9 @@ no date for the file itself. The child's row was always added at or after its pa
 match to confirm the original, so it is what makes the row actionable: a reader compares the
 candidate's size against this one.
 
+In the report (§6) the style is the section heading and the other six are the fields of a
+pair block.
+
 ## 4. The reasons
 
 Three, read off the gathered row's verdict and the gathered row's candidates.
@@ -88,12 +91,70 @@ verdict and the candidates, and the reason follows from them.
 
 **By style, then newest first.** Style ascending; within a style, date added descending.
 
-## 6. The file
+## 6. The report
 
-CSV, UTF-8 with a BOM so Excel opens it correctly, with a header row and one line per pair.
-The candidate paths sit in the last column, in rank order.
+### 6.1 What it is
 
-The reader chooses where the file is written.
+A **single self-contained `.html` file** — inline styles, no scripts, no external assets,
+nothing fetched when it is opened. It is a **static document**: no filters, no sorting, no
+search, no expanding and collapsing. It reads like a report and prints like one.
+
+The reader chooses where the file is written, opens it in a browser, and reads it or prints
+it. Nothing else is written, and nothing in the media library or the Dropbox index is
+changed.
+
+### 6.2 The shape
+
+A **header block**, then **one section per style**.
+
+The header carries the title, the pass the report is on — its timestamp and the number of
+pairs it scanned — and the breakdown of the unresolved pairs by reason. The report is only
+as fresh as that pass, so the pass is named in the document, not in a footnote.
+
+Each style gets a section: the style as its heading, and the unresolved pairs of that style
+under it, newest first. The style is the section heading rather than a repeated column,
+because the report's order is style ascending — the eye can skip a whole style at once.
+
+### 6.3 The pair
+
+A pair is a **block**, not a line in a grid: the reason and the candidate paths both need
+vertical room, so the pairs stack.
+
+| Field | Where it comes from |
+|---|---|
+| **File name** | the parent's `FileName` |
+| **Angle or featured type** | the child's category; for `24 Angles` the variant names the angle — two lines, `24 Angles` / `Angle 22` |
+| **Date added** | the parent's `ml.Media.DateAdded` — `yyyy-MM-dd HH:mm` |
+| **Original size** | the parent's recorded `Size`, thousands-separated |
+| **Reason** | the reason of §4, spelled out in words |
+| **Candidates** | every candidate's path, in rank order |
+
+Every field is a field of the gathered row. Nothing is re-derived.
+
+### 6.4 The candidates
+
+Under the pair, the candidates in rank order, one per line: the rank, the path in full, the
+candidate's size, its dimensions, and what matched.
+
+A candidate whose size equals the original size is marked in words — **size matches** —
+because that comparison is the decision the reader is making. The paths are shown in full
+and wrapped, not truncated: a truncated path is useless to someone about to act on it.
+
+### 6.5 The look
+
+The reason is spelled out in words **and** carried as the block's coloured edge — red for
+*not found*, amber for *name found but size differs*, indigo for *ambiguous*. The colour is
+the fast read; the word is what carries it in print, where the colour reads as a grey
+value.
+
+Paths, sizes and dates are set in a monospace face, so the columns align without a grid and
+the sizes can be compared down the column. The body is set in the system sans.
+
+### 6.6 Print
+
+Each style section starts on a fresh page and its heading is never orphaned from its first
+pair. A pair block never splits across a page. The footer carries the page number and the
+report's title.
 
 ## 7. Implementation shape
 
@@ -103,7 +164,7 @@ The reader chooses where the file is written.
 - **The projection** — the report's rows are projected from the gathered row. No value is
   re-derived in the report except the reason (§4), which is read off the row's verdict and
   candidates.
-- **The file** — written where the reader chooses it, in the CSV form of §6.
+- **The file** — written where the reader chooses it, in the HTML form of §6.
 - **The button** — the Finder's toolbar carries a button named **Liem's List**. The nav
   entry that used to carry the list is hidden; the view and its view model stay registered.
 
