@@ -100,20 +100,19 @@ public sealed class FinderService(
                 }
             });
 
-        // ---- Phase 3: widen the candidates of the pairs that need it ----
+        // ---- Phase 3: find the candidates of the pairs that need them ----
         var toWiden = pairs
             .Where((p, i) => !states[i].Parent.IsOk && p.NameMatchedCandidates.Count == 0)
             .ToList();
 
         if (toWiden.Count > 0)
         {
-            progress?.Report(new FinderProgressInfo("Widening candidates", 0, toWiden.Count, $"{toWiden.Count} pair(s)"));
+            progress?.Report(new FinderProgressInfo("Finding Candidates", 0, toWiden.Count, $"{toWiden.Count} pair(s)"));
 
-            // One set-based join for all of them, not a query per pair: the pairs share one
-            // connection and one scan of the index.
-            await WidenCandidatesAsync(toWiden, ct);
+            // The pairs are split into chunks and the chunks are looked for at the same time.
+            await FindCandidatesAsync(toWiden, progress, ct);
 
-            progress?.Report(new FinderProgressInfo("Widening candidates", toWiden.Count, toWiden.Count, $"{toWiden.Count} pair(s)"));
+            progress?.Report(new FinderProgressInfo("Finding Candidates", toWiden.Count, toWiden.Count, $"{toWiden.Count} pair(s)"));
         }
 
         // ---- Phase 4: the checks, the verdict and the row ----
@@ -208,7 +207,7 @@ public sealed class FinderService(
 
         if (seed.NameMatchedCandidates.Count == 0)
         {
-            await WidenCandidatesAsync([seed], ct);
+            await FindCandidatesAsync([seed], null, ct);
         }
 
         return FinderRanking.Rank(
@@ -401,17 +400,59 @@ public sealed class FinderService(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// One set-based join for every pair that needs widening. The pairs' names go into a
-    /// temp table and are joined to the index on the same key, so the join - not a query per
-    /// pair - is what narrows the index.
+    /// The pairs are split into chunks, and the chunks are looked for AT THE SAME TIME. Each
+    /// chunk has its own connection and its own temp table, so the round trips of one chunk
+    /// wait behind the round trips of another instead of behind each other.
+    /// </para>
+    /// <para>
+    /// The join is still set-based: a chunk's names go into a temp table and are joined to
+    /// the index on the same key, so the join - not a query per pair - is what narrows the
+    /// index. A per-pair query would scan the index once per pair, which for tens of
+    /// thousands of pairs is tens of thousands of scans.
     /// </para>
     /// <para>
     /// The join is deliberately loose: it brings back everything that could be similar, and
-    /// §10's fuzzy rules decide what actually is. A per-pair query would scan the index once
-    /// per pair, which for tens of thousands of pairs is tens of thousands of scans.
+    /// §10's fuzzy rules decide what actually is.
     /// </para>
     /// </remarks>
-    private async Task WidenCandidatesAsync(List<PairSeed> pairs, CancellationToken ct)
+    private async Task FindCandidatesAsync(
+        List<PairSeed> pairs,
+        IFinderProgress? progress,
+        CancellationToken ct)
+    {
+        // A chunk is small enough that the chunks finish at staggered times - so the bar
+        // moves all the way through the stage - and big enough that the join still has
+        // something to do.
+        const int ChunkSize = 6_250;
+
+        var chunks = new List<List<PairSeed>>(pairs.Count / ChunkSize + 1);
+        for (var i = 0; i < pairs.Count; i += ChunkSize)
+        {
+            chunks.Add(pairs.GetRange(i, Math.Min(ChunkSize, pairs.Count - i)));
+        }
+
+        // One counter for the whole stage: the pairs whose candidates are known.
+        var stage = new StageProgress(progress, pairs.Count);
+
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = parallelism.LogicalProcessorCount,
+            CancellationToken = ct
+        };
+
+        await Parallel.ForEachAsync(chunks, options, async (chunk, token) =>
+        {
+            await FindCandidatesForChunkAsync(chunk, stage, token);
+        });
+    }
+
+    /// <summary>
+    /// Finds the candidates of one chunk of pairs, on its own connection.
+    /// </summary>
+    private async Task FindCandidatesForChunkAsync(
+        List<PairSeed> chunk,
+        StageProgress stage,
+        CancellationToken ct)
     {
         await using var connection = await OpenConnectionAsync(ct);
 
@@ -426,15 +467,13 @@ public sealed class FinderService(
             await create.ExecuteNonQueryAsync(ct);
         }
 
-        // The pairs are inserted in batches, so a run with tens of thousands of pairs does
-        // not send tens of thousands of round trips.
+        // The chunk's pairs are inserted in batches, so a chunk does not send one round trip
+        // per pair.
         const int BatchSize = 500;
 
-        for (var offset = 0; offset < pairs.Count; offset += BatchSize)
+        for (var offset = 0; offset < chunk.Count; offset += BatchSize)
         {
-            ct.ThrowIfCancellationRequested();
-
-            var batch = pairs.Skip(offset).Take(BatchSize).ToList();
+            var batch = chunk.GetRange(offset, Math.Min(BatchSize, chunk.Count - offset));
 
             // Each row gets its own parameter name: a batch reuses @id and @prefix, and
             // SQL Server rejects the same name twice in one statement.
@@ -475,45 +514,164 @@ public sealed class FinderService(
              AND d.NameKey = w.Prefix
             """;
 
-        var byParent = pairs.ToDictionary(p => p.ParentId);
+        var byParent = chunk.ToDictionary(p => p.ParentId);
+
+        // The parents this chunk has answered for. A parent whose name matched nothing in
+        // the index is never in here - it is counted when the chunk is finished.
+        var answered = new HashSet<Guid>();
 
         await using (var command = new SqlCommand(joinSql, connection))
         {
             command.CommandTimeout = options.Value.CommandTimeoutSeconds;
 
             await using var reader = await command.ExecuteReaderAsync(ct);
+
+            // The rows are judged in batches and the batch is dropped once it is judged, so
+            // the memory does not grow with the size of the join.
+            var batch = new List<JoinedCandidate>(25_000);
+
             while (await reader.ReadAsync(ct))
             {
-                var parentId = reader.GetGuid(0);
-                if (!byParent.TryGetValue(parentId, out var pair))
+                batch.Add(new JoinedCandidate
                 {
-                    continue;
-                }
-
-                var name = reader.GetString(1);
-
-                // The join is loose; §10's fuzzy rules decide what is similar enough to be
-                // shown. A name that is not similar is not a candidate.
-                if (!FinderSimilarity.IsSimilar(pair.ParentFileName, name))
-                {
-                    continue;
-                }
-
-                pair.NameMatchedCandidates.Add(new CandidateRow
-                {
-                    Name = name,
+                    ParentId = reader.GetGuid(0),
+                    Name = reader.GetString(1),
                     Size = reader.IsDBNull(2) ? null : reader.GetInt64(2),
                     Width = reader.IsDBNull(3) ? null : reader.GetInt32(3),
                     Height = reader.IsDBNull(4) ? null : reader.GetInt32(4),
                     Path = reader.GetString(5),
                     Modified = reader.IsDBNull(6) ? null : reader.GetDateTimeOffset(6)
                 });
+
+                if (batch.Count >= 25_000)
+                {
+                    stage.Add(CountAnswered(batch, answered));
+                    KeepSimilar(batch, byParent);
+                    batch.Clear();
+                }
+            }
+
+            if (batch.Count > 0)
+            {
+                stage.Add(CountAnswered(batch, answered));
+                KeepSimilar(batch, byParent);
             }
         }
 
-        await using (var drop = new SqlCommand("DROP TABLE #wanted", connection))
+        // The parents whose name matched nothing in the index are answered too - they have
+        // no candidates, and that IS their answer.
+        stage.Add(chunk.Count - answered.Count);
+    }
+
+    /// <summary>
+    /// Counts the parents in a batch that have not been counted before.
+    /// </summary>
+    private static int CountAnswered(List<JoinedCandidate> batch, HashSet<Guid> answered)
+    {
+        var count = 0;
+
+        foreach (var row in batch)
         {
-            await drop.ExecuteNonQueryAsync(ct);
+            if (answered.Add(row.ParentId))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Keeps the rows whose name is similar to the parent's file name, and adds them to the
+    /// pair's candidates.
+    /// </summary>
+    /// <remarks>
+    /// The join is loose; §10's fuzzy rules decide what is similar enough to be shown.
+    /// </remarks>
+    private static void KeepSimilar(List<JoinedCandidate> batch, Dictionary<Guid, PairSeed> byParent)
+    {
+        foreach (var row in batch)
+        {
+            if (!byParent.TryGetValue(row.ParentId, out var pair))
+            {
+                continue;
+            }
+
+            if (!FinderSimilarity.IsSimilar(pair.ParentFileName, row.Name))
+            {
+                continue;
+            }
+
+            pair.NameMatchedCandidates.Add(new CandidateRow
+            {
+                Name = row.Name,
+                Size = row.Size,
+                Width = row.Width,
+                Height = row.Height,
+                Path = row.Path,
+                Modified = row.Modified
+            });
+        }
+    }
+
+    /// <summary>
+    /// One row of the widening join, before §10's rules have judged it.
+    /// </summary>
+    private sealed class JoinedCandidate
+    {
+        public Guid ParentId { get; init; }
+        public required string Name { get; init; }
+        public long? Size { get; init; }
+        public int? Width { get; init; }
+        public int? Height { get; init; }
+        public required string Path { get; init; }
+        public DateTimeOffset? Modified { get; init; }
+    }
+
+    /// <summary>
+    /// The progress of the *Finding Candidates* stage.
+    /// </summary>
+    /// <remarks>
+    /// One counter, and it only ever goes UP: the pairs whose candidates are known, out of
+    /// the pairs that need them. The chunks are looked for at the same time, so several
+    /// threads report at once — a report carrying a smaller number than the bar already
+    /// shows is dropped, so the bar never jumps back.
+    /// </remarks>
+    private sealed class StageProgress
+    {
+        private readonly IFinderProgress? _progress;
+        private readonly int _total;
+        private int _done;
+        private int _reported;
+
+        public StageProgress(IFinderProgress? progress, int total)
+        {
+            _progress = progress;
+            _total = total;
+        }
+
+        /// <summary>Counts more pairs whose candidates are known.</summary>
+        public void Add(int count)
+        {
+            if (count <= 0)
+            {
+                return;
+            }
+
+            var done = Interlocked.Add(ref _done, count);
+
+            var last = Volatile.Read(ref _reported);
+            if (done <= last)
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _reported, done, last) != last)
+            {
+                return;
+            }
+
+            _progress?.Report(new FinderProgressInfo("Finding Candidates", done, _total, $"{done:N0} of {_total:N0} pair(s)"));
         }
     }
 

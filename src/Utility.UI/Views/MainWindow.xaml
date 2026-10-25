@@ -287,31 +287,45 @@
               Background="#B31E2023"
               Visibility="{Binding IsPassing, Converter={StaticResource BoolToVis}}">
 
-            <Border Background="#26FFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1" CornerRadius="10"
-                    Padding="28,24" MaxWidth="620" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <!--
+              The panel is HALF THE WINDOW, and it stays that width. Four equal columns,
+              and the panel takes the middle two: so it is half the window wide and
+              centred, whatever it says.
+            -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-                <StackPanel>
+                <Border Grid.Column="1" Grid.ColumnSpan="2" Background="#26FFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1" CornerRadius="10"
+                        Padding="28,24" HorizontalAlignment="Stretch" VerticalAlignment="Center">
 
-                    <TextBlock Text="{Binding PassStage}" FontSize="18" FontWeight="SemiBold"
-                               Foreground="#F3F4F6" HorizontalAlignment="Center" />
+                    <StackPanel>
 
-                    <TextBlock Text="{Binding PassDetail}" FontSize="12" Foreground="#A8ADB2"
-                               HorizontalAlignment="Center" Margin="0,6,0,0"
-                               MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding PassStage}" FontSize="18" FontWeight="SemiBold"
+                                   Foreground="#F3F4F6" HorizontalAlignment="Center" />
 
-                    <ProgressBar Height="4" Margin="0,20,0,0" Minimum="0" Maximum="100"
-                                 Value="{Binding PassPercent, Mode=OneWay}"
-                                 IsIndeterminate="{Binding PassIsIndeterminate}"
-                                 Foreground="#5B9CF8" Background="#33FFFFFF" />
+                        <TextBlock Text="{Binding PassDetail}" FontSize="12" Foreground="#A8ADB2"
+                                   HorizontalAlignment="Center" Margin="0,6,0,0"
+                                   MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
 
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
-                        <Button Content="Cancel" Command="{Binding CancelPassCommand}"
-                                Padding="20,7" MinWidth="100"
-                                Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
-                                ToolTip="Stops the pass. Whatever was already loaded stays loaded." />
+                        <ProgressBar Height="4" Margin="0,20,0,0" Minimum="0" Maximum="100"
+                                     Value="{Binding PassPercent, Mode=OneWay}"
+                                     IsIndeterminate="{Binding PassIsIndeterminate}"
+                                     Foreground="#5B9CF8" Background="#33FFFFFF" />
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
+                            <Button Content="Cancel" Command="{Binding CancelPassCommand}"
+                                    Padding="20,7" MinWidth="100"
+                                    Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
+                                    ToolTip="Stops the pass. Whatever was already loaded stays loaded." />
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
-            </Border>
+                </Border>
+            </Grid>
         </Grid>
     </Grid>
 </Window>

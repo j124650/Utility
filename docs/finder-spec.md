@@ -1026,12 +1026,20 @@ runs, the window is covered by a **busy screen**.
 - It is a **translucent dark scrim** with a **panel** in the middle: the stage, a progress bar,
   the counts and the cancel. The shape follows the app's existing busy screen (the sync
   overlay), so the two look like the same thing.
+- The panel is **half the window wide**, and it stays that width. It is **centred** — the
+  middle half of the window, not the left half. Its width does not depend on what it says, so
+  it does not jump about when the stage changes.
 - It carries **the stage** — what the pass is doing right now: *Reading pairs*, *Checking
-  files*, *Widening candidates*, *Building rows*.
+  files*, *Finding Candidates*, *Building rows*.
 - It carries **progress**, and the progress is **determinate for three of the four stages**:
   - *Reading pairs* — **indeterminate**. The row count is not known until the query returns.
   - *Checking files* — **determinate**: the pair count is known, so the bar is `done of total`.
-  - *Widening candidates* — **determinate**: the pairs that need widening are known.
+  - *Finding Candidates* — **determinate**. One counter: the pairs whose candidates are
+    known, out of the pairs that need them. It only ever goes **up** — the chunks are looked
+    for at the same time, and a report carrying a smaller number than the bar already shows
+    is dropped, so the bar never jumps back. The counter is never reset: a pair is counted
+    once, when its candidates are known, and a pair whose name matched nothing in the index
+    is counted too — no candidates IS its answer.
   - *Building rows* — **determinate**: one row per pair.
 - It carries a **Cancel**. A pass that cannot be stopped is not something to put in front of a
   reader. Cancelling leaves the tab as it was — whatever was already loaded stays loaded.
@@ -1103,7 +1111,7 @@ parent, the candidates whose name matches (§19.4). Both come out of the same qu
 **Phase 2 — the file pass.** Every record is then visited on disk — existence, decode, length
 (§19.6). This is the long part: it touches every parent and child file in the library.
 
-**Phase 3 — widening the candidates that need it.** For a pair whose parent is missing or
+**Phase 3 — finding the candidates that need widening.** For a pair whose parent is missing or
 corrupted and whose name matched nothing, the candidate set is widened by similarity (§9.3,
 §19.4). Only these pairs need it.
 
@@ -1112,10 +1120,13 @@ corrupted and whose name matched nothing, the candidate set is widened by simila
 
 Phase 2 is where the time goes. Phase 1 is one set-based pass over the database.
 
-**Measured on the live library**, the pass takes 52 seconds: the pairs query 1.5 s, the file
-check 35.6 s, the widening 13.8 s, the row building 1.4 s. Of the file check, about 12 s is
-asking whether each of the 727,712 files is there — and almost all of them are not — and about
-17 s is decoding the 215 that are.
+**Measured on the live library**, the pass took 52 seconds when the file pass was sequential:
+the pairs query 1.5 s, the file check 35.6 s, the widening 13.8 s, the row building 1.4 s. Of
+the file check, about 12 s is asking whether each of the 727,712 files is there — and almost
+all of them are not — and about 17 s is decoding the 215 that are.
+
+**Now it takes 21 seconds.** The file pass and the widening are both parallel (§19.2), and the
+widening alone went from 13.8 s to 4 s.
 
 **The file pass is PARALLEL.** The database pass finishes before the first file is opened, and
 then the pairs are visited by a pool of workers — one pair each, with the parent and the child
@@ -1125,6 +1136,12 @@ The pool's size is the machine's **logical processor count**. The app asks **one
 that number and keeps the answer: it cannot change while the app runs, and it is asked for on
 every parallel loop. The same number is the degree for the existence checks and for the
 decodes — one rule for the whole file pass, rather than a tuned constant for each half.
+
+**The widening is PARALLEL too.** The pairs that need widening are split into chunks of 12,500,
+and the chunks are looked for **at the same time**. Each chunk has its own connection and its
+own temp table, so one chunk's round trips wait behind another's instead of behind each other.
+The join is still set-based — a chunk's names go into a temp table and are joined to the index
+on the same key, never a query per pair.
 
 The stages report progress as they go (§18.8): the file pass knows how many pairs it has and
 how many it has done; the widening pass knows how many pairs it is widening; the row pass
@@ -1174,10 +1191,11 @@ The lookup is a **set-based join**, not a query per parent: the index carries
 by similarity = indexed files whose name is similar to parent.FileName   (§10's fuzzy rules)
 ```
 
-The widening is **one set-based join**, not a query per pair. The pairs' names go into a temp
+The widening is **a set-based join**, not a query per pair. The pairs' names go into a temp
 table, each reduced to a **join key** — the name up to its last dot, upper-cased, first eight
 characters — and joined to `ml.DropBoxNode.NameKey`, which is the same key computed by the
-database as a PERSISTED column.
+database as a PERSISTED column. The pairs are split into chunks of 12,500 and the chunks are
+joined at the same time, each on its own connection and its own temp table (§19.2).
 
 The join key is a **pooling** key, not the decision: it says which candidates are worth
 comparing. §10's fuzzy rules are applied to each one afterwards, and a candidate that is not
