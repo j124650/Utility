@@ -99,9 +99,8 @@ A **single self-contained `.html` file** — inline styles, no scripts, no exter
 nothing fetched when it is opened. It is a **static document**: no filters, no sorting, no
 search, no expanding and collapsing. It reads like a report and prints like one.
 
-The reader chooses where the file is written, opens it in a browser, and reads it or prints
-it. Nothing else is written, and nothing in the media library or the Dropbox index is
-changed.
+The reader chooses where the file is written, then reads it in a window of the app (§6.7).
+Nothing else is written, and nothing in the media library or the Dropbox index is changed.
 
 ### 6.2 The shape
 
@@ -156,6 +155,34 @@ Each style section starts on a fresh page and its heading is never orphaned from
 pair. A pair block never splits across a page. The footer carries the page number and the
 report's title.
 
+### 6.7 The window
+
+The report is shown in a **modal window** of the app — not in the reader's browser, and not
+in a tab.
+
+The window is **modal**: it is shown with `ShowDialog()` and owned by the main window, so
+the Finder cannot be used while the report is up, and focus returns to the Finder when it
+closes. The report is something the reader reads and acts on; it is not a second task.
+
+The window carries the **standard chrome** — a title bar, a close button, and the
+maximize/restore buttons. It opens **maximized**, because the report is long and the reader
+scrolls it, and it can be restored down. It is resizable.
+
+Its content is a **WebView2** control that fills the window and navigates to the file that
+was written. The window carries no toolbar of its own: the report's own header holds
+everything the reader needs, and the engine's own print command is reached from the
+keyboard (§6.8).
+
+### 6.8 Printing
+
+The report prints from the window with **Ctrl+P**, which the engine handles with its own
+print dialog. The reader picks the printer there, or **Microsoft Print to PDF** to keep a
+copy. There is no print button on the window and no print code of the app's own — the
+engine's print dialog is the print path, and the `@media print` rules of §6.6 are what make
+the printed page right.
+
+A missing WebView2 runtime is reported in the window rather than shown as a blank page.
+
 ## 7. Implementation shape
 
 - **The source** — the rows the Finder's pass produced. The report reads them; it does not
@@ -165,8 +192,20 @@ report's title.
   re-derived in the report except the reason (§4), which is read off the row's verdict and
   candidates.
 - **The file** — written where the reader chooses it, in the HTML form of §6.
-- **The button** — the Finder's toolbar carries a button named **Liem's List**. The nav
-  entry that used to carry the list is hidden; the view and its view model stay registered.
+- **The window** — a `Window` in the UI project, shown with `ShowDialog()` and owned by the
+  main window; it opens maximized, carries the standard chrome, and holds a `WebView2` that
+  navigates to the written file.
+- **WebView2** — the `Microsoft.Web.WebView2` package, referenced by the UI project and
+  versioned in `Directory.Packages.props` like every other package. The control is
+  initialised with `EnsureCoreWebView2Async()` before its source is set.
+- **The runtime** — the Evergreen WebView2 runtime, a shared system component. If it is
+  missing, the window reports it instead of showing a blank page.
+- **The user data folder** — WebView2 keeps its browser profile beside the executable unless
+  told otherwise, which fails when the app is installed under `Program Files`. The folder is
+  set to `%LOCALAPPDATA%\Utility\WebView2`.
+- **The button** — the Finder's toolbar carries a button named **Liem's List**. It asks the
+  reader where the file goes, writes it, and opens the window on it. The nav entry that
+  used to carry the list is hidden; the view and its view model stay registered.
 
 ## 8. Not in scope
 
