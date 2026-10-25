@@ -1,7 +1,7 @@
 # Liem's List
 
 > **Preliminary.** This spec states what the report is and where each of its values comes
-> from. It has not been built, and the open points in §9 are not settled.
+> from. It has not been built.
 
 ---
 
@@ -15,7 +15,7 @@ scan, not a second scan.
 
 The gathered rows are the output of the Finder's pass over every pair. The list is a
 **subset** of them, selected as §2 says. Every value on the report is a field of a gathered
-row, except one (§7).
+row.
 
 ## 2. Membership
 
@@ -68,19 +68,21 @@ candidate's size against this one.
 
 ## 4. The reasons
 
-Three, read off the gathered row.
+Three, read off the gathered row's verdict and the gathered row's candidates.
 
-| Reason | When |
-|---|---|
-| **not found** | the row has no candidates at all — the file name is not in the index |
-| **name found but size differs** | candidates exist, but none carries the parent's recorded size |
-| **ambiguous** | more than one candidate carries the parent's recorded size — the choice was not the only one |
+| Reason | Verdict | When |
+|---|---|---|
+| **not found** | **cannot restore** | the row has no candidates at all — the file name is not in the index |
+| **name found but size differs** | **no original — needs a decision** | candidates exist, but none carries the parent's recorded size |
+| **ambiguous** | **no original — needs a decision** | candidates exist, and more than one of them carries the parent's recorded size — the choice was not the only one |
 
+The verdict splits the list in two, and the candidates split the second half in two again.
 `cannot restore` is **not found**. `no original — needs a decision` is **name found but size
-differs**, or **ambiguous** when more than one candidate carries the recorded size.
+differs** when no candidate carries the recorded size, and **ambiguous** when more than one
+does.
 
-The reason is read off the row, never worked out a second time: it follows from the row's
-verdict and the row's candidates, both of which the row already carries.
+The reason is read off the row, never worked out a second time: the row already carries the
+verdict and the candidates, and the reason follows from them.
 
 ## 5. The order
 
@@ -93,23 +95,11 @@ The candidate paths sit in the last column, in rank order.
 
 The reader chooses where the file is written.
 
-## 7. What the gathered rows lack
-
-One field: **date added**.
-
-The gathered row carries no date, so the pair query has to supply the parent's
-`DateAdded` — one more column in the existing set-based query over the pairs, not a second
-lookup and not a query per row.
-
-Everything else on this list is already a field of a gathered row.
-
-## 8. Implementation shape
+## 7. Implementation shape
 
 - **The source** — the rows the Finder's pass produced. The report reads them; it does not
   run a pass of its own. The filter of §2 is the one the Finder service already applies when
   it produces the list.
-- **The date** — supplied by the pair query (§7) and carried on the row, so the report reads
-  it like every other column.
 - **The projection** — the report's rows are projected from the gathered row. No value is
   re-derived in the report except the reason (§4), which is read off the row's verdict and
   candidates.
@@ -117,15 +107,7 @@ Everything else on this list is already a field of a gathered row.
 - **The button** — the Finder's toolbar carries a button named **Liem's List**. The nav
   entry that used to carry the list is hidden; the view and its view model stay registered.
 
-## 9. Open questions
-
-- **What the toolbar button does.** The list is a file, so the button is the way to produce
-  it. Whether the list's grid view stays reachable from the button — it is still registered
-  — is not settled.
-- **CSV or XLSX.** §6 says CSV. The report was asked for as "a file, CSV or XLSX"; the
-  choice between them is not settled.
-
-## 10. Not in scope
+## 8. Not in scope
 
 - **The repair** — restoring a missing parent from Dropbox, regenerating a missing child
   from its parent. That is a separate spec, and it is not written yet.
