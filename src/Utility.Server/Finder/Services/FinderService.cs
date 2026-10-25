@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Utility.Server.Finder;
 using Utility.Server.ML.Services;
 using Utility.Server.Options;
+using Utility.Server.Services;
 
 namespace Utility.Server.Finder.Services;
 
@@ -23,6 +24,7 @@ public sealed class FinderService(
     IMlDataService ml,
     IFinderLibraryService library,
     IFinderScanState scanState,
+    IParallelism parallelism,
     IOptions<ServerOptions> options) : IFinderService
 {
     public async Task<IReadOnlyList<FinderRow>> GetMediaPairsAsync(
@@ -64,25 +66,39 @@ public sealed class FinderService(
         progress?.Report(new FinderProgressInfo("Reading pairs", 1, 1, $"{pairs.Count} pair(s)"));
 
         // ---- Phase 2: visit every file on disk ----
+        //
+        // The pairs are visited by a pool of workers, one pair each. The pool's size is the
+        // machine's logical processor count (§19.2) - the same number for the existence
+        // checks and for the decodes.
         var states = new FileStates[pairs.Count];
         var done = 0;
-        foreach (var index in Enumerable.Range(0, pairs.Count))
+        var options = new ParallelOptions
         {
-            ct.ThrowIfCancellationRequested();
+            MaxDegreeOfParallelism = parallelism.LogicalProcessorCount,
+            CancellationToken = ct
+        };
 
-            var pair = pairs[index];
-            states[index] = new FileStates(
-                await library.GetFileStateAsync(libraryRoot, pair.ParentFolder, pair.ParentId,
-                    pair.ParentSize, pair.ParentWidth, pair.ParentHeight, ct),
-                await library.GetFileStateAsync(libraryRoot, pair.ChildFolder, pair.ChildId,
-                    pair.ChildSize, pair.ChildWidth, pair.ChildHeight, ct));
-
-            done++;
-            if (done % 500 == 0 || done == pairs.Count)
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, pairs.Count),
+            options,
+            async (index, token) =>
             {
-                progress?.Report(new FinderProgressInfo("Checking files", done, pairs.Count, $"{done} of {pairs.Count}"));
-            }
-        }
+                var pair = pairs[index];
+
+                states[index] = new FileStates(
+                    await library.GetFileStateAsync(libraryRoot, pair.ParentFolder, pair.ParentId,
+                        pair.ParentSize, pair.ParentWidth, pair.ParentHeight, token),
+                    await library.GetFileStateAsync(libraryRoot, pair.ChildFolder, pair.ChildId,
+                        pair.ChildSize, pair.ChildWidth, pair.ChildHeight, token));
+
+                // Each index is written by exactly one worker, so the result is the same
+                // whatever order the workers finish in.
+                var n = Interlocked.Increment(ref done);
+                if (n % 500 == 0 || n == pairs.Count)
+                {
+                    progress?.Report(new FinderProgressInfo("Checking files", n, pairs.Count, $"{n} of {pairs.Count}"));
+                }
+            });
 
         // ---- Phase 3: widen the candidates of the pairs that need it ----
         var toWiden = pairs

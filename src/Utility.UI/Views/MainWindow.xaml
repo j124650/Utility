@@ -270,5 +270,48 @@
                 </StackPanel>
             </Border>
         </Grid>
+
+        <!--
+          The FINDER's busy screen (§18.8).
+
+          It covers the WHOLE window - title bar, navigation and status bar - for as long as
+          the pass runs, exactly like the sync overlay above. A pass that opens every file in
+          the library is not something to do beside other work, and a scrim over part of a
+          window reads as half-finished rather than as modal.
+
+          Its DataContext is the Finder's view model, which is a SINGLETON, so the overlay
+          shows the run's progress even if the page that started it has been navigated away
+          from.
+        -->
+        <Grid Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="110" x:Name="FinderOverlay"
+              Background="#B31E2023"
+              Visibility="{Binding IsPassing, Converter={StaticResource BoolToVis}}">
+
+            <Border Background="#26FFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1" CornerRadius="10"
+                    Padding="28,24" MaxWidth="620" HorizontalAlignment="Center" VerticalAlignment="Center">
+
+                <StackPanel>
+
+                    <TextBlock Text="{Binding PassStage}" FontSize="18" FontWeight="SemiBold"
+                               Foreground="#F3F4F6" HorizontalAlignment="Center" />
+
+                    <TextBlock Text="{Binding PassDetail}" FontSize="12" Foreground="#A8ADB2"
+                               HorizontalAlignment="Center" Margin="0,6,0,0"
+                               MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+
+                    <ProgressBar Height="4" Margin="0,20,0,0" Minimum="0" Maximum="100"
+                                 Value="{Binding PassPercent, Mode=OneWay}"
+                                 IsIndeterminate="{Binding PassIsIndeterminate}"
+                                 Foreground="#5B9CF8" Background="#33FFFFFF" />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
+                        <Button Content="Cancel" Command="{Binding CancelPassCommand}"
+                                Padding="20,7" MinWidth="100"
+                                Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
+                                ToolTip="Stops the pass. Whatever was already loaded stays loaded." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

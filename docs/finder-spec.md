@@ -1017,10 +1017,12 @@ what lets a reader judge a candidate by looking at it rather than by reading its
 ### 18.8 The busy screen
 
 A pass opens every parent and child file in the library, so it takes a while (§19.2). While it
-runs, the tab's work area is covered by a **busy screen**.
+runs, the window is covered by a **busy screen**.
 
-- It covers the **tab's work area** — the table and the info area — not the whole window. It
-  is the Finder's own work, and the rest of the app stays usable.
+- It covers the **whole window** — title bar, navigation and status bar included — for as
+  long as the pass runs, exactly like the app's other busy screen (the sync overlay). A pass
+  that opens every file in the library is not something to do beside other work, and a scrim
+  over part of a window reads as half-finished rather than as modal.
 - It is a **translucent dark scrim** with a **panel** in the middle: the stage, a progress bar,
   the counts and the cancel. The shape follows the app's existing busy screen (the sync
   overlay), so the two look like the same thing.
@@ -1033,8 +1035,8 @@ runs, the tab's work area is covered by a **busy screen**.
   - *Building rows* — **determinate**: one row per pair.
 - It carries a **Cancel**. A pass that cannot be stopped is not something to put in front of a
   reader. Cancelling leaves the tab as it was — whatever was already loaded stays loaded.
-- The busy screen is **the tab's state**, so it survives switching tabs: a pass that is running
-  when the reader leaves shows its progress when they come back.
+- While it is up, the app behind it cannot be clicked, so a long pass cannot be interrupted by
+  a stray click on a page that is about to be re-read anyway.
 
 ---
 
@@ -1115,10 +1117,14 @@ check 35.6 s, the widening 13.8 s, the row building 1.4 s. Of the file check, ab
 asking whether each of the 727,712 files is there — and almost all of them are not — and about
 17 s is decoding the 215 that are.
 
-**The file pass is SEQUENTIAL.** The database pass finishes before the first file is opened,
-and the files are visited one at a time — one pair, then the next, with the parent and the
-child of each pair read in turn. Nothing runs beside anything else. That is what the busy
-screen's *Checking files* stage is counting.
+**The file pass is PARALLEL.** The database pass finishes before the first file is opened, and
+then the pairs are visited by a pool of workers — one pair each, with the parent and the child
+of each pair read in turn.
+
+The pool's size is the machine's **logical processor count**. The app asks **one service** for
+that number and keeps the answer: it cannot change while the app runs, and it is asked for on
+every parallel loop. The same number is the degree for the existence checks and for the
+decodes — one rule for the whole file pass, rather than a tuned constant for each half.
 
 The stages report progress as they go (§18.8): the file pass knows how many pairs it has and
 how many it has done; the widening pass knows how many pairs it is widening; the row pass

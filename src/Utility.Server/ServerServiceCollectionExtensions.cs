@@ -8,6 +8,7 @@ using Utility.Server.Finder.Services;
 using Utility.Server.ML.Data;
 using Utility.Server.ML.Services;
 using Utility.Server.Options;
+using Utility.Server.Services;
 
 namespace Utility.Server;
 
@@ -58,6 +59,10 @@ public static class ServerServiceCollectionExtensions
 
         services.AddTransient<IMlDataService, MlDataService>();
         services.AddTransient<IDatabaseProbe, DatabaseProbe>();
+
+        // How many things the app may do at once: the machine's logical processor count,
+        // read once and kept. The Finder's file pass uses it as the size of its worker pool.
+        services.AddSingleton<IParallelism, Parallelism>();
 
         // The Finder: one service that gathers the pairs and computes their verdicts. The
         // library service reads the media library on disk; the preview client fetches a

@@ -558,46 +558,5 @@
                 </Grid>
             </Border>
         </Grid>
-
-        <!--
-          The busy screen (§18.8).
-
-          It covers the tab's WORK AREA - the table and the info area - not the whole window:
-          this is the Finder's own work, and the rest of the app stays usable. It follows the
-          shape of the app's existing busy screen, the sync overlay, so the two look like the
-          same thing.
-
-          The bar is determinate for three of the four stages and indeterminate for the
-          database pass, which has no total until its query returns.
-        -->
-        <Grid Grid.Row="1" Panel.ZIndex="50" Background="#B31E2023"
-              Visibility="{Binding IsPassing, Converter={StaticResource BoolToVis}}">
-
-            <Border Background="#26FFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1" CornerRadius="10"
-                    Padding="28,24" MaxWidth="620" HorizontalAlignment="Center" VerticalAlignment="Center">
-
-                <StackPanel>
-
-                    <TextBlock Text="{Binding PassStage}" FontSize="18" FontWeight="SemiBold"
-                               Foreground="#F3F4F6" HorizontalAlignment="Center" />
-
-                    <TextBlock Text="{Binding PassDetail}" FontSize="12" Foreground="#A8ADB2"
-                               HorizontalAlignment="Center" Margin="0,6,0,0"
-                               MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
-
-                    <ProgressBar Height="4" Margin="0,20,0,0" Minimum="0" Maximum="100"
-                                 Value="{Binding PassPercent, Mode=OneWay}"
-                                 IsIndeterminate="{Binding PassIsIndeterminate}"
-                                 Foreground="#5B9CF8" Background="#33FFFFFF" />
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
-                        <Button Content="Cancel" Command="{Binding CancelPassCommand}"
-                                Padding="20,7" MinWidth="100"
-                                Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
-                                ToolTip="Stops the pass. Whatever was already loaded stays loaded." />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-        </Grid>
     </Grid>
 </UserControl>

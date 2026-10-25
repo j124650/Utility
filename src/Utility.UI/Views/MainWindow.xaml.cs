@@ -50,6 +50,10 @@ public partial class MainWindow : Window
         // page that started it has been navigated away from.
         SyncOverlay.DataContext = sync;
 
+        // The FINDER's busy screen binds to the Finder's view model, which is also a
+        // singleton (§14.1) - the same pattern as the sync overlay above.
+        FinderOverlay.DataContext = services.GetRequiredService<FinderViewModel>();
+
         // Setting IsChecked raises Checked, which navigates. The Dashboard tab is hidden,
         // so the app opens on the Finder.
         NavFinder.IsChecked = true;
