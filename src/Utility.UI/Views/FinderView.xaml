@@ -248,34 +248,14 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                        <TextBlock Text="File name, folder or candidate" Style="{StaticResource FieldLabel}" />
-                        <TextBox Text="{Binding FilterText, Mode=OneWay}" Margin="0" />
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="1" Margin="0,0,10,0" MinWidth="170">
-                        <TextBlock Text="Verdict" Style="{StaticResource FieldLabel}" />
-                        <ComboBox ItemsSource="{Binding VerdictFilterOptions}"
-                                  SelectedItem="{Binding VerdictFilter}">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Text}" />
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="2" Margin="0,0,10,0" VerticalAlignment="Bottom">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
                         <Button Content="Run the pass" Command="{Binding RunCommand}" MinWidth="110" />
-                    </StackPanel>
 
-                    <StackPanel Grid.Column="3" VerticalAlignment="Bottom">
                         <TextBlock Text="{Binding RowsDisplay}" FontSize="11" Foreground="#6B7280"
-                                   VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                   VerticalAlignment="Center" HorizontalAlignment="Right"
+                                   Margin="12,0,0,0" />
                     </StackPanel>
                 </Grid>
 
@@ -300,8 +280,124 @@
                           VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
                           Background="#E2E8F0" />
 
-            <DataGrid x:Name="PairsGrid"
-                      Grid.Column="0"
+            <!--
+              The table pane: the filters above the grid, and the grid itself.
+
+              The filters sit ABOVE the grid, not in its header: the grid keeps its own
+              header and its own sorting, and the filters are a row of their own, laid out
+              in the grid's four columns so each filter sits over the column it filters.
+            -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!--
+                  The filter row. Its columns are the grid's columns - the icon, the
+                  parent, the child and the verdict - so a filter sits over the column it
+                  filters.
+
+                  The widths are set from the grid's own columns at run time
+                  (FinderView.xaml.cs), because the grid measures its star columns against
+                  its own viewport - which is narrower than this row's by the width of the
+                  vertical scrollbar. The row is also moved sideways with the grid, so a
+                  filter stays over its column when the table is scrolled.
+                -->
+                <Grid Grid.Row="0" ClipToBounds="True">
+                    <Grid x:Name="FilterRow" RenderTransformOrigin="0,0">
+                        <Grid.RenderTransform>
+                            <TranslateTransform x:Name="FilterRowScroll" />
+                        </Grid.RenderTransform>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition x:Name="FilterColumn0" Width="44" />
+                            <ColumnDefinition x:Name="FilterColumn1" Width="290" />
+                            <ColumnDefinition x:Name="FilterColumn2" Width="290" />
+                            <ColumnDefinition x:Name="FilterColumn3" Width="200" />
+                        </Grid.ColumnDefinitions>
+
+                    <!--
+                      The parent: the folder and the file name, side by side. Each is an
+                      icon and a box, and that pair is the unit that wraps - the icon
+                      never ends up on its own on the next line.
+                    -->
+                    <WrapPanel Grid.Column="1" Orientation="Horizontal" Margin="2,0,4,4">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,6,0">
+                            <TextBlock Text="&#xE8D5;"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="11"
+                                       Foreground="#64748B"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,3,0"
+                                       ToolTip="Folder contains…" />
+                            <TextBox Width="120"
+                                     Padding="4,2"
+                                     Margin="0"
+                                     FontSize="11"
+                                     Text="{Binding ParentFolderFilter, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Folder contains…" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE729;"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="11"
+                                       Foreground="#64748B"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,3,0"
+                                       ToolTip="File name contains…" />
+                            <TextBox Width="120"
+                                     Padding="4,2"
+                                     Margin="0"
+                                     FontSize="11"
+                                     Text="{Binding ParentFileNameFilter, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="File name contains…" />
+                        </StackPanel>
+                    </WrapPanel>
+
+                    <!--
+                      The verdict: one or more of the six verdicts. The button says what
+                      is chosen - "All" when nothing is, which keeps every verdict.
+                    -->
+                    <Grid Grid.Column="3">
+                        <ToggleButton x:Name="VerdictFilterToggle"
+                                      Content="{Binding VerdictFilterCaption}"
+                                      HorizontalAlignment="Left"
+                                      Margin="2,0,4,4"
+                                      Padding="6,2"
+                                      FontSize="11"
+                                      MinWidth="0"
+                                      IsChecked="{Binding IsVerdictFilterOpen, Mode=TwoWay}"
+                                      ToolTip="Filter by verdict" />
+
+                        <Popup PlacementTarget="{Binding ElementName=VerdictFilterToggle}"
+                               Placement="Bottom"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               IsOpen="{Binding IsVerdictFilterOpen, Mode=TwoWay}">
+                            <Border Background="White" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8">
+                                <StackPanel>
+                                    <Button Content="All"
+                                            Margin="0,0,0,6"
+                                            Command="{Binding ClearVerdictFilterCommand}" />
+                                    <ItemsControl ItemsSource="{Binding VerdictFilterChoices}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox Content="{Binding Text}"
+                                                          IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                          Margin="0,4,0,0" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    </Grid>
+                </Grid>
+
+                <DataGrid x:Name="PairsGrid"
+                      Grid.Row="1"
                       ItemsSource="{Binding Rows}"
                       SelectedItem="{Binding Selected}"
                       EnableRowVirtualization="True"
@@ -438,6 +534,7 @@
                     </DataGridTemplateColumn>
                 </DataGrid.Columns>
             </DataGrid>
+            </Grid>
 
             <!-- Info area -->
             <Border Grid.Column="2" Style="{StaticResource CardStyle}" Margin="10,0,0,0" Padding="14">

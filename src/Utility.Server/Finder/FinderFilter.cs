@@ -11,10 +11,14 @@ namespace Utility.Server.Finder;
 public sealed class FinderFilter
 {
     /// <summary>
-    /// One substring, matched against the parent's file name, the parent's folder, a
-    /// candidate's Dropbox path or a candidate's name.
+    /// A substring of the parent's folder. Null or empty keeps every folder (§14.3).
     /// </summary>
-    public string? Text { get; set; }
+    public string? ParentFolderText { get; set; }
+
+    /// <summary>
+    /// A substring of the parent's file name. Null or empty keeps every file name (§14.3).
+    /// </summary>
+    public string? ParentFileNameText { get; set; }
 
     /// <summary>The verdicts to keep. Empty keeps every verdict.</summary>
     public HashSet<FinderVerdict> Verdicts { get; } = [];
@@ -79,34 +83,19 @@ public sealed class FinderFilter
             return false;
         }
 
-        var text = Text?.Trim();
-        if (!string.IsNullOrEmpty(text))
+        var folder = ParentFolderText?.Trim();
+        if (!string.IsNullOrEmpty(folder) && !Contains(row.ParentFolder, folder))
         {
-            return MatchesText(row, text);
+            return false;
+        }
+
+        var fileName = ParentFileNameText?.Trim();
+        if (!string.IsNullOrEmpty(fileName) && !Contains(row.ParentFileName, fileName))
+        {
+            return false;
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// The free-text test: the substring must be found in any one of the four places.
-    /// </summary>
-    private static bool MatchesText(FinderRow row, string text)
-    {
-        if (Contains(row.ParentFileName, text) || Contains(row.ParentFolder, text))
-        {
-            return true;
-        }
-
-        foreach (var candidate in row.Candidates)
-        {
-            if (Contains(candidate.Path, text) || Contains(candidate.Name, text))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static bool Contains(string? value, string text) =>

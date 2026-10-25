@@ -1,10 +1,12 @@
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Utility.Server.Finder;
 using Utility.Server.Finder.Services;
 using Utility.UI.Mvvm;
@@ -39,9 +41,12 @@ public sealed class FinderViewModel(
     private FinderCandidate? _selectedCandidate;
     private BitmapSource? _previewImage;
     private string _previewState = string.Empty;
-    private string _filterText = string.Empty;
-    private FinderVerdict? _verdictFilter;
     private string _summary = string.Empty;
+    private string _parentFolderFilter = string.Empty;
+    private string _parentFileNameFilter = string.Empty;
+    private bool _isVerdictFilterOpen;
+    private DispatcherTimer? _filterTimer;
+    private RelayCommand? _clearVerdictFilter;
 
     /// <summary>The filter, as the server owns it (§14.3).</summary>
     private readonly FinderFilter _filter = new();
@@ -63,6 +68,103 @@ public sealed class FinderViewModel(
 
     /// <summary>The verdicts the table can be filtered by.</summary>
     public IReadOnlyList<FinderVerdict> VerdictFilterOptions { get; } = FinderVerdict.All;
+
+    /// <summary>
+    /// The verdict filter's choices - one per verdict (§7).
+    /// </summary>
+    /// <remarks>
+    /// Choosing a verdict is a single click, so it applies at once: there is no typing to
+    /// wait for.
+    /// </remarks>
+    public IReadOnlyList<VerdictFilterOption> VerdictFilterChoices
+    {
+        get
+        {
+            if (_verdictFilterChoices is null)
+            {
+                _verdictFilterChoices = FinderVerdict.All
+                    .Select(v => new VerdictFilterOption(v))
+                    .ToList();
+
+                foreach (var choice in _verdictFilterChoices)
+                {
+                    choice.PropertyChanged += OnVerdictFilterOptionChanged;
+                }
+            }
+
+            return _verdictFilterChoices;
+        }
+    }
+
+    private IReadOnlyList<VerdictFilterOption>? _verdictFilterChoices;
+
+    /// <summary>
+    /// Unchecks every verdict, which keeps them all (§14.3).
+    /// </summary>
+    public RelayCommand ClearVerdictFilterCommand => _clearVerdictFilter ??= new(_ => ClearVerdictFilter());
+
+    /// <summary>What the verdict filter's button says: "All", or what is chosen.</summary>
+    public string VerdictFilterCaption
+    {
+        get
+        {
+            var chosen = VerdictFilterChoices.Where(o => o.IsSelected).ToList();
+
+            return chosen.Count switch
+            {
+                0 => "All",
+                1 => chosen[0].Text,
+                _ => $"{chosen.Count} verdicts",
+            };
+        }
+    }
+
+    /// <summary>Whether the verdict filter's list is open.</summary>
+    public bool IsVerdictFilterOpen
+    {
+        get => _isVerdictFilterOpen;
+        set => SetProperty(ref _isVerdictFilterOpen, value);
+    }
+
+    /// <summary>
+    /// The parent's folder, filtered by a substring of it (§14.3).
+    /// </summary>
+    /// <remarks>
+    /// The filter waits for the typing to settle: each keystroke restarts a short timer,
+    /// and the rows are re-filtered when it stops, so a long word is not filtered once per
+    /// letter.
+    /// </remarks>
+    public string ParentFolderFilter
+    {
+        get => _parentFolderFilter;
+        set
+        {
+            if (SetProperty(ref _parentFolderFilter, value))
+            {
+                _filter.ParentFolderText = value;
+                ScheduleFilter();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The parent's file name, filtered by a substring of it (§14.3).
+    /// </summary>
+    /// <remarks>
+    /// The filter waits for the typing to settle, the same way the folder's does.
+    /// </remarks>
+    public string ParentFileNameFilter
+    {
+        get => _parentFileNameFilter;
+        set
+        {
+            if (SetProperty(ref _parentFileNameFilter, value))
+            {
+                _filter.ParentFileNameText = value;
+                ScheduleFilter();
+            }
+        }
+    }
 
     /// <summary>The parent states the table can be filtered by.</summary>
     public IReadOnlyList<FileState> ParentStateFilterOptions { get; } = FileState.All;
@@ -262,38 +364,63 @@ public sealed class FinderViewModel(
     }
 
     /// <summary>
-    /// Free-text filter over the file name, the folder, a candidate's path or a candidate's
-    /// name (§14.3).
+    /// Starts the timer that waits for the typing to settle (§14.3).
     /// </summary>
-    public string FilterText
+    private void ScheduleFilter()
     {
-        get => _filterText;
-        set
+        if (_filterTimer is null)
         {
-            if (SetProperty(ref _filterText, value))
+            _filterTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
-                _filter.Text = value;
-                ApplyFilters();
-            }
+                Interval = TimeSpan.FromMilliseconds(100),
+            };
+            _filterTimer.Tick += OnFilterTimerTick;
         }
+
+        _filterTimer.Stop();
+        _filterTimer.Start();
     }
 
-    /// <summary>Which verdict to show. Null shows all of them.</summary>
-    public FinderVerdict? VerdictFilter
+    /// <summary>
+    /// Re-filters the rows once the typing has settled (§14.3).
+    /// </summary>
+    private void OnFilterTimerTick(object? sender, EventArgs e)
     {
-        get => _verdictFilter;
-        set
-        {
-            if (SetProperty(ref _verdictFilter, value))
-            {
-                _filter.Verdicts.Clear();
-                if (value.HasValue)
-                {
-                    _filter.Verdicts.Add(value.Value);
-                }
+        _filterTimer?.Stop();
+        ApplyFilters();
+    }
 
-                ApplyFilters();
+    /// <summary>
+    /// Keeps the filter's verdicts in step with the reader's choices (§14.3).
+    /// </summary>
+    private void OnVerdictFilterOptionChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(VerdictFilterOption.IsSelected))
+        {
+            return;
+        }
+
+        _filter.Verdicts.Clear();
+        foreach (var choice in VerdictFilterChoices)
+        {
+            if (choice.IsSelected)
+            {
+                _filter.Verdicts.Add(choice.Verdict);
             }
+        }
+
+        OnPropertyChanged(nameof(VerdictFilterCaption));
+        ApplyFilters();
+    }
+
+    /// <summary>
+    /// Unchecks every verdict, which keeps them all (§14.3).
+    /// </summary>
+    private void ClearVerdictFilter()
+    {
+        foreach (var choice in VerdictFilterChoices)
+        {
+            choice.IsSelected = false;
         }
     }
 

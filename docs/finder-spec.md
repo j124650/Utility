@@ -694,14 +694,18 @@ The **Note** line carries why a verdict came out the way it did, so a reader can
 The whole set is loaded (§14.1), so filtering happens in memory over every row. Filters narrow
 the rows on screen; they never change a verdict.
 
-**Free text.** One substring, matched against any part of:
+**The filters live above the table** (§20), not in the toolbar. The columns that carry them
+are:
 
-- the parent's file name;
-- the parent's folder;
-- the candidate's path — any part of the Dropbox path;
-- the candidate's name — the original file name.
+| Column | Filter | What it matches |
+|---|---|---|
+| Parent | **Folder** | the parent's folder — a substring, case-insensitive |
+| Parent | **File name** | the parent's file name — a substring, case-insensitive |
+| Verdict | **Verdict** | one or more of the §7 verdicts; **All** (nothing chosen) keeps every verdict |
 
-A row matches when the substring is found in any one of these.
+**Free text.** The parent's folder and the parent's file name each have their own filter. A
+filter matches its own field as a substring, case-insensitively; an empty filter matches
+everything. A row passes when it passes both of them.
 
 **Verdict.** One or more of the §7 verdicts.
 
@@ -849,8 +853,8 @@ later (§17), and the strip exists so they have a place.
 
 - Buttons are grouped left, separated by dividers.
 - The right side carries **status text** — how many pairs are loaded.
-- The **filter controls** (§14.3) live here, so filtering is reachable without leaving the
-  table.
+- The **filter controls** (§14.3) do **not** live here. They are in the row above the table
+  (§20), so filtering is reachable without leaving the table.
 - During a pass the **busy screen** (§18.8) takes over the tab's work area: it carries the
   progress and the cancel.
 
@@ -1332,3 +1336,40 @@ recompute anything.
   populates as verdicts arrive.
 - Nothing is written — no file to the library, nothing to `ml` (§17). The preview fetches a
   candidate's image and discards it (§18.7).
+
+## 20. The row above the table
+
+The filters (§14.3) sit in **a row of their own, above the table**. The table itself is
+untouched: it keeps its own header, its own sorting and its own columns.
+
+```
+┌────┬────────────────────────┬────────────────────────┬──────────────────────────┐
+│    │ [📁 folder…] [📄 name…]│                        │ [All ▾]                  │  ← filters
+├────┼────────────────────────┼────────────────────────┼──────────────────────────┤
+│    │ Parent                 │ Child                  │ Verdict                  │  ← the table's own header
+├────┼────────────────────────┼────────────────────────┼──────────────────────────┤
+│  ? │ File name  HE100890H…  │ Id       A91C22F0…     │ no original — needs a    │
+└────┴────────────────────────┴────────────────────────┴──────────────────────────┘
+```
+
+- The filter row has **the table's four columns** — the icon, the parent, the child and the
+  verdict — so a filter sits over the column it filters. The widths are copied from the
+  table's own columns at run time, because the table measures its star columns against its
+  own viewport, which is narrower than the filter row's by the width of the vertical
+  scrollbar.
+- The row **scrolls sideways with the table**, so a filter stays over its column when the
+  table is scrolled.
+- The **parent** carries two filters side by side: the **folder** and the **file name**. Each
+  is an icon and a box, and that pair is the unit that wraps — the icon never ends up on its
+  own on the next line.
+- The **verdict** carries one control: a button that opens a list of the six verdicts of §7,
+  each with a box to tick, and **All** to clear them. The button says **All** when nothing is
+  ticked, which keeps every verdict.
+- The **icon** and the **child** carry nothing: there is no filter for either.
+- The filters are in the **toolbar's old place in spirit only** — the toolbar now holds the
+  run button and the row count (§18.2).
+- Filtering happens in memory over the rows already loaded (§14.3). It never asks the
+  database for anything and never changes a verdict.
+- The two text filters **wait for the typing to settle** — a tenth of a second — before the
+  rows are re-filtered, so a long word is not filtered once per letter. The verdict filter
+  applies at once: ticking a box is a single click, not typing.
