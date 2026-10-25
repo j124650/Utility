@@ -69,6 +69,15 @@ public interface IDropBoxDataService
         string destinationPath,
         string? namespaceId = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Downloads a file into memory. For a preview that is shown and discarded - nothing is
+    /// written to disk.
+    /// </summary>
+    Task<byte[]> DownloadBytesAsync(
+        string dropboxPath,
+        string? namespaceId = null,
+        CancellationToken ct = default);
 }
 
 public sealed class DropBoxDataService(
@@ -306,5 +315,25 @@ public sealed class DropBoxDataService(
         logger.LogInformation("Downloaded {DropboxPath} to {Destination}.", dropboxPath, destinationPath);
 
         return destinationPath;
+    }
+
+    public async Task<byte[]> DownloadBytesAsync(
+        string dropboxPath, string? namespaceId = null, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        // Same namespace scoping as DownloadAsync — a team file fetched without it resolves
+        // in the personal space and comes back as path/not_found.
+        var client = await clientFactory.CreateClientForNamespaceAsync(namespaceId, ct);
+
+        using var response = await client.Files.DownloadAsync(dropboxPath);
+        await using var source = await response.GetContentAsStreamAsync()
+            ?? throw new InvalidOperationException($"Dropbox returned no content stream for '{dropboxPath}'.");
+
+        using var buffer = new MemoryStream();
+        await source.CopyToAsync(buffer, ct);
+        logger.LogInformation("Downloaded {DropboxPath} to memory ({Bytes} bytes).", dropboxPath, buffer.Length);
+
+        return buffer.ToArray();
     }
 }

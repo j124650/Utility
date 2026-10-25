@@ -37,6 +37,7 @@ public sealed class NavigationService(IServiceProvider services) : INavigationSe
         "Dashboard" => services.GetService(typeof(DashboardView)) ?? throw new InvalidOperationException("DashboardView not registered."),
         "DropBox"   => services.GetService(typeof(DropBoxView))   ?? throw new InvalidOperationException("DropBoxView not registered."),
         "Media"     => services.GetService(typeof(MediaView))     ?? throw new InvalidOperationException("MediaView not registered."),
+        "Finder"    => services.GetService(typeof(FinderView))    ?? throw new InvalidOperationException("FinderView not registered."),
         "Settings"  => services.GetService(typeof(SettingsView))  ?? throw new InvalidOperationException("SettingsView not registered."),
         _ => throw new ArgumentOutOfRangeException(nameof(pageKey), pageKey, "Unknown page key.")
     };
@@ -47,5 +48,6 @@ public static class NavigationKeys
     public const string Dashboard = "Dashboard";
     public const string DropBox = "DropBox";
     public const string Media = "Media";
+    public const string Finder = "Finder";
     public const string Settings = "Settings";
 }

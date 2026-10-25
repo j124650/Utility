@@ -36,6 +36,16 @@ public sealed class DropBoxNode
 
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The name reduced to a comparison key: the extension dropped, upper-cased, first
+    /// eight characters. A PERSISTED computed column maintained by the database.
+    /// <para>
+    /// This is the key the Finder's similarity widening joins on. Never assigned by this
+    /// code - it exists only so the join has a column to seek on.
+    /// </para>
+    /// </summary>
+    public string? NameKey { get; set; }
+
     public bool IsFolder { get; set; }
 
     /// <summary>Parent node's surrogate id. Null only for the start folder of a run.</summary>

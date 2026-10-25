@@ -50,8 +50,9 @@ public partial class MainWindow : Window
         // page that started it has been navigated away from.
         SyncOverlay.DataContext = sync;
 
-        // Setting IsChecked raises Checked, which navigates.
-        NavDashboard.IsChecked = true;
+        // Setting IsChecked raises Checked, which navigates. The Dashboard tab is hidden,
+        // so the app opens on the Finder.
+        NavFinder.IsChecked = true;
     }
 
     private void OnNavDashboardClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Dashboard);
@@ -59,6 +60,8 @@ public partial class MainWindow : Window
     private void OnNavDropBoxClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.DropBox);
 
     private void OnNavMediaClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Media);
+
+    private void OnNavFinderClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Finder);
 
     private void OnNavSettingsClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Settings);
 
@@ -113,7 +116,8 @@ public partial class MainWindow : Window
 
         // Pages load their own data. The dashboard deliberately does NOT reload on
         // navigation: its tree is read once and kept in the singleton tree state, so
-        // switching away and back does not re-query the database.
+        // switching away and back does not re-query the database. The Finder does not
+        // reload either: its pass is long and runs when the user asks for it.
         switch (_current.DataContext)
         {
             case DropBoxViewModel dropBox:

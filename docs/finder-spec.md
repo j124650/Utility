@@ -1,6 +1,6 @@
 # Finder — Specification
 
-**Status:** draft for review. **No implementation.**
+**Status:** implemented. The Finder tab gathers and displays; it repairs nothing (§12.8).
 
 Repo: `C:/_Recover/Utility` · DB: `PWR` / `apps_ml_dev` / schema `ml`
 
@@ -103,6 +103,20 @@ The media library root is read from `ml.Settings` at run time:
 
 The Finder works against local storage (§12.5). Both roots are read from `ml.Settings` at run
 time, so the paths are configuration.
+
+**Resolving the local root.** The configured local path is the starting point, not the answer.
+A recovered copy of the library holds the media and the PhotoLab trees side by side, so the
+library's folders sit **under** the configured path, in a folder named after the network share
+(`\\bbcvpn22\media` → `<local>\media`) rather than directly under it.
+
+So the root is **resolved, not assumed**: the candidates are the configured local path and the
+configured local path with the UNC path's server dropped (`<local>\media`), and the candidate
+whose directories are really there wins. The check counts the candidate's immediate
+subdirectories that the media rows name — counted that way round because the library was
+destroyed and most of its folders are gone, so probing every known folder name would be tens
+of thousands of stat calls to find the few that survived.
+
+The same resolution applies to the UNC root.
 
 ### The naming rule
 
@@ -1060,6 +1074,19 @@ The lookup is a **set-based join**, not a query per parent: the index carries
 ```
 by similarity = indexed files whose name is similar to parent.FileName   (§10's fuzzy rules)
 ```
+
+The widening is **one set-based join**, not a query per pair. The pairs' names go into a temp
+table, each reduced to a **join key** — the name up to its last dot, upper-cased, first eight
+characters — and joined to `ml.DropBoxNode.NameKey`, which is the same key computed by the
+database as a PERSISTED column.
+
+The join key is a **pooling** key, not the decision: it says which candidates are worth
+comparing. §10's fuzzy rules are applied to each one afterwards, and a candidate that is not
+similar enough is dropped. Without the key the join would scan the whole index; with it, it
+seeks.
+
+The key's rule is stated in two places — the computed column's definition and
+`FinderService.Prefix` — and the two must agree exactly, or the join finds nothing.
 
 The **display set** (§10) is the two together, and it is what the row carries (§19.1). A pair
 whose parent is ok carries only the name matches — similarity has nothing to add to a parent

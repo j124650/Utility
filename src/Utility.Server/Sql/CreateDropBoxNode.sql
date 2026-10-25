@@ -71,6 +71,27 @@ CREATE TABLE ml.DropBoxNode
     Name            NVARCHAR(255)   NOT NULL,
     IsFolder        BIT             NOT NULL,
 
+    -- The name reduced to a comparison key: the extension dropped, upper-cased, first
+    -- eight characters.
+    --
+    -- This is the key the Finder's similarity widening joins on (§10's fuzzy rules). It
+    -- is a POOLING key, not the decision: it says which candidates are worth comparing,
+    -- and the fuzzy rules say which of them are actually similar.
+    --
+    -- The rule is duplicated in C# (FinderService.Prefix) and the two must agree exactly,
+    -- or the join finds nothing.
+    NameKey         AS
+                    (
+                        LEFT(
+                            UPPER(
+                                LEFT(Name,
+                                    CASE WHEN CHARINDEX(N'.', REVERSE(Name)) = 0
+                                         THEN LEN(Name)
+                                         ELSE LEN(Name) - CHARINDEX(N'.', REVERSE(Name))
+                                    END)),
+                            8)
+                    ) PERSISTED,
+
     -- NULL only for the root of a namespace. ON DELETE NO ACTION, not
     -- CASCADE: SQL Server rejects a self-referencing cascade (Msg 1785).
     ParentId        BIGINT          NULL,
@@ -179,4 +200,15 @@ GO
 CREATE NONCLUSTERED INDEX IX_DropBoxNode_Name
     ON ml.DropBoxNode (Name)
     INCLUDE (IsFolder, SizeBytes, WidthPixels, HeightPixels, ServerModified);
+GO
+
+-- Serves the Finder's similarity widening - the join that brings back the candidates
+-- whose names are close enough to compare. Not speculative: without it the widening
+-- scans the whole index instead of seeking.
+--
+-- Filtered to files, since only files can be candidates.
+CREATE NONCLUSTERED INDEX IX_DropBoxNode_NameKey
+    ON ml.DropBoxNode (NameKey)
+    INCLUDE (Name, SizeBytes, WidthPixels, HeightPixels, PathDisplay, ServerModified)
+    WHERE IsFolder = 0;
 GO

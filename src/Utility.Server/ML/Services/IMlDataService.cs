@@ -19,6 +19,15 @@ public interface IMlDataService
     /// <summary>Reads the keyless single-row <c>ml.Settings</c> table.</summary>
     Task<MlSettings?> GetSettingsAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// The distinct folder names the media rows carry - every <c>ml.Media.Path</c> value.
+    /// </summary>
+    /// <remarks>
+    /// Used to work out which folder on disk holds the library: the candidate root whose
+    /// immediate subdirectories are in this set is the library's root.
+    /// </remarks>
+    Task<IReadOnlySet<string>> GetMediaFoldersAsync(CancellationToken ct = default);
+
     // ---- Lookups ----
 
     Task<IReadOnlyList<MediaType>> GetMediaTypesAsync(CancellationToken ct = default);
@@ -76,6 +85,13 @@ public sealed class MlDataService(MlDbContext db) : IMlDataService
 {
     public async Task<MlSettings?> GetSettingsAsync(CancellationToken ct = default) =>
         await db.Settings.AsNoTracking().FirstOrDefaultAsync(ct);
+
+    public async Task<IReadOnlySet<string>> GetMediaFoldersAsync(CancellationToken ct = default) =>
+        await db.Media.AsNoTracking()
+            .Where(x => x.Path != null)
+            .Select(x => x.Path!)
+            .Distinct()
+            .ToHashSetAsync(ct);
 
     public async Task<IReadOnlyList<MediaType>> GetMediaTypesAsync(CancellationToken ct = default) =>
         await db.MediaTypes.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct);

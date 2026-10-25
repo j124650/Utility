@@ -40,6 +40,12 @@ public class DropBoxDbContext(DbContextOptions<DropBoxDbContext> options) : DbCo
             .ValueGeneratedOnAddOrUpdate()
             .HasColumnName("PathHash");
 
+        // NameKey is a PERSISTED computed column too - the Finder's similarity join seeks
+        // on it. Same rule, same reason: EF must not write it.
+        node.Property(x => x.NameKey)
+            .ValueGeneratedOnAddOrUpdate()
+            .HasColumnName("NameKey");
+
         // The natural key an upsert matches on.
         node.HasIndex(x => new { x.NamespaceId, x.PathHash })
             .IsUnique()

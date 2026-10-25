@@ -37,6 +37,15 @@
     <PackageVersion Include="Dropbox.Api" Version="7.4.0" />
   </ItemGroup>
 
+  <!--
+    Image decoding for the Finder: telling a good file from a corrupt one means
+    OPENING it, not sniffing its magic bytes. Magick.NET covers the image set
+    (JPG, PNG, GIF) outright and needs no external delegate.
+  -->
+  <ItemGroup>
+    <PackageVersion Include="magick.net-q8-x64" Version="15.0.0" />
+  </ItemGroup>
+
   <!-- Crypto: pin patched version over vulnerable transitive 9.x -->
   <ItemGroup>
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />

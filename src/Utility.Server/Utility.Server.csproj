@@ -15,6 +15,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <!-- Opens an image to tell a good file from a corrupt one (the Finder's check). -->
+    <PackageReference Include="magick.net-q8-x64" />
   </ItemGroup>
 
   <!--

@@ -105,12 +105,19 @@
         <!-- Navigation -->
         <Border Grid.Row="1" Style="{StaticResource BlurBehindOverlay}" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="8,6">
             <StackPanel Orientation="Horizontal">
+                <!--
+                  The Dashboard tab is hidden. The view and its view model are still there,
+                  so it can come back without being rebuilt - but it is not offered.
+                -->
                 <RadioButton x:Name="NavDashboard" GroupName="Nav" Content="Dashboard"
-                             Style="{StaticResource NavButtonStyle}" Checked="OnNavDashboardClick" />
+                             Style="{StaticResource NavButtonStyle}" Checked="OnNavDashboardClick"
+                             Visibility="Collapsed" />
                 <RadioButton x:Name="NavDropBox" GroupName="Nav" Content="DropBox files"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavDropBoxClick" />
                 <RadioButton x:Name="NavMedia" GroupName="Nav" Content="Media library"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavMediaClick" />
+                <RadioButton x:Name="NavFinder" GroupName="Nav" Content="Finder"
+                             Style="{StaticResource NavButtonStyle}" Checked="OnNavFinderClick" />
                 <RadioButton x:Name="NavSettings" GroupName="Nav" Content="Settings"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavSettingsClick" />
             </StackPanel>

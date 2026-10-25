@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Utility.Server.DropBoxSync;
+using Utility.Server.Finder.Services;
 using Utility.Server.ML.Data;
 using Utility.Server.ML.Services;
 using Utility.Server.Options;
@@ -57,6 +58,13 @@ public static class ServerServiceCollectionExtensions
 
         services.AddTransient<IMlDataService, MlDataService>();
         services.AddTransient<IDatabaseProbe, DatabaseProbe>();
+
+        // The Finder: one service that gathers the pairs and computes their verdicts. The
+        // library service reads the media library on disk; the preview client fetches a
+        // candidate's image from Dropbox and discards it.
+        services.AddTransient<IFinderService, FinderService>();
+        services.AddSingleton<IFinderLibraryService, FinderLibraryService>();
+        services.AddTransient<IDropBoxPreviewClient, DropBoxPreviewClient>();
 
         services.AddUtilityDropBoxSync(configuration);
 
