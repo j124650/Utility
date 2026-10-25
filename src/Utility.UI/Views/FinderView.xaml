@@ -375,6 +375,25 @@
                                     <TextBlock Text="Refresh" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
+
+                            <!--
+                              The Liem's List. The tab that used to carry it is hidden
+                              (§14.5), so the list is reached from here.
+                            -->
+                            <Button Command="{Binding ShowLiemListCommand}"
+                                    MinWidth="0"
+                                    Padding="10,5"
+                                    ToolTip="Liem's List">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8A5;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="13"
+                                               Foreground="#334155"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,6,0" />
+                                    <TextBlock Text="Liem's List" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </ToolBar>
                     </ToolBarTray>
                 </DockPanel>

@@ -126,8 +126,13 @@
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavMediaClick" />
                 <RadioButton x:Name="NavFinder" GroupName="Nav" Content="Finder"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavFinderClick" />
+                <!--
+                  The Liem's List tab is hidden. The view and its view model are still there,
+                  so it can come back without being rebuilt - but it is not offered.
+                -->
                 <RadioButton x:Name="NavLiemList" GroupName="Nav" Content="Liem's List"
-                             Style="{StaticResource NavButtonStyle}" Checked="OnNavLiemListClick" />
+                             Style="{StaticResource NavButtonStyle}" Checked="OnNavLiemListClick"
+                             Visibility="Collapsed" />
                 <RadioButton x:Name="NavSettings" GroupName="Nav" Content="Settings"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavSettingsClick" />
             </StackPanel>

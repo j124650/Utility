@@ -162,6 +162,7 @@ public sealed class FinderService(
                 ChildVariant = pair.ChildVariant,
                 ChildCategoryName = pair.ChildCategoryName,
                 ChildVariantName = pair.ChildVariantName,
+                ParentDateAdded = pair.ParentDateAdded,
                 Parent = state.Parent,
                 Child = state.Child,
                 Verdict = verdict,
@@ -266,7 +267,8 @@ public sealed class FinderService(
                    c.MediaCategoryId   AS ChildCategory,
                    c.MediaSubCategoryId AS ChildVariant,
                    mc.Name             AS ChildCategoryName,
-                   msc.Name            AS ChildVariantName
+                   msc.Name            AS ChildVariantName,
+                   p.DateAdded         AS ParentDateAdded
             FROM ml.media p
             JOIN ml.media c ON c.OriginalMediaId = p.Id
             LEFT JOIN ml.MediaCategory mc ON mc.Id = c.MediaCategoryId
@@ -305,6 +307,7 @@ public sealed class FinderService(
                     ChildVariant = reader.IsDBNull(12) ? (short?)null : reader.GetInt16(12),
                     ChildCategoryName = reader.IsDBNull(13) ? string.Empty : reader.GetString(13),
                     ChildVariantName = reader.IsDBNull(14) ? string.Empty : reader.GetString(14),
+                    ParentDateAdded = reader.IsDBNull(15) ? null : reader.GetDateTimeOffset(15),
                     NameMatchedCandidates = []
                 });
             }
@@ -768,6 +771,9 @@ public sealed class FinderService(
 
         /// <summary>The variant's name, from ml.MediaSubCategory. Empty when the id has none.</summary>
         public required string ChildVariantName { get; init; }
+
+        /// <summary>When the parent row was added to the media library.</summary>
+        public DateTimeOffset? ParentDateAdded { get; init; }
 
         public required List<CandidateRow> NameMatchedCandidates { get; init; }
     }

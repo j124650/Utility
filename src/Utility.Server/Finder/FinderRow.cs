@@ -66,6 +66,16 @@ public sealed record FinderRow
     public required string ChildCategoryName { get; init; }
 
     /// <summary>
+    /// When the parent row was added to the media library — <c>ml.Media.DateAdded</c>.
+    /// </summary>
+    /// <remarks>
+    /// It is the ROW's date, not the file's: the library records no date for the file
+    /// itself. The parent's is the meaningful one — the child's row was always added at
+    /// or after its parent's.
+    /// </remarks>
+    public DateTimeOffset? ParentDateAdded { get; init; }
+
+    /// <summary>
     /// The variant's name, from <c>ml.MediaSubCategory</c> (§3). Empty when the id has no name.
     /// </summary>
     public required string ChildVariantName { get; init; }
