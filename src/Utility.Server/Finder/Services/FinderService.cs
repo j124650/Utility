@@ -133,6 +133,8 @@ public sealed class FinderService(
                 ChildId = pair.ChildId,
                 ChildCategory = pair.ChildCategory,
                 ChildVariant = pair.ChildVariant,
+                ChildCategoryName = pair.ChildCategoryName,
+                ChildVariantName = pair.ChildVariantName,
                 Parent = state.Parent,
                 Child = state.Child,
                 Verdict = verdict,
@@ -170,6 +172,8 @@ public sealed class FinderService(
             ParentSize = parentSize,
             ChildId = Guid.Empty,
             ChildFolder = string.Empty,
+            ChildCategoryName = string.Empty,
+            ChildVariantName = string.Empty,
             NameMatchedCandidates = []
         };
 
@@ -226,9 +230,13 @@ public sealed class FinderService(
                    c.WidthInPixels     AS ChildWidth,
                    c.HeightInPixels    AS ChildHeight,
                    c.MediaCategoryId   AS ChildCategory,
-                   c.MediaSubCategoryId AS ChildVariant
+                   c.MediaSubCategoryId AS ChildVariant,
+                   mc.Name             AS ChildCategoryName,
+                   msc.Name            AS ChildVariantName
             FROM ml.media p
             JOIN ml.media c ON c.OriginalMediaId = p.Id
+            LEFT JOIN ml.MediaCategory mc ON mc.Id = c.MediaCategoryId
+            LEFT JOIN ml.MediaSubCategory msc ON msc.Id = c.MediaSubCategoryId
             WHERE p.OriginalMediaId IS NULL
               AND p.ExternalKey IS NOT NULL
               AND c.ExternalKey IS NOT NULL
@@ -261,6 +269,8 @@ public sealed class FinderService(
                     ChildHeight = reader.IsDBNull(10) ? null : reader.GetInt32(10),
                     ChildCategory = reader.IsDBNull(11) ? (short?)null : reader.GetInt16(11),
                     ChildVariant = reader.IsDBNull(12) ? (short?)null : reader.GetInt16(12),
+                    ChildCategoryName = reader.IsDBNull(13) ? string.Empty : reader.GetString(13),
+                    ChildVariantName = reader.IsDBNull(14) ? string.Empty : reader.GetString(14),
                     NameMatchedCandidates = []
                 });
             }
@@ -541,6 +551,12 @@ public sealed class FinderService(
         public short? ChildCategory { get; init; }
 
         public short? ChildVariant { get; init; }
+
+        /// <summary>The category's name, from ml.MediaCategory. Empty when the id has none.</summary>
+        public required string ChildCategoryName { get; init; }
+
+        /// <summary>The variant's name, from ml.MediaSubCategory. Empty when the id has none.</summary>
+        public required string ChildVariantName { get; init; }
 
         public required List<CandidateRow> NameMatchedCandidates { get; init; }
     }

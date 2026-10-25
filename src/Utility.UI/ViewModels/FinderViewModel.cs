@@ -85,6 +85,8 @@ public sealed class FinderViewModel(
                 OnPropertyChanged(nameof(ChildDimensions));
                 OnPropertyChanged(nameof(ChildFault));
                 OnPropertyChanged(nameof(HasChildFault));
+                OnPropertyChanged(nameof(ChildCategoryName));
+                OnPropertyChanged(nameof(ChildVariantName));
                 OnPropertyChanged(nameof(VerdictText));
                 OnPropertyChanged(nameof(VerdictIcon));
                 OnPropertyChanged(nameof(NoteText));
@@ -145,6 +147,12 @@ public sealed class FinderViewModel(
     public string ChildSizeCheck => Selected?.Child.SizeCheck?.Text ?? string.Empty;
 
     public string ChildDimensions => Selected?.Child.Dimensions ?? string.Empty;
+
+    /// <summary>Which rendition the child is, by name (§14.2).</summary>
+    public string ChildCategoryName => Selected?.ChildCategoryName ?? string.Empty;
+
+    /// <summary>Which variant of the rendition the child is, by name (§14.2).</summary>
+    public string ChildVariantName => Selected?.ChildVariantName ?? string.Empty;
 
     /// <summary>Why the child would not open.</summary>
     public string ChildFault => Selected?.Child.Fault ?? string.Empty;

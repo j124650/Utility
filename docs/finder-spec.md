@@ -45,6 +45,10 @@ pairs.
 **`ml.Media`** — `Id`, `Size`, `WidthInPixels`, `HeightInPixels`, `FileName`, `Path`,
 `OriginalMediaId`, `MediaTypeId`, `MediaCategoryId`, `MediaSubCategoryId`, `ExternalKey`.
 
+**`ml.MediaCategory`** and **`ml.MediaSubCategory`** — the names behind `MediaCategoryId` and
+`MediaSubCategoryId`. The card shows the **name**, not the number: a reader is not served by
+`5` and `4`.
+
 **`ml.MediaType`** — decides "is this an image". The image set is:
 
 | Id | Name | Id | Name |
@@ -583,8 +587,8 @@ up across the row, so the two sides can be read against each other without count
 | Line | Row field |
 |---|---|
 | Id | `ChildId` |
-| Category | `ChildCategory` |
-| Variant | `ChildVariant` |
+| Category | `ChildCategoryName` |
+| Variant | `ChildVariantName` |
 | State | `Child.State` |
 | Size check | `Child.SizeCheck` |
 | Size | `Child.Size` |
@@ -593,6 +597,14 @@ up across the row, so the two sides can be read against each other without count
 The child's identity is shorter because the child has no file name of its own — it is a
 rendition of the parent's file, written under its own GUID (§5) — and it carries the category
 and variant that say which rendition it is.
+
+**Category and variant are shown by NAME.** `ChildCategory` and `ChildVariant` keep the raw
+ids from `ml.Media`; `ChildCategoryName` and `ChildVariantName` carry the words from
+`ml.MediaCategory` and `ml.MediaSubCategory` (§3). A bare id says nothing to a reader.
+
+The child's **variant is the parent's variant** — in every pair, without exception. It is
+carried on the child's side because that is where the reader reads it, next to the category
+that names the rendition.
 
 **Verdict**
 
@@ -798,8 +810,8 @@ The table side of the split. One row per pair, the four columns of §14.2.
 │    │ Parent                 │ Child                  │ Verdict                  │
 ├────┼────────────────────────┼────────────────────────┼──────────────────────────┤
 │  ? │ File name  HE100890H…  │ Id       A91C22F0…     │ no original — needs a    │
-│    │ Folder     2025/Export │ Category 5             │ decision                 │
-│    │ Id         D17343ED…   │ Variant  4             │ Note  no size match      │
+│    │ Folder     2025/Export │ Category 24 Angles     │ decision                 │
+│    │ Id         D17343ED…   │ Variant  Angle 4       │ Note  no size match      │
 │    │ State      missing     │ State    ok           │                          │
 │    │ Size check —           │ Size check match       │                          │
 │    │ Size       4,182,943   │ Size     97,882        │                          │
@@ -821,8 +833,8 @@ One row = one pair. The record is four columns: the icon, the parent, the child,
 
 ```
 │ ? │ File name    HE100890H-11.jpg │ Id          A91C22F0… │ no original — needs a │
-│   │ Folder       2025/Export       │ Category    5           │ decision               │
-│   │ Id           D17343ED…         │ Variant     4           │ Note  no size match    │
+│   │ Folder       2025/Export       │ Category    24 Angles │ decision               │
+│   │ Id           D17343ED…         │ Variant     Angle 4   │ Note  no size match    │
 │   │ State        missing           │ State       ok         │                        │
 │   │ Size check   —                 │ Size check  match      │                        │
 │   │ Size         4,182,943         │ Size        97,882     │                        │
@@ -907,6 +919,8 @@ time. It is the place where the reader decides, so it carries more than the tabl
   **fault** — why a file would not open — appears under a corrupted file, because "there but
   broken" is worth a reader's attention in a way "not there" is not, and the reason decides
   whether the file is a truncated download or something else.
+- The **child** section also shows the child's **category** and **variant** by name — the same
+  two lines the table's child card carries (§14.2), so the two views agree.
 - The **verdict** section shows the verdict, its note, and the **checks** (§18.6).
 - The **candidate list** (§14.4) is the candidates section — the row's display set in rank
   order (§10), each candidate showing the fields of §10's "One candidate's data": its **rank**,
@@ -1014,6 +1028,8 @@ read from it. Nothing in the UI is re-derived.
 | ChildId | `child.Id` |
 | ChildCategory | `child.MediaCategoryId` |
 | ChildVariant | `child.MediaSubCategoryId` |
+| ChildCategoryName | the category's name, from `ml.MediaCategory` |
+| ChildVariantName | the variant's name, from `ml.MediaSubCategory` |
 
 **Each side** — one set of the five file fields per side (§6):
 

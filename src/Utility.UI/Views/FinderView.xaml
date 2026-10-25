@@ -249,10 +249,10 @@
                                     <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ChildId}" Style="{StaticResource CardValue}" />
 
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Category" Style="{StaticResource CardLabel}" />
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ChildCategory}" Style="{StaticResource CardValue}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ChildCategoryName}" Style="{StaticResource CardValue}" />
 
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Variant" Style="{StaticResource CardLabel}" />
-                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ChildVariant}" Style="{StaticResource CardValue}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ChildVariantName}" Style="{StaticResource CardValue}" />
 
                                     <TextBlock Grid.Row="3" Grid.Column="0" Text="State" Style="{StaticResource CardLabel}" />
                                     <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Child.State}" Style="{StaticResource CardValue}" />
@@ -376,6 +376,8 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
 
                                         <TextBlock Grid.Row="0" Grid.Column="0" Text="State" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
@@ -390,9 +392,16 @@
                                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Dimensions" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
                                         <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ChildDimensions}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Fault" Style="{StaticResource InfoLabel}" Margin="0,0,10,0"
+                                        <!-- Which rendition the child is (§14.2). -->
+                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Category" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ChildCategoryName}" Style="{StaticResource InfoValue}" />
+
+                                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Variant" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding ChildVariantName}" Style="{StaticResource InfoValue}" />
+
+                                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Fault" Style="{StaticResource InfoLabel}" Margin="0,0,10,0"
                                                    Visibility="{Binding HasChildFault, Converter={StaticResource BoolToVis}}" />
-                                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ChildFault}" Style="{StaticResource InfoValue}"
+                                        <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding ChildFault}" Style="{StaticResource InfoValue}"
                                                    Foreground="#6B7280"
                                                    Visibility="{Binding HasChildFault, Converter={StaticResource BoolToVis}}" />
                                     </Grid>

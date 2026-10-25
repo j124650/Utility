@@ -60,6 +60,16 @@ public sealed record FinderRow
 
     public short? ChildVariant { get; init; }
 
+    /// <summary>
+    /// The category's name, from <c>ml.MediaCategory</c> (§3). Empty when the id has no name.
+    /// </summary>
+    public required string ChildCategoryName { get; init; }
+
+    /// <summary>
+    /// The variant's name, from <c>ml.MediaSubCategory</c> (§3). Empty when the id has no name.
+    /// </summary>
+    public required string ChildVariantName { get; init; }
+
     // ---- each side ----
 
     public required FinderFileState Parent { get; init; }
