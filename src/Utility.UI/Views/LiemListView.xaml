@@ -11,7 +11,7 @@
         <!-- The same card styles the Finder's table uses (§18.4). -->
         <Style x:Key="CardLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="10" />
-            <Setter Property="Foreground" Value="#94A3B8" />
+            <Setter Property="Foreground" Value="#475569" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
@@ -25,6 +25,34 @@
             <Setter Property="FontSize" Value="13" />
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!--
+          A record's cell - the same one the Finder's table uses. The selection is painted
+          here, as a light tint with the text left dark, so the card's small labels read in
+          a selected row too.
+        -->
+        <Style x:Key="RecordCell" TargetType="DataGridCell">
+            <Setter Property="Foreground" Value="#111827" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#EAF2FD" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </UserControl.Resources>
 
@@ -73,6 +101,7 @@
                       ScrollViewer.CanContentScroll="True"
                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
                       CanUserSortColumns="True"
+                      CellStyle="{StaticResource RecordCell}"
                       AutoGenerateColumns="False">
                 <DataGrid.Columns>
                     <DataGridTemplateColumn Header="" Width="44" SortMemberPath="Verdict">

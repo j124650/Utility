@@ -24,11 +24,49 @@
           A card's label. The label column is a FIXED width in both the parent and the child
           card, so the four state lines - state, size check, size, dimensions - line up
           across the row and the two sides can be read against each other (§18.4).
+
+          The label is DARK enough to read: at 10pt, the pale slate it used to be was barely
+          a shade apart from the row behind it, and the selected row made it worse.
         -->
         <Style x:Key="CardLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="10" />
-            <Setter Property="Foreground" Value="#94A3B8" />
+            <Setter Property="Foreground" Value="#475569" />
             <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!--
+          A record's cell.
+
+          The DEFAULT WPF cell paints a selected cell with the SYSTEM's highlight colour -
+          a solid block with the text turned white - and the card's small labels do not
+          survive that. This template paints the selection itself: a light tint, and the
+          text stays dark. So a label reads the same in a selected row as in an unselected
+          one.
+
+          The trigger reads the ROW's selection, not the cell's, so the whole row is tinted
+          whichever way the grid decides a cell is selected.
+        -->
+        <Style x:Key="RecordCell" TargetType="DataGridCell">
+            <Setter Property="Foreground" Value="#111827" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#EAF2FD" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!--
@@ -212,6 +250,7 @@
                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
                       ScrollViewer.VerticalScrollBarVisibility="Auto"
                       CanUserSortColumns="True"
+                      CellStyle="{StaticResource RecordCell}"
                       AutoGenerateColumns="False">
                 <DataGrid.Columns>
                     <!--
