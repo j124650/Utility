@@ -172,6 +172,105 @@
         </Style>
 
         <!--
+          The toolbar's bar, transparent.
+
+          A WPF ToolBar wears classic Aero chrome - a grip on the left, a grey gradient, a
+          sunken edge - and none of it belongs in this app. This style replaces that
+          template with a plain strip that paints nothing, so the strip around it carries
+          the app's own look.
+
+          The grip is gone too: the bar is fixed in place, so a handle to drag it around
+          would be a lie.
+        -->
+        <Style x:Key="FlatToolBar" TargetType="ToolBar">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolBar">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ItemsPresenter />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+          The verdict filter's button, drawn as a DROP-DOWN: the caption on the left, an
+          arrow on the right, and a border around the whole thing.
+
+          It is a ToggleButton and not a ComboBox, because the filter is a set of ticks -
+          six verdicts, each with its own box - and a ComboBox picks one.
+
+          The template paints the border and the arrow itself, so the caption keeps its
+          own text and can be trimmed rather than clipped.
+        -->
+        <Style x:Key="VerdictFilterToggle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#CBD5E1" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0"
+                                           Text="{TemplateBinding Content}"
+                                           FontSize="{TemplateBinding FontSize}"
+                                           Foreground="#334155"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+
+                                <TextBlock Grid.Column="1"
+                                           Text="▾"
+                                           FontSize="11"
+                                           Foreground="#64748B"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- Open: the button says so by its colour. -->
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#2563EB" />
+                                <Setter TargetName="Bd" Property="Background" Value="#EFF6FF" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#94A3B8" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
           A collapsible section.
 
           It is a bordered card: the header band across the top - the title on the left, the
@@ -237,30 +336,55 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Toolbar -->
-        <Border Grid.Row="0" Style="{StaticResource CardStyle}" Margin="0,0,0,10">
-            <StackPanel>
-                <TextBlock Text="Finder" Style="{StaticResource HeaderText}" />
-                <TextBlock Text="Gathers every parent/child pair and reports what the Finder would do about it. Read-only — nothing is written to the library."
-                           Style="{StaticResource SubHeaderText}" />
+        <!--
+          The toolbar: a real WPF toolbar strip across the top (§18.2). The Refresh button
+          runs the pass - the same command the tab runs by itself the first time it opens.
 
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+          The strip wears the app's own toolbar look - a white panel, a light border, rounded
+          corners - the same as the dashboard's toolbar, so the two tabs read as one app.
+          The ToolBar inside it is transparent, so the border around it is the only one.
+        -->
+        <Border Grid.Row="0"
+                Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                CornerRadius="8" Padding="14,10" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <Button Content="Run the pass" Command="{Binding RunCommand}" MinWidth="110" />
+                <DockPanel Grid.Column="0">
+                    <ToolBarTray DockPanel.Dock="Top" Background="Transparent">
+                        <ToolBar Style="{StaticResource FlatToolBar}">
+                            <!--
+                              The button is as wide as its content: an icon and the word,
+                              nothing else. MinWidth is zero because the app-wide button style
+                              gives every button an 88px floor, and this one is narrower.
+                            -->
+                            <Button Command="{Binding RunCommand}"
+                                    MinWidth="0"
+                                    Padding="10,5"
+                                    ToolTip="Refresh">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE72C;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="13"
+                                               Foreground="#334155"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,6,0" />
+                                    <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </ToolBar>
+                    </ToolBarTray>
+                </DockPanel>
 
-                        <TextBlock Text="{Binding RowsDisplay}" FontSize="11" Foreground="#6B7280"
-                                   VerticalAlignment="Center" HorizontalAlignment="Right"
-                                   Margin="12,0,0,0" />
-                    </StackPanel>
-                </Grid>
-
-                <TextBlock Text="{Binding Summary}" FontSize="11" Foreground="#6B7280" Margin="0,8,0,0" />
-            </StackPanel>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding RowsDisplay}"
+                           FontSize="11" Foreground="#6B7280"
+                           VerticalAlignment="Center" HorizontalAlignment="Right"
+                           Margin="12,0,0,0" />
+            </Grid>
         </Border>
 
         <!-- Table and info area, separated by a splitter. -->
@@ -361,11 +485,9 @@
                     -->
                     <Grid Grid.Column="3">
                         <ToggleButton x:Name="VerdictFilterToggle"
+                                      Style="{StaticResource VerdictFilterToggle}"
                                       Content="{Binding VerdictFilterCaption}"
-                                      HorizontalAlignment="Left"
-                                      Margin="2,0,4,4"
-                                      Padding="6,2"
-                                      FontSize="11"
+                                      HorizontalAlignment="Stretch"
                                       MinWidth="0"
                                       IsChecked="{Binding IsVerdictFilterOpen, Mode=TwoWay}"
                                       ToolTip="Filter by verdict" />
