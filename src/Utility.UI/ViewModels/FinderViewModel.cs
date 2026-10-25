@@ -25,6 +25,7 @@ public sealed class FinderViewModel(
     private AsyncRelayCommand? _previewCommand;
 
     private FinderRow? _selected;
+    private FinderCandidate? _selectedCandidate;
     private BitmapSource? _previewImage;
     private string _previewState = string.Empty;
     private string _filterText = string.Empty;
@@ -110,6 +111,11 @@ public sealed class FinderViewModel(
                 OnPropertyChanged(nameof(HasCandidates));
                 OnPropertyChanged(nameof(HasPreviewImage));
 
+                // The preview follows the candidate the reader picks (§18.7). Until they
+                // pick one, it is the best candidate.
+                _selectedCandidate = value?.BestCandidate;
+                OnPropertyChanged(nameof(SelectedCandidate));
+
                 ClearPreview();
             }
         }
@@ -152,6 +158,25 @@ public sealed class FinderViewModel(
     public string NoteText => Selected?.VerdictNote ?? string.Empty;
 
     public bool HasCandidates => Candidates.Count > 0;
+
+    /// <summary>
+    /// The candidate the preview shows (§18.7).
+    /// </summary>
+    /// <remarks>
+    /// The candidate list and the preview are ONE selection: picking a candidate in the list
+    /// shows that candidate's image. Until the reader picks one, it is the best candidate.
+    /// </remarks>
+    public FinderCandidate? SelectedCandidate
+    {
+        get => _selectedCandidate;
+        set
+        {
+            if (SetProperty(ref _selectedCandidate, value) && value is not null)
+            {
+                _ = PreviewAsync();
+            }
+        }
+    }
 
     /// <summary>
     /// Free-text filter over the file name, the folder, a candidate's path or a candidate's
@@ -270,7 +295,7 @@ public sealed class FinderViewModel(
     /// </summary>
     public async Task PreviewAsync()
     {
-        var candidate = Selected?.BestCandidate;
+        var candidate = SelectedCandidate;
         if (candidate is null)
         {
             PreviewState = "No candidate to preview.";

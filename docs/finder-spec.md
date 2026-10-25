@@ -549,72 +549,79 @@ with progress and can be cancelled. The grid populates as verdicts arrive.
 
 ### 14.2 Columns
 
-One row per pair. Every column is a field of the row record (§19.1) — nothing here is
-re-derived. The columns are grouped by what the reader needs them for. The **order** they
-appear in the table is §18.4's; the groups below say what each one is for.
+One row per pair. Every value is a field of the row record (§19.1) — nothing here is
+re-derived.
 
-**Status**
+The record is **four columns**, and each one holds a whole side of the pair rather than a
+single field:
 
-| Column | Row field |
+| # | Column | What it holds |
+|---|---|---|
+| 1 | Icon | the verdict icon (§7, §18.4) |
+| 2 | Parent | everything about the parent file |
+| 3 | Child | everything about the child file |
+| 4 | Verdict | the outcome and its note |
+
+Columns 2 and 3 are **parallel**: each side's identity comes first, then the same four state
+lines in the same order — **state**, **size check**, **size**, **dimensions**. Those four line
+up across the row, so the two sides can be read against each other without counting.
+
+**Parent**
+
+| Line | Row field |
 |---|---|
-| Icon | `VerdictIcon` |
+| File name | `ParentFileName` |
+| Folder | `ParentFolder` |
+| Id | `ParentId` |
+| State | `Parent.State` |
+| Size check | `Parent.SizeCheck` |
+| Size | `Parent.Size` |
+| Dimensions | `Parent.Dimensions` |
 
-**Pair**
+**Child**
 
-| Column | Row field |
+| Line | Row field |
 |---|---|
-| Parent file name | `ParentFileName` |
-| Parent folder | `ParentFolder` |
-| Parent id | `ParentId` |
-| Child id | `ChildId` |
+| Id | `ChildId` |
+| Category | `ChildCategory` |
+| Variant | `ChildVariant` |
+| State | `Child.State` |
+| Size check | `Child.SizeCheck` |
+| Size | `Child.Size` |
+| Dimensions | `Child.Dimensions` |
 
-**What each side needs**
-
-| Column | Row field |
-|---|---|
-| Parent size | `Parent.Size` |
-| Parent dimensions | `Parent.Dimensions` |
-| Parent state | `Parent.State` |
-| Parent size check | `Parent.SizeCheck` |
-| Child category | `ChildCategory` |
-| Child variant | `ChildVariant` |
-| Child size | `Child.Size` |
-| Child dimensions | `Child.Dimensions` |
-| Child state | `Child.State` |
-| Child size check | `Child.SizeCheck` |
+The child's identity is shorter because the child has no file name of its own — it is a
+rendition of the parent's file, written under its own GUID (§5) — and it carries the category
+and variant that say which rendition it is.
 
 **Verdict**
 
-| Column | Row field |
+| Line | Row field |
 |---|---|
 | **Verdict** | `Verdict` |
 | Note | `VerdictNote` |
 
-**Candidates**
+**The candidates are not in the table.** They are in the info area (§18.5), which lists every
+one of them with its rank, name, what matched, size, dimensions, date and path — more than the
+table ever carried, and for every candidate rather than only the best. The table says what the
+pair needs; the info area is where a reader goes to act on it.
 
-| Column | Row field |
-|---|---|
-| Candidates | `CandidateCount` |
-| Best candidate rank | `Candidates[0].Rank` |
-| Best candidate name | `Candidates[0].Name` |
-| Best candidate size | `Candidates[0].Size` |
-| Best candidate dimensions | `Candidates[0].Dimensions` |
-| Best candidate path | `Candidates[0].Path` |
+**Why these fields.** The row is a card, not a spreadsheet: the reader wants the whole parent
+in front of them, and the whole child beside it, so the two sides can be compared line by
+line.
 
-**Why these fields.** A reader making a verdict by hand needs to compare the parent against the
-candidates without leaving the row, so:
-
-- **Parent dimensions** beside **candidate dimensions** — pixel size is the fastest check that a
-  candidate is the same picture and not a different crop of the same name. Both sides carry
-  dimensions, so the comparison is available for every candidate, not only the ones whose byte
-  size happens to match.
-- **Candidate name** — a candidate whose name differs from the parent's is a weaker match, and
-  the difference is not visible from the path alone.
+- **State and size check on both sides** — the two questions that decide the verdict (§7):
+  does the file open, and does its length match what was recorded. A missing file and a
+  corrupted one are different problems, and the row says which.
+- **Size and dimensions on both sides** — the reference the candidates are judged against, and
+  the numbers a regenerated child will be written to.
 - **Parent id and child id** — the on-disk file names are these GUIDs (§5), so they are what a
   reader needs in order to look at or copy the file by hand.
-- **Parent size and parent dimensions** — the reference the candidates are judged against.
+- **The candidate's own fields** live in the info area, where each candidate's dimensions sit
+  beside the parent's — pixel size is the fastest check that a candidate is the same picture
+  and not a different crop of the same name.
 
-The **Note** column carries why a verdict came out the way it did, so a reader can tell a
+The **Note** line carries why a verdict came out the way it did, so a reader can tell a
 "nothing to do" from a "nothing to do because the file is corrupted".
 
 ### 14.3 Filtering
@@ -647,13 +654,14 @@ verdict alone (§11).
 
 ### 14.4 The candidate list
 
-The grid shows the best candidate per row. When a pair has more than one candidate, the reader
-needs the rest of them to make a verdict by hand — the ranked list from §10.
+The candidates are **not in the table** (§14.2). They are the info area's candidates section,
+and it carries the row's full display set for the selected pair: every candidate, in rank
+order, each showing the fields of §10's "One candidate's data" — name, size, dimensions, path,
+date — plus the rank and what matched. The candidate list is a detail of the selected pair, not
+another set of rows in the main grid.
 
-The info area carries the row's full display set for the selected pair: every candidate, in rank
-order, each showing the fields of §10's "One candidate's data" — name, size, dimensions, path —
-plus the rank and what matched. The candidate list is a detail of the selected pair, not another
-set of rows in the main grid.
+This is where a reader goes when the verdict is *no original — needs a decision*: the
+candidates are there to choose from (§18.6).
 
 ### 14.5 Liem's List tab
 
@@ -783,49 +791,60 @@ later (§17), and the strip exists so they have a place.
 
 ### 18.3 Table
 
-The table side of the split. One row per pair, the columns of §14.2.
+The table side of the split. One row per pair, the four columns of §14.2.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│    │ Parent file name │ Folder │ Parent │ Child │ Verd… │… │
-├──────────────────────────────────────────────────────────┤
-│  ? │ HE100890H-11.jpg │ 2025/… │ miss… │ ok   │ no o… │
-│  ↻ │ …                                                      │
-└──────────────────────────────────────────────────────────┘
+┌────┬────────────────────────┬────────────────────────┬──────────────────────────┐
+│    │ Parent                 │ Child                  │ Verdict                  │
+├────┼────────────────────────┼────────────────────────┼──────────────────────────┤
+│  ? │ File name  HE100890H…  │ Id       A91C22F0…     │ no original — needs a    │
+│    │ Folder     2025/Export │ Category 5             │ decision                 │
+│    │ Id         D17343ED…   │ Variant  4             │ Note  no size match      │
+│    │ State      missing     │ State    ok           │                          │
+│    │ Size check —           │ Size check match       │                          │
+│    │ Size       4,182,943   │ Size     97,882        │                          │
+│    │ Dimensions 4176 × 4176 │ Dimensions 1500 × 1500 │                          │
+└────┴────────────────────────┴────────────────────────┴──────────────────────────┘
 ```
 
 - **Virtualized**, so the whole set loads without the cost of rendering it (§14.1).
-- **Scrollable** in both directions; the columns are wider than the table, so it scrolls
-  horizontally too.
+- The four columns **share the pane**. Each carries a minimum width, so when the pane is
+  narrower than the minimums the table scrolls sideways; otherwise it fits and scrolls only
+  vertically.
 - The **header** sorts by the clicked column.
 - **One row selected at a time.** Selecting a row is what fills the info area.
-- Columns are grouped by what the reader needs them for (§14.2): the icon, pair identity, what
-  each side needs, verdict, candidates.
+- The columns are the icon, the parent, the child and the verdict (§14.2).
 
 ### 18.4 Table record
 
-One row = one pair. What the row shows and how it is laid out.
+One row = one pair. The record is four columns: the icon, the parent, the child, the verdict.
 
 ```
-│ ? │ HE100890H-11.jpg │ 2025/Export │ D17343ED… │ A91C22F0… │ missing │ ok │ 3 │… │
+│ ? │ File name    HE100890H-11.jpg │ Id          A91C22F0… │ no original — needs a │
+│   │ Folder       2025/Export       │ Category    5           │ decision               │
+│   │ Id           D17343ED…         │ Variant     4           │ Note  no size match    │
+│   │ State        missing           │ State       ok         │                        │
+│   │ Size check   —                 │ Size check  match      │                        │
+│   │ Size         4,182,943         │ Size        97,882     │                        │
+│   │ Dimensions   4176 × 4176       │ Dimensions  1500 × 1500 │                        │
 ```
 
 - **Icon first.** Every row opens with an icon that carries the verdict (§7), before any text.
-- **Identity next** — the parent's file name and folder, then the two ids. The ids are the
-  on-disk file names (§5), so they are what a reader copies when they go to the file.
-- **State next** — the parent and child states side by side, so the shape of the damage reads
-  off the row without counting columns. Each side is **ok**, **missing** or **corrupted** (§6) —
-  a file that is not there and a file that is there but will not open are different problems,
-  and the row says which.
-- **Size check** — under each side, whether that file's length matches its recorded `Size`
-  (§6). A file that is missing has no size check, because there is nothing to compare.
+- **The parent, then the child.** Each is a **stack of label/value lines** in its own column,
+  because the columns no longer carry a header for each field.
+- **Identity first, then the four state lines** — **state**, **size check**, **size**,
+  **dimensions** — in that order, in both columns. The four line up across the row, so the two
+  sides are read against each other.
+- **State** is **ok**, **missing** or **corrupted** (§6) — a file that is not there and a file
+  that is there but will not open are different problems, and the row says which.
+- **Size check** — whether that file's length matches its recorded `Size` (§6). A file that is
+  missing has no size check, because there is nothing to compare.
 - **Verdict** — the outcome (§7) and its note.
-- **Candidates** — how many there are, and the best one's name, size, dimensions and path.
-  Every pair carries the candidates that matched by name; a pair that needs a decision also
-  carries the ones found by similarity (§19.4).
-- A value longer than its column is **truncated with an ellipsis**, the way the record is
-  drawn above (`D17343ED…`). The whole value is in the info area, and the column widens with
-  the table, so nothing is lost — the reader scrolls to it (§18.3).
+- **The candidates are not in the table.** They are in the info area (§18.5), where every
+  candidate is listed with its rank, name, what matched, size, dimensions, date and path.
+- A value longer than its line is **truncated with an ellipsis**, the way the record is drawn
+  above (`D17343ED…`). The whole value is in the info area, and the column shares the pane, so
+  nothing is lost.
 
 **The icon column.** One icon per row, in front of all the fields, showing what the pair needs:
 
@@ -890,7 +909,11 @@ time. It is the place where the reader decides, so it carries more than the tabl
   whether the file is a truncated download or something else.
 - The **verdict** section shows the verdict, its note, and the **checks** (§18.6).
 - The **candidate list** (§14.4) is the candidates section — the row's display set in rank
-  order (§10), each candidate showing the fields of §10's "One candidate's data".
+  order (§10), each candidate showing the fields of §10's "One candidate's data": its **rank**,
+  its **name**, **what matched**, its **size**, its **dimensions**, its **date** and its
+  **path**. This is where the candidates live: they are **not in the table** (§14.2), so this
+  list is the only place a reader sees them, and it shows every one of them rather than only
+  the best.
 - The **preview** (§18.7) is the last section.
 - **Every section header carries a collapse/expand button**, at its left. The button collapses
   that section's body and leaves the header standing, so a reader can fold away what they do
@@ -998,6 +1021,7 @@ read from it. Nothing in the UI is re-derived.
 |---|---|
 | Parent.State / .Size / .SizeCheck / .Dimensions / .Fault | the parent file |
 | Child.State / .Size / .SizeCheck / .Dimensions / .Fault | the child file |
+| Parent.SizeDisplay / Child.SizeDisplay | the size in bytes, as the reader sees it |
 
 **The verdict and its checks**:
 
@@ -1019,8 +1043,8 @@ read from it. Nothing in the UI is re-derived.
 | CandidateCount | how many the pair has |
 | Candidates | the display set, ranked — each carrying the fields of §10's "One candidate's data" |
 
-The **best candidate** is `Candidates[0]`, and the table's candidate columns are that one
-candidate's fields (§14.2).
+The **best candidate** is `Candidates[0]`. It is not a column in the table — the candidates live
+in the info area (§14.4), which lists every one of them.
 
 ### 19.2 The order of work
 
@@ -1134,8 +1158,7 @@ as missing or corrupted (§6).
 ### 19.7 Ranking
 
 Every candidate is given a rank and an order by §10. The ranked list is what the row's candidate
-fields hold (§19.1), what the table's candidate columns show (§14.2), and what the info area
-lists (§14.4).
+fields hold (§19.1) and what the info area lists (§14.4).
 
 ### 19.8 Marking the checks
 

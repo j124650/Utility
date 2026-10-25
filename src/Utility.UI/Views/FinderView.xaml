@@ -21,13 +21,24 @@
         </Style>
 
         <!--
-          A cell's text. It TRUNCATES with an ellipsis rather than clipping, the way the
-          record is drawn in §18.4 ("D17343ED…"), so a narrow column still shows that the
-          value continues.
+          A card's label. The label column is a FIXED width in both the parent and the child
+          card, so the four state lines - state, size check, size, dimensions - line up
+          across the row and the two sides can be read against each other (§18.4).
         -->
-        <Style x:Key="CellText" TargetType="TextBlock">
-            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Style x:Key="CardLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#94A3B8" />
             <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!--
+          A card's value. It TRUNCATES with an ellipsis rather than clipping, the way the
+          record is drawn in §18.4 ("D17343ED…").
+        -->
+        <Style x:Key="CardValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
         <Style x:Key="InfoHeader" TargetType="TextBlock">
@@ -136,7 +147,8 @@
                           VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
                           Background="#E2E8F0" />
 
-            <DataGrid Grid.Column="0"
+            <DataGrid x:Name="PairsGrid"
+                      Grid.Column="0"
                       ItemsSource="{Binding Rows}"
                       SelectedItem="{Binding Selected}"
                       EnableRowVirtualization="True"
@@ -149,8 +161,20 @@
                       CanUserSortColumns="True"
                       AutoGenerateColumns="False">
                 <DataGrid.Columns>
+                    <!--
+                      The record is FOUR columns (§14.2, §18.4): the icon, the parent, the
+                      child, the verdict. The parent and the child are stack panels of
+                      label/value lines, and the four state lines - state, size check, size,
+                      dimensions - are in the same order in both, so they line up across the
+                      row and the two sides are read against each other.
+
+                      The candidates are NOT here. They are in the info area (§14.4), which
+                      lists every one of them - rank, name, what matched, size, dimensions,
+                      date, path - rather than only the best.
+                    -->
+
                     <!-- The leading icon says the verdict. No colour anywhere. -->
-                    <DataGridTemplateColumn Header="" Width="46">
+                    <DataGridTemplateColumn Header="" Width="44" SortMemberPath="Verdict">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Style="{StaticResource IconCell}" Text="{Binding VerdictIcon}" />
@@ -158,41 +182,106 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <!-- Pair -->
-                    <DataGridTextColumn Header="Parent file name" Binding="{Binding ParentFileName}" Width="190" ElementStyle="{StaticResource CellText}" />
-                    <DataGridTextColumn Header="Parent folder" Binding="{Binding ParentFolder}" Width="130" ElementStyle="{StaticResource CellText}" />
-                    <DataGridTextColumn Header="Parent id" Binding="{Binding ParentId}" Width="180" ElementStyle="{StaticResource CellText}" />
-                    <DataGridTextColumn Header="Child id" Binding="{Binding ChildId}" Width="180" ElementStyle="{StaticResource CellText}" />
+                    <!-- Parent: everything about the parent file. -->
+                    <DataGridTemplateColumn Header="Parent" Width="2*" MinWidth="290" SortMemberPath="ParentFileName">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4,12,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="74" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
 
-                    <!--
-                      The two states side by side (§18.4), so the shape of the damage reads
-                      off the row without counting columns. The size checks follow, one for
-                      each side.
-                    -->
-                    <DataGridTextColumn Header="Parent state" Binding="{Binding Parent.State}" Width="90" />
-                    <DataGridTextColumn Header="Child state" Binding="{Binding Child.State}" Width="90" />
-                    <DataGridTextColumn Header="Parent size check" Binding="{Binding Parent.SizeCheck}" Width="105" />
-                    <DataGridTextColumn Header="Child size check" Binding="{Binding Child.SizeCheck}" Width="105" />
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="File name" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ParentFileName}" Style="{StaticResource CardValue}" />
 
-                    <!-- The reference the candidates are judged against (§14.2). -->
-                    <DataGridTextColumn Header="Parent size" Binding="{Binding Parent.Size}" Width="100" />
-                    <DataGridTextColumn Header="Parent dims" Binding="{Binding Parent.Dimensions}" Width="105" />
-                    <DataGridTextColumn Header="Child size" Binding="{Binding Child.Size}" Width="100" />
-                    <DataGridTextColumn Header="Child dims" Binding="{Binding Child.Dimensions}" Width="105" />
-                    <DataGridTextColumn Header="Child category" Binding="{Binding ChildCategory}" Width="90" />
-                    <DataGridTextColumn Header="Child variant" Binding="{Binding ChildVariant}" Width="90" />
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Folder" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ParentFolder}" Style="{StaticResource CardValue}" />
 
-                    <!-- Verdict -->
-                    <DataGridTextColumn Header="Verdict" Binding="{Binding Verdict}" Width="230" ElementStyle="{StaticResource CellText}" />
-                    <DataGridTextColumn Header="Note" Binding="{Binding VerdictNote}" Width="140" ElementStyle="{StaticResource CellText}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Id" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ParentId}" Style="{StaticResource CardValue}" />
 
-                    <!-- Candidates -->
-                    <DataGridTextColumn Header="Candidates" Binding="{Binding CandidateCount}" Width="85" />
-                    <DataGridTextColumn Header="Best rank" Binding="{Binding BestCandidate.Rank}" Width="75" />
-                    <DataGridTextColumn Header="Best name" Binding="{Binding BestCandidate.Name}" Width="190" ElementStyle="{StaticResource CellText}" />
-                    <DataGridTextColumn Header="Best size" Binding="{Binding BestCandidate.Size}" Width="100" />
-                    <DataGridTextColumn Header="Best dims" Binding="{Binding BestCandidate.Dimensions}" Width="105" />
-                    <DataGridTextColumn Header="Best path" Binding="{Binding BestCandidate.Path}" Width="320" ElementStyle="{StaticResource CellText}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="State" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Parent.State}" Style="{StaticResource CardValue}" />
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Size check" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Parent.SizeCheck}" Style="{StaticResource CardValue}" />
+
+                                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Size" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Parent.SizeDisplay}" Style="{StaticResource CardValue}" />
+
+                                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Dimensions" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Parent.Dimensions}" Style="{StaticResource CardValue}" />
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Child: everything about the child file. The same four state lines. -->
+                    <DataGridTemplateColumn Header="Child" Width="2*" MinWidth="250" SortMemberPath="ChildId">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4,12,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="74" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Id" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ChildId}" Style="{StaticResource CardValue}" />
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Category" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ChildCategory}" Style="{StaticResource CardValue}" />
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Variant" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ChildVariant}" Style="{StaticResource CardValue}" />
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="State" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Child.State}" Style="{StaticResource CardValue}" />
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Size check" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Child.SizeCheck}" Style="{StaticResource CardValue}" />
+
+                                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Size" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Child.SizeDisplay}" Style="{StaticResource CardValue}" />
+
+                                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Dimensions" Style="{StaticResource CardLabel}" />
+                                    <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Child.Dimensions}" Style="{StaticResource CardValue}" />
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Verdict: the outcome and its note. -->
+                    <DataGridTemplateColumn Header="Verdict" Width="1.5*" MinWidth="200" SortMemberPath="Verdict">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,4,8,4">
+                                    <TextBlock Text="{Binding Verdict}" FontSize="11" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding VerdictNote}" FontSize="10" Foreground="#94A3B8"
+                                               TextWrapping="Wrap" Margin="0,3,0,0" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                 </DataGrid.Columns>
             </DataGrid>
 
@@ -361,6 +450,7 @@
                                                Visibility="{Binding HasCandidates, Converter={StaticResource InverseBoolToVis}}" />
 
                                     <ListBox ItemsSource="{Binding Candidates}"
+                                             SelectedItem="{Binding SelectedCandidate}"
                                              MaxHeight="200"
                                              BorderBrush="#E2E8F0"
                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -404,6 +494,15 @@
                                                Stretch="Uniform"
                                                HorizontalAlignment="Left" />
                                     </Border>
+
+                                    <!-- Whose image this is: the candidate's own name and dimensions (§18.7). -->
+                                    <TextBlock Text="{Binding SelectedCandidate.Name}" FontSize="11" Margin="0,6,0,0"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock FontSize="10" Foreground="#6B7280">
+                                        <Run Text="{Binding SelectedCandidate.Dimensions, Mode=OneWay}" />
+                                        <Run Text="{Binding SelectedCandidate.SizeDisplay, Mode=OneWay, StringFormat=' · {0} bytes'}" />
+                                    </TextBlock>
+
                                     <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                         <Button Content="Load from DropBox" Command="{Binding PreviewCommand}" />
                                         <TextBlock Text="{Binding PreviewState}" FontSize="11" Foreground="#6B7280"

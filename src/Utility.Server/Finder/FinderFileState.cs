@@ -33,6 +33,9 @@ public sealed record FinderFileState
     /// <summary>True when the file is present and opens.</summary>
     public bool IsOk => State == FileState.Ok;
 
+    /// <summary>The size in bytes, as the reader sees it. Empty when the row records none.</summary>
+    public string SizeDisplay => Size.HasValue ? Size.Value.ToString("N0") : string.Empty;
+
     /// <summary>Builds the dimensions text from a row's recorded pixel size.</summary>
     public static string FormatDimensions(int? width, int? height) =>
         width.HasValue && height.HasValue ? $"{width} × {height}" : string.Empty;
