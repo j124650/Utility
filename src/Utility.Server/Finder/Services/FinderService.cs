@@ -131,7 +131,8 @@ public sealed class FinderService(
             var candidates = FinderRanking.Rank(
                 pair.NameMatchedCandidates.Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified)).ToList(),
                 pair.ParentFileName,
-                pair.ParentSize);
+                pair.ParentSize,
+                pair.ParentFolder);
 
             var selectionSet = FinderRanking.SelectionSet(
                 pair.NameMatchedCandidates.Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified)).ToList(),
@@ -190,13 +191,14 @@ public sealed class FinderService(
     public async Task<IReadOnlyList<FinderCandidate>> GetDropBoxCandidatesAsync(
         string parentFileName,
         long? parentSize = null,
+        string? parentFolder = null,
         CancellationToken ct = default)
     {
         var seed = new PairSeed
         {
             ParentId = Guid.Empty,
             ParentFileName = parentFileName,
-            ParentFolder = string.Empty,
+            ParentFolder = parentFolder ?? string.Empty,
             ParentSize = parentSize,
             ChildId = Guid.Empty,
             ChildFolder = string.Empty,
@@ -219,7 +221,8 @@ public sealed class FinderService(
                 .Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified))
                 .ToList(),
             parentFileName,
-            parentSize);
+            parentSize,
+            seed.ParentFolder);
     }
 
     public async Task<IReadOnlyList<FinderRow>> GetLiemListAsync(

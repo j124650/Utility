@@ -45,6 +45,7 @@ public interface IFinderService
     Task<IReadOnlyList<FinderCandidate>> GetDropBoxCandidatesAsync(
         string parentFileName,
         long? parentSize = null,
+        string? parentFolder = null,
         CancellationToken ct = default);
 
     /// <summary>

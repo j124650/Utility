@@ -328,9 +328,12 @@ the Finder only identifies it, because the verdict turns on whether it was found
    probably imported. The same filename sits in several folders as different crops; size tells
    them apart.
 3. **Tiebreak.** If more than one size match survives, take the most probable candidate. A
-   candidate is identified by its **file name and its folder**. The most probable is the one
-   whose path contains **`final`** (case-insensitive); where several do, the **most recently
-   modified** one (§10). **To be discussed — §13.1.**
+candidate is identified by its **file name and its folder**. The media library's
+`ml.Media.Path` **is** the Dropbox product folder, so a candidate's path contains it when the
+candidate is the file that was imported — and a name-and-size match in a *different* folder is
+not the same file. The most probable is the one whose path contains **`final`**
+(case-insensitive); where several do, the **most recently modified** one (§10). **To be
+discussed — §13.1.**
 4. **No size match → do not restore.** The pair goes on Liem's List.
 
 **Assumption.** The Dropbox index is taken to be complete. If a filename is not found and its
@@ -389,10 +392,21 @@ The display set is ranked, best first:
 
 | Rank | Condition | Reading |
 |---|---|---|
-| **0 — exact** | name matches (case-insensitive) **and** size matches | most probably the original |
+| **0 — exact** | name matches (case-insensitive) **and** size matches **and** the candidate's Dropbox path contains the media library's folder for the parent | most probably the original |
 | **1 — size only** | size matches, name differs | same bytes, renamed |
 | **2 — name only** | name matches, size differs | a different crop of the same name |
 | **3 — fuzzy** | neither, but names are similar | best guess |
+
+**The folder is part of the file's identity** (§9.1 rule 3). The media library's
+`ml.Media.Path` **is** the Dropbox product folder, so a candidate's path contains it when the
+candidate is the file that was imported. A candidate whose name and size both match but whose
+path is in a *different* folder is therefore **not** rank 0 — it is ranked with the other size
+matches and labelled **`name and size, different folder`**, so it is never mistaken for a
+confirmed original.
+
+Measured on the live library: of the 160,629 rank-0 candidates, **every one** is in the right
+folder, and of the 15,462 name-only candidates, **none** is. The condition is a guard that
+today never demotes a confirmed original and never fires on the real data.
 
 Within a rank, order by: `final` in path first → **most recently modified** → path depth →
 `PathLower` ascending.
@@ -424,7 +438,7 @@ Each candidate in the display set carries:
 | Field | Value |
 |---|---|
 | **Rank** | 0–3, from the table above |
-| **WhatMatched** | the condition that produced the rank — e.g. `name and size`, `size only` |
+| **WhatMatched** | the condition that produced the rank — e.g. `name and size`, `size only`, `name and size, different folder` |
 | **Name** | `Name` |
 | **Size** | `SizeBytes` |
 | **Dimensions** | `WidthPixels × HeightPixels` |

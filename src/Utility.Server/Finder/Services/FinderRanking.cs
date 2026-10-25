@@ -9,28 +9,37 @@ public static class FinderRanking
     /// Ranks a candidate set, best first.
     /// </summary>
     /// <remarks>
-    /// Rank 0 is the strongest: the name matches and so does the size. Within a rank, the
-    /// order is by <c>final</c> in the path first, then the most recently modified, then the
-    /// path depth, then the path itself.
+    /// Rank 0 is the strongest: the name matches, the size matches, AND the candidate sits
+    /// in the folder the media library records for the parent. Within a rank, the order is
+    /// by <c>final</c> in the path first, then the most recently modified, then the path
+    /// depth, then the path itself.
     /// </remarks>
     public static IReadOnlyList<FinderCandidate> Rank(
         IReadOnlyList<CandidateSeed> seeds,
         string parentFileName,
-        long? parentSize)
+        long? parentSize,
+        string? parentFolder = null)
     {
+        // The library's folder IS the Dropbox product folder: a candidate's path contains
+        // it when the candidate is the file that was imported (§9.1 rule 3). An unknown
+        // folder cannot disprove that, so the condition is satisfied.
+        var folder = parentFolder ?? string.Empty;
+
         var ranked = seeds
             .Select(s => new
             {
                 Seed = s,
                 NameMatches = string.Equals(s.Name, parentFileName, StringComparison.OrdinalIgnoreCase),
-                SizeMatches = parentSize.HasValue && s.Size == parentSize
+                SizeMatches = parentSize.HasValue && s.Size == parentSize,
+                FolderMatches = folder.Length == 0 || s.Path.Contains(folder, StringComparison.OrdinalIgnoreCase)
             })
             .Select(x => new
             {
                 x.Seed,
                 x.NameMatches,
                 x.SizeMatches,
-                Rank = x.NameMatches && x.SizeMatches ? 0
+                x.FolderMatches,
+                Rank = x.NameMatches && x.SizeMatches && x.FolderMatches ? 0
                     : x.SizeMatches ? 1
                     : x.NameMatches ? 2
                     : 3
@@ -46,7 +55,7 @@ public static class FinderRanking
             .Select(x => new FinderCandidate
             {
                 Rank = x.Rank,
-                WhatMatched = WhatMatched(x.NameMatches, x.SizeMatches),
+                WhatMatched = WhatMatched(x.NameMatches, x.SizeMatches, x.FolderMatches),
                 Name = x.Seed.Name,
                 Size = x.Seed.Size,
                 Dimensions = FinderFileState.FormatDimensions(x.Seed.Width, x.Seed.Height),
@@ -67,11 +76,12 @@ public static class FinderRanking
             .Where(c => string.Equals(c.Name, parentFileName, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-    private static string WhatMatched(bool nameMatches, bool sizeMatches) => (nameMatches, sizeMatches) switch
+    private static string WhatMatched(bool nameMatches, bool sizeMatches, bool folderMatches) => (nameMatches, sizeMatches, folderMatches) switch
     {
-        (true, true) => "name and size",
-        (false, true) => "size only",
-        (true, false) => "name only",
+        (true, true, true) => "name and size",
+        (true, true, false) => "name and size, different folder",
+        (false, true, _) => "size only",
+        (true, false, _) => "name only",
         _ => "similar name"
     };
 
