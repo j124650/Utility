@@ -79,49 +79,91 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
 
-        <Style x:Key="InfoHeader" TargetType="TextBlock">
+        <!--
+          A piece of text the reader can select and copy.
+
+          WPF's TextBlock does not let the reader select its text - not even when it is made
+          focusable. A read-only TextBox does, and with no border, no background, no caret
+          and no focus ring it looks exactly like a TextBlock.
+        -->
+        <Style x:Key="SelectableText" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="IsReadOnlyCaretVisible" Value="False" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                      HorizontalScrollBarVisibility="Hidden"
+                                      VerticalScrollBarVisibility="Hidden" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+          The info area's text.
+
+          These three are TextBoxes, not TextBlocks, so that the reader can select a value
+          and copy it - a file name, an id, a path. The text still looks like plain text.
+        -->
+        <Style x:Key="InfoHeader" TargetType="TextBox" BasedOn="{StaticResource SelectableText}">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="#334155" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
-        <Style x:Key="InfoLabel" TargetType="TextBlock">
+        <Style x:Key="InfoLabel" TargetType="TextBox" BasedOn="{StaticResource SelectableText}">
             <Setter Property="FontSize" Value="11" />
             <Setter Property="Foreground" Value="#6B7280" />
         </Style>
 
-        <Style x:Key="InfoValue" TargetType="TextBlock">
+        <Style x:Key="InfoValue" TargetType="TextBox" BasedOn="{StaticResource SelectableText}">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Foreground" Value="#111827" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
 
         <!--
+          The section header's background.
+
+          ONE place to change it: every section's header band uses this brush. It is a soft
+          slate - light enough to read the title on, dark enough to read as a band against
+          the white card the info area sits on.
+        -->
+        <SolidColorBrush x:Key="InfoHeaderBackground" Color="#F1F5F9" />
+
+        <!--
           The section header's collapse/expand control.
 
-          It is the Expander's OWN header button, given a template that shows the arrow and
-          the header's content side by side and nothing else. So the header shows ONE arrow,
-          and the whole header - arrow and name - is the thing that collapses the section.
+          It is a small button on the RIGHT of the header, showing the arrow and nothing
+          else. The title is not the toggle any more, so the title's text can be selected
+          and copied.
 
-          The arrow points down while the section is open and right while it is closed
-          (§18.5).
+          It has NO focus ring: clicking it should not leave a dotted rectangle behind.
         -->
         <Style x:Key="SectionToggle" TargetType="ToggleButton">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <StackPanel Orientation="Horizontal" Background="Transparent">
-                            <TextBlock x:Name="Arrow" Text="▾" FontSize="10" Margin="0,0,6,0"
-                                       VerticalAlignment="Center" />
-                            <ContentPresenter VerticalAlignment="Center" />
-                        </StackPanel>
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4">
+                            <TextBlock x:Name="Arrow" Text="▾" FontSize="11" Foreground="#334155"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="False">
                                 <Setter TargetName="Arrow" Property="Text" Value="▸" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1A000000" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -130,34 +172,54 @@
         </Style>
 
         <!--
-          A collapsible section. The header carries the collapse/expand button at its left,
-          and the body folds away under it. Each section collapses on its own.
+          A collapsible section.
+
+          It is a bordered card: the header band across the top - the title on the left, the
+          collapse/expand button on the right - and the body under it. Each section
+          collapses on its own.
 
           The Expander's default template is replaced: it puts a SECOND toggle - with its own
           arrow - around the header, so the header would show two collapse/expand controls.
-          This template uses the header button above instead, so there is exactly one, and the
-          whole header is clickable (§18.5).
+          This template uses the header button above instead, so there is exactly one - and
+          the title is plain text, not a button, so it can be selected and copied (§18.5).
         -->
         <Style x:Key="InfoSection" TargetType="Expander">
-            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Margin" Value="0,0,0,10" />
             <Setter Property="Foreground" Value="#334155" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Expander">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                        <Border BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="8" Background="Transparent">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                            <ToggleButton Grid.Row="0" x:Name="HeaderSite"
-                                          Style="{StaticResource SectionToggle}"
-                                          Content="{TemplateBinding Header}"
-                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
+                                <!-- The header band: the title on the left, the button on the right. -->
+                                <Border Grid.Row="0" Margin="4" CornerRadius="6"
+                                        Background="{StaticResource InfoHeaderBackground}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
 
-                            <ContentPresenter Grid.Row="1" x:Name="ExpandSite"
-                                              ContentSource="Content" RecognizesAccessKey="True" />
-                        </Grid>
+                                        <ContentPresenter Grid.Column="0" ContentSource="Header"
+                                                          Margin="10,7,4,7" VerticalAlignment="Center" />
+
+                                        <ToggleButton Grid.Column="1" x:Name="HeaderSite"
+                                                      Style="{StaticResource SectionToggle}"
+                                                      Margin="0,3,3,3" MinWidth="28"
+                                                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+
+                                <ContentPresenter Grid.Row="1" x:Name="ExpandSite"
+                                                  ContentSource="Content" RecognizesAccessKey="True"
+                                                  Margin="12,0,12,10" />
+                            </Grid>
+                        </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsExpanded" Value="False">
                                 <Setter TargetName="ExpandSite" Property="Visibility" Value="Collapsed" />
@@ -192,7 +254,7 @@
 
                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
                         <TextBlock Text="File name, folder or candidate" Style="{StaticResource FieldLabel}" />
-                        <TextBox Text="{Binding FilterText}" Margin="0" />
+                        <TextBox Text="{Binding FilterText, Mode=OneWay}" Margin="0" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Margin="0,0,10,0" MinWidth="170">
@@ -386,27 +448,73 @@
                     </Grid.RowDefinitions>
 
                     <!-- Empty state: no row selected. -->
-                    <TextBlock Grid.Row="0"
-                               Text="Select a row in the table to see its detail."
-                               Style="{StaticResource InfoValue}"
-                               Foreground="#6B7280"
-                               Margin="0,0,0,10"
-                               Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVis}}" />
+                    <TextBox Grid.Row="0"
+                             Text="Select a row in the table to see its detail."
+                             Style="{StaticResource InfoValue}"
+                             Foreground="#6B7280"
+                             Margin="0,0,0,10"
+                             Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVis}}" />
 
                     <!-- The sections. -->
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                                   Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
                         <StackPanel>
 
+                            <!-- Verdict and the rules it rests on. It comes FIRST: it is the answer. -->
+                            <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBox Text="VERDICT" Style="{StaticResource InfoHeader}" />
+                                    </StackPanel>
+                                </Expander.Header>
+                                <StackPanel Margin="0,6,0,8">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding VerdictIcon}" FontSize="13" Margin="0,0,6,0" />
+                                        <TextBox Text="{Binding VerdictText, Mode=OneWay}" Style="{StaticResource InfoValue}" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <TextBox Text="{Binding NoteText, Mode=OneWay}" Style="{StaticResource InfoValue}" Foreground="#6B7280" Margin="0,2,0,0" />
+
+                                    <!--
+                                      The rules: ✓ where the rule is respected, ✕ where it is not.
+
+                                      The marks carry the colour - green and red - and both are
+                                      dark enough to read on the white card behind them.
+                                    -->
+                                    <ItemsControl ItemsSource="{Binding Rules}" Margin="0,8,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                    <TextBlock Text="{Binding Mark}" FontSize="13" Width="18" FontWeight="SemiBold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Mark}" Value="✓">
+                                                                        <Setter Property="Foreground" Value="#15803D" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Mark}" Value="✕">
+                                                                        <Setter Property="Foreground" Value="#B91C1C" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBox Text="{Binding Text, Mode=OneWay}" Style="{StaticResource SelectableText}" FontSize="12" Foreground="#334155" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Expander>
+
                             <!-- Parent -->
                             <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="PARENT" Style="{StaticResource InfoHeader}" />
+                                        <TextBox Text="PARENT" Style="{StaticResource InfoHeader}" />
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel Margin="0,6,0,8">
-                                    <TextBlock Text="{Binding ParentFileName}" Style="{StaticResource InfoValue}" FontWeight="SemiBold" />
+                                    <TextBox Text="{Binding ParentFileName, Mode=OneWay}" Style="{StaticResource InfoValue}" FontWeight="SemiBold" />
                                     <Grid Margin="0,6,0,0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
@@ -420,21 +528,21 @@
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="State" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ParentState}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="0" Grid.Column="0" Text="State" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ParentState, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Size" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ParentSize}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="1" Grid.Column="0" Text="Size" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ParentSize, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Size check" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ParentSizeCheck}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="2" Grid.Column="0" Text="Size check" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ParentSizeCheck, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Dimensions" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ParentDimensions}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="3" Grid.Column="0" Text="Dimensions" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ParentDimensions, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Fault" Style="{StaticResource InfoLabel}" Margin="0,0,10,0"
+                                        <TextBox Grid.Row="4" Grid.Column="0" Text="Fault" Style="{StaticResource InfoLabel}" Margin="0,0,10,0"
                                                    Visibility="{Binding HasParentFault, Converter={StaticResource BoolToVis}}" />
-                                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ParentFault}" Style="{StaticResource InfoValue}"
+                                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding ParentFault, Mode=OneWay}" Style="{StaticResource InfoValue}"
                                                    Foreground="#6B7280"
                                                    Visibility="{Binding HasParentFault, Converter={StaticResource BoolToVis}}" />
                                     </Grid>
@@ -445,7 +553,7 @@
                             <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="CHILD" Style="{StaticResource InfoHeader}" />
+                                        <TextBox Text="CHILD" Style="{StaticResource InfoHeader}" />
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel Margin="0,6,0,8">
@@ -464,59 +572,31 @@
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="State" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ChildState}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="0" Grid.Column="0" Text="State" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ChildState, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Size" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ChildSize}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="1" Grid.Column="0" Text="Size" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ChildSize, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Size check" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ChildSizeCheck}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="2" Grid.Column="0" Text="Size check" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ChildSizeCheck, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Dimensions" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ChildDimensions}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="3" Grid.Column="0" Text="Dimensions" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ChildDimensions, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
                                         <!-- Which rendition the child is (§14.2). -->
-                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Category" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ChildCategoryName}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="4" Grid.Column="0" Text="Category" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding ChildCategoryName, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Variant" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding ChildVariantName}" Style="{StaticResource InfoValue}" />
+                                        <TextBox Grid.Row="5" Grid.Column="0" Text="Variant" Style="{StaticResource InfoLabel}" Margin="0,0,10,0" />
+                                        <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding ChildVariantName, Mode=OneWay}" Style="{StaticResource InfoValue}" />
 
-                                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Fault" Style="{StaticResource InfoLabel}" Margin="0,0,10,0"
+                                        <TextBox Grid.Row="6" Grid.Column="0" Text="Fault" Style="{StaticResource InfoLabel}" Margin="0,0,10,0"
                                                    Visibility="{Binding HasChildFault, Converter={StaticResource BoolToVis}}" />
-                                        <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding ChildFault}" Style="{StaticResource InfoValue}"
+                                        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding ChildFault, Mode=OneWay}" Style="{StaticResource InfoValue}"
                                                    Foreground="#6B7280"
                                                    Visibility="{Binding HasChildFault, Converter={StaticResource BoolToVis}}" />
                                     </Grid>
-                                </StackPanel>
-                            </Expander>
-
-                            <!-- Verdict and the rules it rests on -->
-                            <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
-                                <Expander.Header>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="VERDICT" Style="{StaticResource InfoHeader}" />
-                                    </StackPanel>
-                                </Expander.Header>
-                                <StackPanel Margin="0,6,0,8">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding VerdictIcon}" FontSize="13" Margin="0,0,6,0" />
-                                        <TextBlock Text="{Binding VerdictText}" Style="{StaticResource InfoValue}" FontWeight="SemiBold" />
-                                    </StackPanel>
-                                    <TextBlock Text="{Binding NoteText}" Style="{StaticResource InfoValue}" Foreground="#6B7280" Margin="0,2,0,0" />
-
-                                    <!-- The rules: ✓ where the rule is respected, ✕ where it is not. -->
-                                    <ItemsControl ItemsSource="{Binding Rules}" Margin="0,8,0,0">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" Margin="0,1">
-                                                    <TextBlock Text="{Binding Mark}" FontSize="12" Width="16" />
-                                                    <TextBlock Text="{Binding Text}" FontSize="12" Foreground="#334155" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
                                 </StackPanel>
                             </Expander>
 
@@ -524,15 +604,15 @@
                             <Expander Style="{StaticResource InfoSection}" IsExpanded="True">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="CANDIDATES" Style="{StaticResource InfoHeader}" />
-                                        <TextBlock Text="{Binding Candidates.Count, StringFormat=({0})}" Style="{StaticResource InfoLabel}"
+                                        <TextBox Text="CANDIDATES" Style="{StaticResource InfoHeader}" />
+                                        <TextBox Text="{Binding Candidates.Count, StringFormat=({0}), Mode=OneWay}" Style="{StaticResource InfoLabel}"
                                                    Margin="6,0,0,0" />
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel Margin="0,6,0,8">
-                                    <TextBlock Text="No candidates for this pair."
-                                               Style="{StaticResource InfoValue}" Foreground="#6B7280"
-                                               Visibility="{Binding HasCandidates, Converter={StaticResource InverseBoolToVis}}" />
+                                    <TextBox Text="No candidates for this pair."
+                                             Style="{StaticResource InfoValue}" Foreground="#6B7280"
+                                             Visibility="{Binding HasCandidates, Converter={StaticResource InverseBoolToVis}}" />
 
                                     <ListBox ItemsSource="{Binding Candidates}"
                                              SelectedItem="{Binding SelectedCandidate}"
@@ -544,15 +624,15 @@
                                             <DataTemplate>
                                                 <StackPanel Margin="0,3">
                                                     <StackPanel Orientation="Horizontal">
-                                                        <TextBlock Text="{Binding Rank}" FontWeight="SemiBold" FontSize="11" Margin="0,0,6,0" />
-                                                        <TextBlock Text="{Binding Name}" FontSize="12" TextWrapping="Wrap" />
+                                                        <TextBox Text="{Binding Rank, Mode=OneWay}" Style="{StaticResource SelectableText}" FontWeight="SemiBold" FontSize="11" Margin="0,0,6,0" />
+                                                        <TextBox Text="{Binding Name, Mode=OneWay}" Style="{StaticResource SelectableText}" FontSize="12" TextWrapping="Wrap" />
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding WhatMatched}" FontSize="10" Foreground="#6B7280" />
-                                                    <TextBlock Text="{Binding SizeDisplay}" FontSize="10" Foreground="#6B7280" />
-                                                    <TextBlock Text="{Binding Dimensions}" FontSize="10" Foreground="#6B7280" />
-                                                    <TextBlock Text="{Binding ModifiedDisplay}" FontSize="10" Foreground="#6B7280" />
-                                                    <TextBlock Text="{Binding Path}" FontSize="10" Foreground="#94A3B8"
-                                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
+                                                    <TextBox Text="{Binding WhatMatched, Mode=OneWay}" Style="{StaticResource SelectableText}" FontSize="10" Foreground="#6B7280" />
+                                                    <TextBox Text="{Binding SizeDisplay, Mode=OneWay}" Style="{StaticResource SelectableText}" FontSize="10" Foreground="#6B7280" />
+                                                    <TextBox Text="{Binding Dimensions, Mode=OneWay}" Style="{StaticResource SelectableText}" FontSize="10" Foreground="#6B7280" />
+                                                    <TextBox Text="{Binding ModifiedDisplay, Mode=OneWay}" Style="{StaticResource SelectableText}" FontSize="10" Foreground="#6B7280" />
+                                                    <TextBox Text="{Binding Path, Mode=OneWay}" Style="{StaticResource SelectableText}" FontSize="10" Foreground="#94A3B8"
+                                                             ToolTip="{Binding Path}" />
                                                 </StackPanel>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
@@ -565,7 +645,7 @@
                                       Visibility="{Binding HasCandidates, Converter={StaticResource BoolToVis}}">
                                 <Expander.Header>
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="PREVIEW" Style="{StaticResource InfoHeader}" />
+                                        <TextBox Text="PREVIEW" Style="{StaticResource InfoHeader}" />
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel Margin="0,6,0,8">
@@ -577,8 +657,9 @@
                                     </Border>
 
                                     <!-- Whose image this is: the candidate's own name and dimensions (§18.7). -->
-                                    <TextBlock Text="{Binding SelectedCandidate.Name}" FontSize="11" Margin="0,6,0,0"
-                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBox Text="{Binding SelectedCandidate.Name, Mode=OneWay}" Style="{StaticResource SelectableText}"
+                                             FontSize="11" Margin="0,6,0,0"
+                                             ToolTip="{Binding SelectedCandidate.Name}" />
                                     <TextBlock FontSize="10" Foreground="#6B7280">
                                         <Run Text="{Binding SelectedCandidate.Dimensions, Mode=OneWay}" />
                                         <Run Text="{Binding SelectedCandidate.SizeDisplay, Mode=OneWay, StringFormat=' · {0} bytes'}" />
@@ -586,9 +667,10 @@
 
                                     <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                         <Button Content="Load from DropBox" Command="{Binding PreviewCommand}" />
-                                        <TextBlock Text="{Binding PreviewState}" FontSize="11" Foreground="#6B7280"
-                                                   VerticalAlignment="Center" Margin="10,0,0,0"
-                                                   TextWrapping="Wrap" />
+                                        <TextBox Text="{Binding PreviewState, Mode=OneWay}" Style="{StaticResource SelectableText}"
+                                                 FontSize="11" Foreground="#6B7280"
+                                                 VerticalAlignment="Center" Margin="10,0,0,0"
+                                                 TextWrapping="Wrap" />
                                     </StackPanel>
                                 </StackPanel>
                             </Expander>
