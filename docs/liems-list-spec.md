@@ -102,6 +102,11 @@ search, no expanding and collapsing. It reads like a report and prints like one.
 The reader chooses where the file is written, then reads it in a window of the app (§6.7).
 Nothing else is written, and nothing in the media library or the Dropbox index is changed.
 
+The file is **UTF-8 with a BOM**, and declares `<meta charset="utf-8">`. The BOM is what
+Windows tools read the encoding from when they open the file; the meta tag is what the
+browser reads. Text is never transliterated and never escaped into ASCII: a file name that
+arrives is a file name that is written.
+
 ### 6.2 The shape
 
 A **header block**, then **one section per style**.
@@ -149,6 +154,10 @@ value.
 Paths, sizes and dates are set in a monospace face, so the columns align without a grid and
 the sizes can be compared down the column. The body is set in the system sans.
 
+Both font stacks name a CJK-capable face after the Latin one — the body in Segoe UI then
+Microsoft YaHei, the monospace in Consolas then NSimSun — so a file name or path written in
+Chinese is set in Chinese glyphs, and still lines up in its column.
+
 ### 6.6 Print
 
 Each style section starts on a fresh page and its heading is never orphaned from its first
@@ -172,6 +181,9 @@ Its content is a **WebView2** control that fills the window and navigates to the
 was written. The window carries no toolbar of its own: the report's own header holds
 everything the reader needs, and the engine's own print command is reached from the
 keyboard (§6.8).
+
+The window's title is **Liem's List — 25 October 2026, 09:14**: the list, and the pass it
+was made from.
 
 ### 6.8 Printing
 
@@ -204,8 +216,12 @@ A missing WebView2 runtime is reported in the window rather than shown as a blan
   told otherwise, which fails when the app is installed under `Program Files`. The folder is
   set to `%LOCALAPPDATA%\Utility\WebView2`.
 - **The button** — the Finder's toolbar carries a button named **Liem's List**. It asks the
-  reader where the file goes, writes it, and opens the window on it. The nav entry that
-  used to carry the list is hidden; the view and its view model stay registered.
+  reader where the file goes, writes it, and opens the window on it — that path, with no
+  branch in it. The save dialog's default name is `Liem's List 2026-10-25 0914.html`: the
+  list, the day and the time, with no colon, because a colon is not a legal character in a
+  Windows file name. Cancelling the dialog writes nothing and opens no window — the button
+  does nothing further. The nav entry that used to carry the list is hidden; the view and
+  its view model stay registered.
 
 ## 8. Not in scope
 
