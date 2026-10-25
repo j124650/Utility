@@ -323,18 +323,17 @@ the Finder only identifies it, because the verdict turns on whether it was found
 ### 9.1 The rules
 
 1. **Candidates** = indexed Dropbox files whose `Name` matches the parent's `FileName`.
-2. **Select by size.** Keep only candidates whose `SizeBytes` equals the parent's
-   `ml.Media.Size`. The importer stored `file.Length`, so an exact size match is the file most
+2. **Select by size, and by folder.** Keep only candidates whose `SizeBytes` equals the parent's
+   `ml.Media.Size` **and** whose path contains the media library's folder for the parent
+   (`ml.Media.Path`). The importer stored `file.Length`, so an exact size match is the file most
    probably imported. The same filename sits in several folders as different crops; size tells
-   them apart.
+   them apart, and the folder says which copy was the one that was imported — the library's
+   folder *is* the Dropbox product folder.
 3. **Tiebreak.** If more than one size match survives, take the most probable candidate. A
-candidate is identified by its **file name and its folder**. The media library's
-`ml.Media.Path` **is** the Dropbox product folder, so a candidate's path contains it when the
-candidate is the file that was imported — and a name-and-size match in a *different* folder is
-not the same file. The most probable is the one whose path contains **`final`**
-(case-insensitive); where several do, the **most recently modified** one (§10). **To be
-discussed — §13.1.**
-4. **No size match → do not restore.** The pair goes on Liem's List.
+candidate is identified by its **file name and its folder**. The most probable is the one
+whose path contains **`final`** (case-insensitive); where several do, the **most recently
+modified** one (§10). **To be discussed — §13.1.**
+4. **No size-and-folder match → do not restore.** The pair goes on Liem's List.
 
 **Assumption.** The Dropbox index is taken to be complete. If a filename is not found and its
 folder turns out never to have been listed, the index is re-synced and the Finder re-run —

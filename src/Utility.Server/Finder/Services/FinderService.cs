@@ -138,7 +138,10 @@ public sealed class FinderService(
                 pair.NameMatchedCandidates.Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified)).ToList(),
                 pair.ParentFileName);
 
-            var exact = selectionSet.Where(c => pair.ParentSize.HasValue && c.Size == pair.ParentSize).ToList();
+            var exact = selectionSet
+                .Where(c => pair.ParentSize.HasValue && c.Size == pair.ParentSize)
+                .Where(c => FinderRanking.FolderMatches(pair.ParentFolder, c.Path))
+                .ToList();
 
             var checkParentOpens = state.Parent.State == FileState.Ok;
             var checkChildOpens = state.Child.State == FileState.Ok;

@@ -6,6 +6,25 @@ namespace Utility.Server.Finder.Services;
 public static class FinderRanking
 {
     /// <summary>
+    /// Whether a candidate sits in the folder the media library records for the parent.
+    /// </summary>
+    /// <remarks>
+    /// The library's <c>ml.Media.Path</c> IS the Dropbox product folder, so a candidate's
+    /// path contains it when the candidate is the file that was imported (§9.1 rule 3). A
+    /// candidate with no known folder cannot be disproved, so it counts as a match.
+    /// </remarks>
+    public static bool FolderMatches(string? parentFolder, string? candidatePath)
+    {
+        if (string.IsNullOrEmpty(parentFolder))
+        {
+            return true;
+        }
+
+        return candidatePath is not null
+            && candidatePath.Contains(parentFolder, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Ranks a candidate set, best first.
     /// </summary>
     /// <remarks>
