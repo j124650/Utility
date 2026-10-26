@@ -67,51 +67,62 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="Synced Dropbox tree" FontSize="16" FontWeight="SemiBold"
+                    <TextBlock Text="Synced Dropbox index" FontSize="16" FontWeight="SemiBold"
                                Foreground="#111827" />
-                    <TextBlock Text="Read once from ml.DropBoxNode — no Dropbox calls."
+                    <TextBlock Text="Aggregates from ml.DropBoxNode — no Dropbox calls."
                                FontSize="11" Foreground="#64748B" Margin="0,2,0,0" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
                             HorizontalAlignment="Left" Margin="24,0,0,0">
+                    <Border Style="{StaticResource StatPill}" ToolTip="Objects present in the synced table.">
+                        <TextBlock FontSize="12" Foreground="#334155">
+                            <Run Text="Objects " /><Run Text="{Binding Stats.TotalObjectsDisplay, Mode=OneWay}" FontWeight="SemiBold" />
+                        </TextBlock>
+                    </Border>
                     <Border Style="{StaticResource StatPill}" ToolTip="Folders present in the synced table.">
                         <TextBlock FontSize="12" Foreground="#334155">
-                            <Run Text="Folders " /><Run Text="{Binding FoldersDisplay, Mode=OneWay}" FontWeight="SemiBold" />
+                            <Run Text="Folders " /><Run Text="{Binding Stats.FoldersDisplay, Mode=OneWay}" FontWeight="SemiBold" />
                         </TextBlock>
                     </Border>
                     <Border Style="{StaticResource StatPill}" ToolTip="Files present in the synced table.">
                         <TextBlock FontSize="12" Foreground="#334155">
-                            <Run Text="Files " /><Run Text="{Binding FilesDisplay, Mode=OneWay}" FontWeight="SemiBold" />
+                            <Run Text="Files " /><Run Text="{Binding Stats.FilesDisplay, Mode=OneWay}" FontWeight="SemiBold" />
                         </TextBlock>
                     </Border>
                     <Border Style="{StaticResource StatPill}" ToolTip="Files whose pixel dimensions were returned by Dropbox.">
                         <TextBlock FontSize="12" Foreground="#334155">
-                            <Run Text="With dims " /><Run Text="{Binding WithDimensionsDisplay, Mode=OneWay}" FontWeight="SemiBold" />
+                            <Run Text="With dims " /><Run Text="{Binding Stats.FilesWithDimensionsDisplay, Mode=OneWay}" FontWeight="SemiBold" />
                         </TextBlock>
                     </Border>
                     <Border Style="{StaticResource StatPill}" ToolTip="Total size of synced files.">
                         <TextBlock FontSize="12" Foreground="#334155">
-                            <Run Text="Size " /><Run Text="{Binding SizeDisplay, Mode=OneWay}" FontWeight="SemiBold" />
+                            <Run Text="Size " /><Run Text="{Binding Stats.TotalBytesDisplay, Mode=OneWay}" FontWeight="SemiBold" />
                         </TextBlock>
                     </Border>
                     <Border Style="{StaticResource StatPill}" ToolTip="When the synced rows were last written.">
                         <TextBlock FontSize="12" Foreground="#334155">
-                            <Run Text="Synced " /><Run Text="{Binding LastSyncDisplay, Mode=OneWay}" FontWeight="SemiBold" />
+                            <Run Text="Synced " /><Run Text="{Binding Stats.LastSyncedDisplay, Mode=OneWay}" FontWeight="SemiBold" />
                         </TextBlock>
                     </Border>
                     <Border Style="{StaticResource StatPill}" Background="#FEF2F2"
-                            Visibility="{Binding HasUnverified, Converter={StaticResource BoolToVis}}"
+                            Visibility="{Binding Stats.HasNotSynced, Converter={StaticResource BoolToVis}}"
                             ToolTip="Folders whose listing did not complete. The sweep never deletes their contents.">
-                        <TextBlock Text="{Binding UnverifiedDisplay}" FontSize="12" Foreground="#B91C1C" />
+                        <TextBlock Text="{Binding Stats.NotSyncedHeadline, Mode=OneWay}" FontSize="12" Foreground="#B91C1C" />
                     </Border>
                 </StackPanel>
 
                 <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="Read / Refresh" Command="{Binding ReadTreeCommand}"
-                            Padding="14,5" Margin="0,0,8,0" />
-                    <Button Content="Expand all" Click="OnExpandAllClick" Padding="12,5" Margin="0,0,6,0" />
-                                        <Button Content="Collapse all" Click="OnCollapseAllClick" Padding="12,5" />
+                    <Button Content="Read / Refresh" Command="{Binding RefreshStatsCommand}"
+                            Padding="14,5" />
+                    <!--
+                      Expand all / Collapse all are hidden: the tree keeps the model's default
+                      expansion, and the per-node chevrons still work.
+                    -->
+                    <Button Content="Expand all" Click="OnExpandAllClick" Padding="12,5" Margin="0,0,6,0"
+                            Visibility="Collapsed" />
+                    <Button Content="Collapse all" Click="OnCollapseAllClick" Padding="12,5"
+                            Visibility="Collapsed" />
                 </StackPanel>
 
                 <!--
@@ -168,91 +179,158 @@
                 -->
                 <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8">
                     <Grid>
+                        <!--
+                          THE TREE IS COMMENTED OUT. It is not deleted - uncomment this block and
+                          the tree comes back exactly as it was. What replaced it is the index's
+                          figures, read as aggregates: the tree read every row of ml.DropBoxNode
+                          and rebuilt the hierarchy, which took twenty minutes for a page that
+                          shows a handful of numbers.
+                        -->
+                        <!--
                         <TreeView x:Name="Tree" ItemsSource="{Binding Nodes}"
-                                                          ItemContainerStyle="{StaticResource TreeRowStyle}"
-                                  BorderThickness="0" Background="Transparent"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                  ScrollViewer.VerticalScrollBarVisibility="Auto">
-                    <TreeView.ItemTemplate>
-                        <DataTemplate>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <!-- Fixed widths for the trailing columns. Auto-width columns size to content and
-                                                                         ignore margin, which is what made the date and size overlap. -->
-                                                                        <ColumnDefinition Width="Auto" />
-                                                                        <ColumnDefinition Width="Auto" />
-                                                                        <ColumnDefinition Width="Auto" />
-                                                                        <ColumnDefinition Width="110" />
-                                                                        <ColumnDefinition Width="160" />
-                                </Grid.ColumnDefinitions>
+                                                                  ItemContainerStyle="{StaticResource TreeRowStyle}"
+                                          BorderThickness="0" Background="Transparent"
+                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                          ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <TreeView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            Fixed widths for the trailing columns. Auto-width columns size to content and
+                                            ignore margin, which is what made the date and size overlap.
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                                <ColumnDefinition Width="110" />
+                                                                                <ColumnDefinition Width="160" />
+                                        </Grid.ColumnDefinitions>
 
-                                <!-- Glyph -->
-                                <Grid Grid.Column="0" Width="20">
-                                    <TextBlock Text="{Binding IsFolder, Converter={StaticResource BoolToIcon}}"
-                                               FontSize="13" VerticalAlignment="Center" HorizontalAlignment="Center" />
-                                </Grid>
+                                        Glyph
+                                        <Grid Grid.Column="0" Width="20">
+                                            <TextBlock Text="{Binding IsFolder, Converter={StaticResource BoolToIcon}}"
+                                                       FontSize="13" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                        </Grid>
 
-                                <!-- Name. Synthetic (never-synced) ancestors are italic and muted. -->
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Margin="4,0,12,0"
-                                           TextTrimming="CharacterEllipsis"
-                                           Text="{Binding Name}"
-                                           FontStyle="{Binding IsSynced, Converter={StaticResource BoolToFontStyle}}"
-                                           FontWeight="{Binding IsFolder, Converter={StaticResource BoolToWeight}}"
-                                           Foreground="{Binding IsSynced, Converter={StaticResource BoolToTextBrush}}" />
+                                        Name. Synthetic (never-synced) ancestors are italic and muted.
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Margin="4,0,12,0"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Text="{Binding Name}"
+                                                   FontStyle="{Binding IsSynced, Converter={StaticResource BoolToFontStyle}}"
+                                                   FontWeight="{Binding IsFolder, Converter={StaticResource BoolToWeight}}"
+                                                   Foreground="{Binding IsSynced, Converter={StaticResource BoolToTextBrush}}" />
 
-                                <!-- Not fully listed -->
-                                <TextBlock Grid.Column="2" Text="⚠ not fully listed" FontSize="10" Margin="0,0,10,0"
-                                           VerticalAlignment="Center" Foreground="#B91C1C"
-                                           Visibility="{Binding IsUnverified, Converter={StaticResource BoolToVis}}"
-                                           ToolTip="This folder's listing did not complete. The sweep will not delete what is inside it." />
+                                        Not fully listed
+                                        <TextBlock Grid.Column="2" Text="⚠ not fully listed" FontSize="10" Margin="0,0,10,0"
+                                                   VerticalAlignment="Center" Foreground="#B91C1C"
+                                                   Visibility="{Binding IsUnverified, Converter={StaticResource BoolToVis}}"
+                                                   ToolTip="This folder's listing did not complete. The sweep will not delete what is inside it." />
 
-                                <!-- "not synced" marker for synthetic ancestors -->
-                                <TextBlock Grid.Column="3" Text="not synced" FontSize="10" Margin="0,0,10,0"
-                                           VerticalAlignment="Center" Foreground="#94A3B8"
-                                           Visibility="{Binding IsSynced, Converter={StaticResource InverseBoolToVis}}"
-                                           ToolTip="This folder appears in a synced path but has no synced data of its own." />
+                                        "not synced" marker for synthetic ancestors
+                                        <TextBlock Grid.Column="3" Text="not synced" FontSize="10" Margin="0,0,10,0"
+                                                   VerticalAlignment="Center" Foreground="#94A3B8"
+                                                   Visibility="{Binding IsSynced, Converter={StaticResource InverseBoolToVis}}"
+                                                   ToolTip="This folder appears in a synced path but has no synced data of its own." />
 
-                                <!-- Dimensions -->
-                                <TextBlock Grid.Column="4" Text="{Binding DimensionsDisplay}" FontSize="11"
-                                           Margin="0,0,12,0" VerticalAlignment="Center" Foreground="#7C3AED"
-                                           Visibility="{Binding HasDimensions, Converter={StaticResource BoolToVis}}"
-                                           ToolTip="Pixel dimensions reported by Dropbox." />
+                                        Dimensions
+                                        <TextBlock Grid.Column="4" Text="{Binding DimensionsDisplay}" FontSize="11"
+                                                   Margin="0,0,12,0" VerticalAlignment="Center" Foreground="#7C3AED"
+                                                   Visibility="{Binding HasDimensions, Converter={StaticResource BoolToVis}}"
+                                                   ToolTip="Pixel dimensions reported by Dropbox." />
 
-                                <!-- Size -->
-                                                                <TextBlock Grid.Column="5" Text="{Binding SizeDisplay}" FontSize="11"
-                                                                                                                   TextAlignment="Right" Margin="0,0,20,0"
-                                                                                                                   VerticalAlignment="Center" Foreground="#64748B" />
+                                        Size
+                                                                        <TextBlock Grid.Column="5" Text="{Binding SizeDisplay}" FontSize="11"
+                                                                                                                           TextAlignment="Right" Margin="0,0,20,0"
+                                                                                                                           VerticalAlignment="Center" Foreground="#64748B" />
 
-                                                                                                <!-- Modified -->
-                                                                                                        <TextBlock Grid.Column="6" Text="{Binding ModifiedDisplay}" FontSize="11"
-                                                                                                                   TextAlignment="Right" Margin="0,0,4,0"
-                                                                                                                   VerticalAlignment="Center" Foreground="#94A3B8" />
-                            </Grid>
-                        </DataTemplate>
-                    </TreeView.ItemTemplate>
-                </TreeView>
+                                                                                                        Modified
+                                                                                                                <TextBlock Grid.Column="6" Text="{Binding ModifiedDisplay}" FontSize="11"
+                                                                                                                           TextAlignment="Right" Margin="0,0,4,0"
+                                                                                                                           VerticalAlignment="Center" Foreground="#94A3B8" />
+                                    </Grid>
+                                </DataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                        -->
 
-                <!-- Empty state -->
-                <Border Background="#F8FAFC" Padding="24"
-                        Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock Text="No synced rows yet" FontSize="15" FontWeight="SemiBold"
-                                   Foreground="#475569" HorizontalAlignment="Center" />
-                        <TextBlock Text="Run a sync, then press Read / Refresh to load ml.DropBoxNode."
-                                   FontSize="12" Foreground="#94A3B8" Margin="0,6,0,0"
-                                   HorizontalAlignment="Center" />
-                    </StackPanel>
+                        <!--
+                          The index's figures. Everything here is an aggregate over
+                          ml.DropBoxNode - one scan, one row, no row materialization.
+                        -->
+                        <StackPanel Margin="20,16" VerticalAlignment="Top">
+
+                            <!-- Totals -->
+                            <UniformGrid Columns="4" Margin="0,0,0,18">
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="Synced objects" FontSize="11" Foreground="#64748B" />
+                                    <TextBlock Text="{Binding Stats.TotalObjectsDisplay, Mode=OneWay}"
+                                               FontSize="22" FontWeight="SemiBold" Foreground="#111827" />
+                                    <TextBlock Text="rows in ml.DropBoxNode" FontSize="10" Foreground="#94A3B8" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="Folders" FontSize="11" Foreground="#64748B" />
+                                    <TextBlock Text="{Binding Stats.FoldersDisplay, Mode=OneWay}"
+                                               FontSize="22" FontWeight="SemiBold" Foreground="#111827" />
+                                    <TextBlock Text="directories" FontSize="10" Foreground="#94A3B8" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="Files" FontSize="11" Foreground="#64748B" />
+                                    <TextBlock Text="{Binding Stats.FilesDisplay, Mode=OneWay}"
+                                               FontSize="22" FontWeight="SemiBold" Foreground="#111827" />
+                                    <TextBlock Text="files" FontSize="10" Foreground="#94A3B8" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="Total size" FontSize="11" Foreground="#64748B" />
+                                    <TextBlock Text="{Binding Stats.TotalBytesDisplay, Mode=OneWay}"
+                                               FontSize="22" FontWeight="SemiBold" Foreground="#111827" />
+                                    <TextBlock Text="{Binding Stats.LastSyncedDisplay, Mode=OneWay}"
+                                               FontSize="10" Foreground="#94A3B8" />
+                                </StackPanel>
+                            </UniformGrid>
+
+                            <!-- Not fully listed -->
+                            <Border Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1"
+                                    CornerRadius="8" Padding="16,12"
+                                    Visibility="{Binding Stats.HasNotSynced, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Stats.NotSyncedHeadline, Mode=OneWay}"
+                                               FontSize="14" FontWeight="SemiBold" Foreground="#B91C1C" />
+                                    <TextBlock Text="A folder whose listing did not complete. Its contents are unverified, not absent - the sweep never deletes them."
+                                               FontSize="11" Foreground="#B91C1C" Margin="0,4,0,0" TextWrapping="Wrap" />
+
+                                    <ItemsControl ItemsSource="{Binding Stats.NotSyncedGroups, Mode=OneWay}" Margin="0,10,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,3,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="140" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="{Binding StatusDisplay, Mode=OneWay}"
+                                                               FontSize="12" FontWeight="SemiBold" Foreground="#B91C1C" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding ReasonDisplay, Mode=OneWay}"
+                                                               FontSize="12" Foreground="#B91C1C" Margin="8,0,8,0"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding CountDisplay, Mode=OneWay}"
+                                                               FontSize="12" FontWeight="SemiBold" Foreground="#B91C1C" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- All good -->
+                            <Border Background="#F0FDF4" BorderBrush="#BBF7D0" BorderThickness="1"
+                                    CornerRadius="8" Padding="16,12"
+                                    Visibility="{Binding Stats.HasNotSynced, Converter={StaticResource InverseBoolToVis}}">
+                                <TextBlock Text="Every synced folder was listed completely - nothing is pending."
+                                           FontSize="12" Foreground="#15803D" />
+                            </Border>
+                        </StackPanel>
+                    </Grid>
                 </Border>
-
-                <!-- Read error -->
-                <Border Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1" Padding="14"
-                        VerticalAlignment="Top"
-                        Visibility="{Binding TreeError, Converter={StaticResource StringToVis}}">
-                    <TextBlock Text="{Binding TreeError}" Foreground="#B91C1C" FontSize="12" TextWrapping="Wrap" />
-                </Border>
-            </Grid>
-        </Border>
     </Grid>
 </UserControl>

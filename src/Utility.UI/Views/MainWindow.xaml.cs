@@ -14,7 +14,7 @@ public partial class MainWindow : Window
     private readonly IServiceProvider _services;
     private readonly IAppStatus _status;
     private readonly IDropBoxSyncService _sync;
-    private readonly IDropBoxTreeState _treeState;
+    private readonly IDropBoxSyncStatsService _stats;
     private readonly FinderViewModel _finder;
     private UserControl? _current;
 
@@ -39,13 +39,13 @@ public partial class MainWindow : Window
         INavigationService navigation,
         IAppStatus status,
         IDropBoxSyncService sync,
-        IDropBoxTreeState treeState)
+        IDropBoxSyncStatsService stats)
     {
         _services = services;
         _navigation = navigation;
         _status = status;
         _sync = sync;
-        _treeState = treeState;
+        _stats = stats;
         _finder = services.GetRequiredService<FinderViewModel>();
 
         InitializeComponent();
@@ -63,8 +63,8 @@ public partial class MainWindow : Window
         // singleton (§14.1) - the same pattern as the sync overlay above.
         FinderOverlay.DataContext = _finder;
 
-        // Setting IsChecked raises Checked, which navigates. The Dashboard tab is hidden,
-        // so the app opens on the Finder.
+        // Setting IsChecked raises Checked, which navigates. The app opens on the Finder,
+        // because its pass is what the reader came for.
         NavFinder.IsChecked = true;
     }
 
@@ -99,8 +99,13 @@ public partial class MainWindow : Window
     private void OnStopSyncClick(object sender, RoutedEventArgs e) => _sync.Cancel();
 
     /// <summary>
-    /// Dismisses the busy screen and re-reads the tree, so the rows the sync just wrote
-    /// appear behind it.
+    /// Dismisses the busy screen and re-reads the index's figures, so the rows the sync
+    /// just wrote are counted behind it.
+    /// <para>
+    /// The tree read that used to sit here took twenty minutes - it loaded every row of
+    /// ml.DropBoxNode and rebuilt the hierarchy. The page shows the figures, so the
+    /// figures are what is re-read.
+    /// </para>
     /// </summary>
     private async void OnCloseSyncClick(object sender, RoutedEventArgs e)
     {
@@ -108,11 +113,11 @@ public partial class MainWindow : Window
 
         try
         {
-            await _treeState.LoadAsync(force: true);
+            await _stats.LoadAsync();
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Tree re-read after sync failed: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Index stats re-read after sync failed: {ex.Message}");
         }
     }
 

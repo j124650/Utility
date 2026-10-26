@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Utility.DropBox;
 using Utility.Server;
+using Utility.Server.DropBoxSync;
 using Utility.UI.Services;
 using Utility.UI.ViewModels;
 using Utility.UI.Views;
@@ -46,15 +47,22 @@ public partial class App : Application
     }
 
     /// <summary>
-/// Reads the app-wide status facts and the synced tree once at startup. Both are singletons,
-/// so navigating between pages afterwards never re-queries them.
+/// Reads the app-wide status facts and the synced Dropbox index's figures once at
+/// startup. Both are singletons, so navigating between pages afterwards never
+/// re-queries them.
+/// <para>
+/// The index's figures are AGGREGATES over ml.DropBoxNode - one scan, one row. The
+/// tree read that used to sit here loaded every row and rebuilt the hierarchy, which
+/// took twenty minutes; the page shows a handful of numbers, so it reads a handful of
+/// numbers.
+/// </para>
 /// </summary>
 private static async Task WarmUpAsync(IServiceProvider services)
     {
         try
         {
             await services.GetRequiredService<IAppStatus>().LoadAsync();
-            await services.GetRequiredService<IDropBoxTreeState>().LoadAsync();
+            await services.GetRequiredService<IDropBoxSyncStatsService>().LoadAsync();
         }
         catch (Exception ex)
         {

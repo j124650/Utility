@@ -31,6 +31,18 @@ public partial class DashboardView : UserControl
     }
 
     /// <summary>
+    /// The tree control, if this page still has one.
+    /// <para>
+    /// The TreeView is COMMENTED OUT of the XAML for now - the page shows the index's
+    /// figures instead - so this is null and every tree operation below returns
+    /// immediately. It is looked up BY NAME rather than used as the generated field, so
+    /// uncommenting the TreeView brings all of this machinery back with no code change:
+    /// the name is registered again and the lookup finds it.
+    /// </para>
+    /// </summary>
+    private TreeView? TreeControl => this.FindName("Tree") as TreeView;
+
+    /// <summary>
     /// Polls (briefly, on the dispatcher) until the ItemContainerGenerator reports that
     /// containers exist, then applies the expansion. Guessing with dispatcher priorities
     /// does not work: the extra passes still ran before the first layout pass created
@@ -38,15 +50,16 @@ public partial class DashboardView : UserControl
     /// </summary>
     private void WaitForContainers(int attempt = 0)
     {
-        if (Tree is null)
+        var tree = TreeControl;
+        if (tree is null)
         {
             return;
         }
 
         _vm.ApplyDefaultExpansion();
 
-        var ready = Tree.ItemContainerGenerator.Status == GeneratorStatus.ContainersGenerated ||
-                    Tree.ItemContainerGenerator.ContainerFromItem(_vm.Nodes.FirstOrDefault()) is not null;
+        var ready = tree.ItemContainerGenerator.Status == GeneratorStatus.ContainersGenerated ||
+                    tree.ItemContainerGenerator.ContainerFromItem(_vm.Nodes.FirstOrDefault()) is not null;
 
         if (ready || attempt >= 12)
         {
@@ -75,7 +88,8 @@ public partial class DashboardView : UserControl
 
     private void SyncExpansion()
     {
-        if (Tree is null)
+        var tree = TreeControl;
+        if (tree is null)
         {
             return;
         }
@@ -84,7 +98,7 @@ public partial class DashboardView : UserControl
         // parent is open. Yield to the dispatcher between passes so container generation
         // actually runs - a synchronous loop only ever sees the stale set. Repeat until a
         // pass changes nothing, bounded so a pathological tree cannot spin.
-        for (var pass = 0; pass < 64 && ApplyToContainers(Tree); pass++)
+        for (var pass = 0; pass < 64 && ApplyToContainers(tree); pass++)
         {
             Dispatcher.BeginInvoke(SyncExpansion, DispatcherPriority.Background);
         }
@@ -103,12 +117,13 @@ public partial class DashboardView : UserControl
     /// </summary>
     internal void ExpandOrCollapseAll(bool expand)
     {
-        if (Tree is null)
+        var tree = TreeControl;
+        if (tree is null)
         {
             return;
         }
 
-        var changed = SetContainers(Tree, expand, maxDepth: 64, depth: 0);
+        var changed = SetContainers(tree, expand, maxDepth: 64, depth: 0);
 
         // Re-schedule ONLY when expanding. Expanding a container realizes its children, so
         // the next pass has more to open and progress is real. Collapsing destroys the

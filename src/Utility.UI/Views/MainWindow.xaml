@@ -114,12 +114,10 @@
         <Border Grid.Row="1" Style="{StaticResource BlurBehindOverlay}" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="8,6">
             <StackPanel Orientation="Horizontal">
                 <!--
-                  The Dashboard tab is hidden. The view and its view model are still there,
-                  so it can come back without being rebuilt - but it is not offered.
+                  The DropBox DB tab: the synced Dropbox tree and the sync toolbar.
                 -->
-                <RadioButton x:Name="NavDashboard" GroupName="Nav" Content="Dashboard"
-                             Style="{StaticResource NavButtonStyle}" Checked="OnNavDashboardClick"
-                             Visibility="Collapsed" />
+                <RadioButton x:Name="NavDashboard" GroupName="Nav" Content="DropBox DB"
+                             Style="{StaticResource NavButtonStyle}" Checked="OnNavDashboardClick" />
                 <RadioButton x:Name="NavDropBox" GroupName="Nav" Content="DropBox files"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavDropBoxClick" />
                 <RadioButton x:Name="NavMedia" GroupName="Nav" Content="Media library"

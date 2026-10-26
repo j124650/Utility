@@ -8,9 +8,11 @@ namespace Utility.UI.ViewModels;
 /// <summary>
 /// The synced Dropbox tree, and the command that starts a sync.
 /// <para>
-/// The tree lives in the singleton <see cref="IDropBoxTreeState"/>, so navigating to this
-/// page does NOT re-read it - it is loaded once at startup, or when the toolbar's
-/// Read/Refresh button asks for it. The page itself never queries anything on activation.
+/// The tree lives in the singleton <see cref="IDropBoxTreeState"/>. It is NOT loaded
+/// automatically: the page never queries anything on activation, and the app's startup
+/// warm-up does not read it either. The tree is read only when the user presses
+/// Read / Refresh, and that read is kept in the singleton, so navigating away and back
+/// shows it again without another query.
 /// </para>
 /// <para>
 /// <b>The sync service is bound directly.</b> <see cref="IDropBoxSyncService"/> owns the
@@ -42,22 +44,29 @@ public sealed class DashboardViewModel : ViewModelBase
 
     private readonly IDropBoxTreeState _state;
     private readonly IDropBoxSyncService _sync;
+    private readonly IDropBoxSyncStatsService _stats;
     private readonly ILogSink _log;
 
     private AsyncRelayCommand? _readTree;
     private AsyncRelayCommand? _runSync;
+    private AsyncRelayCommand? _refreshStats;
 
-    public DashboardViewModel(IDropBoxTreeState state, IDropBoxSyncService sync, ILogSink log)
+    public DashboardViewModel(
+        IDropBoxTreeState state,
+        IDropBoxSyncService sync,
+        IDropBoxSyncStatsService stats,
+        ILogSink log)
     {
         _state = state;
         _sync = sync;
+        _stats = stats;
         _log = log;
 
-        // The tree is read once at startup, which happens BEFORE this view model exists.
+        // The figures are read at startup, which happens BEFORE this view model exists.
         // Subscribe so the page reflects whatever the warm-up already produced, and pull
         // the current values once in case the warm-up finished before this was created.
-        state.StateChanged += (_, _) => PublishState();
-        PublishState();
+        _stats.PropertyChanged += (_, _) => PublishStats();
+        PublishStats();
     }
 
     /// <summary>Bound directly: the collection instance never changes, only its contents.</summary>
@@ -73,6 +82,28 @@ public sealed class DashboardViewModel : ViewModelBase
     /// </summary>
     public IDropBoxSyncService Sync => _sync;
 
+    /// <summary>
+    /// The index's figures, shaped for display.
+    /// <para>
+    /// A snapshot object rather than loose properties: the not-synced folders are a LIST,
+    /// and a list cannot be a property change on this view model without a collection
+    /// that raises its own notifications.
+    /// </para>
+    /// </summary>
+    public DropBoxSyncStatsView Stats { get; private set; } = DropBoxSyncStatsView.Empty;
+
+    /// <summary>
+    /// Reads the figures again. This is what the toolbar's Read / Refresh button does:
+    /// the tree read it used to run took twenty minutes and is no longer what the page
+    /// is about.
+    /// </summary>
+    public AsyncRelayCommand RefreshStatsCommand =>
+        _refreshStats ??= new AsyncRelayCommand(RefreshStatsAsync);
+
+    /// <summary>
+    /// Reads the tree. Still here for when the tree view comes back - nothing on the
+    /// page invokes it now.
+    /// </summary>
     public AsyncRelayCommand ReadTreeCommand => _readTree ??= new AsyncRelayCommand(() => ReadTreeAsync(force: true));
 
     /// <summary>
@@ -110,47 +141,18 @@ public sealed class DashboardViewModel : ViewModelBase
 
     public string? TreeError => _state.Error;
 
-    private int _folders;
-    private int _files;
-    private int _withDimensions;
-    private int _unverified;
-    private string _sizeDisplay = "—";
-    private string _lastSyncDisplay = "—";
-
-    public string FoldersDisplay => _folders.ToString("N0");
-
-    public string FilesDisplay => _files.ToString("N0");
-
-    public string WithDimensionsDisplay => _withDimensions.ToString("N0");
-
-    public string SizeDisplay
-    {
-        get => _sizeDisplay;
-        private set => SetProperty(ref _sizeDisplay, value);
-    }
-
-    public string LastSyncDisplay
-    {
-        get => _lastSyncDisplay;
-        private set => SetProperty(ref _lastSyncDisplay, value);
-    }
-
-    /// <summary>Non-null only when some folder was never fully listed.</summary>
-    public string UnverifiedDisplay => _unverified > 0 ? $"{_unverified} not fully listed" : "";
-
-    public bool HasUnverified => _unverified > 0;
-
     /// <summary>
-    /// Loads the tree only if it was never loaded. Used at startup; navigation never calls it.
+    /// Reads the figures and publishes them.
     /// </summary>
-    public async Task EnsureLoadedAsync()
+    private async Task RefreshStatsAsync()
     {
-        if (_state.IsLoaded)
-        {
-            return;
-        }
+        await _stats.LoadAsync();
 
-        await ReadTreeAsync(force: false);
+        StatusMessage = _stats.Error is null
+            ? $"{_stats.Stats?.TotalObjects ?? 0:N0} synced object(s)."
+            : $"Index stats failed: {_stats.Error}";
+
+        _log.Info($"Dashboard stats: {StatusMessage}");
     }
 
     private async Task ReadTreeAsync(bool force)
@@ -162,7 +164,7 @@ public sealed class DashboardViewModel : ViewModelBase
             ApplyDefaultExpansion();
 
             StatusMessage = _state.Error is null
-                ? $"{_state.Nodes.Count} root(s), {_folders:N0} folder(s), {_files:N0} file(s)."
+                ? $"{_state.Nodes.Count} root(s), {_state.Nodes.Count:N0} node(s)."
                 : $"Tree read failed: {_state.Error}";
 
             _log.Info($"Dashboard tree: {StatusMessage}");
@@ -232,55 +234,19 @@ public sealed class DashboardViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Pushes the shared state's current values into the bindable properties. Called on
-    /// construction and whenever the state changes - the tree may already have been read
-    /// at startup, before this view model existed.
+    /// Pushes the figures into <see cref="Stats"/>. Called on construction and whenever
+    /// the stats service changes - the figures are read at startup, before this view model
+    /// exists.
     /// </summary>
-    private void PublishState()
+    private void PublishStats()
     {
-        var summary = _state.Summary;
-        if (summary is not null)
-        {
-            _folders = summary.Folders;
-            _files = summary.Files;
-            _withDimensions = summary.WithDimensions;
-            _unverified = summary.UnverifiedFolders;
-            SizeDisplay = FormatSize(summary.TotalBytes);
-            LastSyncDisplay = summary.LastSyncedUtc is null
-                ? "—"
-                : summary.LastSyncedUtc.Value.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
-        }
+        var stats = _stats.Stats;
+        Stats = stats is null ? DropBoxSyncStatsView.Empty : DropBoxSyncStatsView.From(stats);
 
+        OnPropertyChanged(nameof(Stats));
         OnPropertyChanged(nameof(HasTree));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(IsLoading));
         OnPropertyChanged(nameof(TreeError));
-        OnPropertyChanged(nameof(FoldersDisplay));
-        OnPropertyChanged(nameof(FilesDisplay));
-        OnPropertyChanged(nameof(WithDimensionsDisplay));
-        OnPropertyChanged(nameof(SizeDisplay));
-        OnPropertyChanged(nameof(LastSyncDisplay));
-        OnPropertyChanged(nameof(UnverifiedDisplay));
-        OnPropertyChanged(nameof(HasUnverified));
-    }
-
-    private static string FormatSize(long bytes)
-    {
-        if (bytes >= 1_073_741_824)
-        {
-            return $"{bytes / 1_073_741_824.0:0.##} GB";
-        }
-
-        if (bytes >= 1_048_576)
-        {
-            return $"{bytes / 1_048_576.0:0.##} MB";
-        }
-
-        if (bytes >= 1024)
-        {
-            return $"{bytes / 1024.0:0.##} KB";
-        }
-
-        return $"{bytes} B";
     }
 }

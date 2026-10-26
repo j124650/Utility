@@ -128,6 +128,11 @@ public static class ServerServiceCollectionExtensions
         services.AddSingleton<IDropBoxSyncService, DropBoxSyncService>();
         services.AddSingleton<IDropBoxTreeService, DropBoxTreeService>();
 
+        // The dashboard's figures. A SINGLETON: they are read once at startup and shown
+        // on a page that is created fresh every time the user navigates to it, so a
+        // transient service would re-query on every navigation.
+        services.AddSingleton<IDropBoxSyncStatsService, DropBoxSyncStatsService>();
+
         return services;
     }
 
