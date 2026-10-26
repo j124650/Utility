@@ -564,14 +564,23 @@
                       date, path - rather than only the best.
                     -->
 
-                    <!-- The leading icon says the verdict. No colour anywhere. -->
-                    <DataGridTemplateColumn Header="" Width="44" SortMemberPath="Verdict">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <TextBlock Style="{StaticResource IconCell}" Text="{Binding VerdictIcon}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
+                    <!--
+                                          The leading icon says the verdict. No colour anywhere.
+
+                                          The column is HIDDEN: the verdict is spelled out in the verdict column
+                                          and the icon is still shown in the info area, so the table reads
+                                          without it. It stays in the column collection, collapsed, so the
+                                          filter row's columns keep lining up with the table's
+                                          (FinderView.xaml.cs).
+                                        -->
+                                        <DataGridTemplateColumn Header="" Width="44" SortMemberPath="Verdict"
+                                                                Visibility="Collapsed">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Style="{StaticResource IconCell}" Text="{Binding VerdictIcon}" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
 
                     <!-- Parent: everything about the parent file. -->
                     <DataGridTemplateColumn Header="Parent" Width="2*" MinWidth="290" SortMemberPath="ParentFileName">

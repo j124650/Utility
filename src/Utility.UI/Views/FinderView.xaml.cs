@@ -57,12 +57,38 @@ public partial class FinderView : UserControl
             return;
         }
 
-        SetColumnWidth(FilterColumn0, columns[0].ActualWidth);
-        SetColumnWidth(FilterColumn1, columns[1].ActualWidth);
-        SetColumnWidth(FilterColumn2, columns[2].ActualWidth);
-        SetColumnWidth(FilterColumn3, columns[3].ActualWidth);
+        var filterColumns = new[] { FilterColumn0, FilterColumn1, FilterColumn2, FilterColumn3 };
+
+        for (var i = 0; i < filterColumns.Length; i++)
+        {
+            if (TryGetColumnWidth(columns[i], out var width))
+            {
+                SetColumnWidth(filterColumns[i], width);
+            }
+        }
 
         SyncFilterScroll();
+    }
+
+    /// <summary>
+    /// The width a grid column takes in the table (§20).
+    ///
+    /// A COLLAPSED column takes none - the leading icon column is hidden, so the filter
+    /// row's first column must take none either, or the filters sit one column to the
+    /// right of the columns they filter. A column that has not been measured yet has no
+    /// width to copy, and is left alone.
+    /// </summary>
+    private static bool TryGetColumnWidth(DataGridColumn column, out double width)
+    {
+        if (column.Visibility == Visibility.Collapsed)
+        {
+            width = 0;
+            return true;
+        }
+
+        width = column.ActualWidth;
+
+        return width > 0 && !double.IsNaN(width);
     }
 
     /// <summary>
@@ -70,7 +96,7 @@ public partial class FinderView : UserControl
     /// </summary>
     private static void SetColumnWidth(ColumnDefinition column, double width)
     {
-        if (width <= 0 || double.IsNaN(width))
+        if (width < 0 || double.IsNaN(width))
         {
             return;
         }
