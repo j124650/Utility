@@ -180,15 +180,17 @@ public sealed class DropBoxSyncService(
     private const int MaxRateLimitAttempts = 5;
 
     /// <summary>
-    /// The widest the request gate may grow to.
+    /// The widest the walk may go.
     /// <para>
-    /// A ceiling, not a target: the controller widens towards the rate Dropbox will
-    /// actually accept, and this says how far it is allowed to go looking. It is well
-    /// above the six the walk starts at, because the point of adapting is to find out
-    /// that the limit is not six.
+    /// Measured against this account, with the same per-file call the walk makes:
+    /// the latency stays flat at about 370 ms from width 1 to width 256, and no width
+    /// produced a single rate limit. Throughput scales with the width - 15.7 calls per
+    /// second at six, 84 at thirty-two, 162 at sixty-four, 436 at one hundred and
+    /// ninety-two. So the API is not the constraint at any width this walk can reach,
+    /// and the ceiling here is a guard rail rather than a measurement.
     /// </para>
     /// </summary>
-    private const int MaxAdaptiveConcurrency = 32;
+    private const int MaxAdaptiveConcurrency = 128;
 
     /// <summary>
     /// The wait used when Dropbox did not say how long to wait.
@@ -412,7 +414,7 @@ public sealed class DropBoxSyncService(
         IProgress<DropBoxSyncProgress>? progress = null,
         int batchSize = 500,
         int maxDepth = 0,
-        int maxConcurrency = 6,
+        int maxConcurrency = 24,
         bool enrichFileMetadata = true,
         CancellationToken ct = default)
     {
@@ -448,7 +450,7 @@ public sealed class DropBoxSyncService(
         IProgress<DropBoxSyncProgress>? progress = null,
         int batchSize = 500,
         int maxDepth = 0,
-        int maxConcurrency = 6,
+        int maxConcurrency = 24,
         bool enrichFileMetadata = true,
         CancellationToken ct = default)
     {
@@ -576,7 +578,14 @@ public sealed class DropBoxSyncService(
             // found by trying - and a width chosen by guesswork is wrong in both
             // directions.
             using var requestGate = new AdaptiveConcurrencyGate(maxConcurrency);
-            using var folderGate = new SemaphoreSlim(maxConcurrency);
+
+            // The folder gate follows the request gate, so it is the SAME kind of gate:
+            // a fixed width would cap the walk at the starting width, and the wider
+            // request width the controller finds would never be reached. It bounds how
+            // many folders are expanded at once, and it bounds how many database
+            // contexts are open - but the writes are now serialised behind their own
+            // gate, so the contexts are opened one at a time anyway.
+            using var folderGate = new AdaptiveConcurrencyGate(maxConcurrency);
 
             // The controller adapts the request gate's width from the measured traffic.
             var controller = new DropboxConcurrencyController(
@@ -585,7 +594,8 @@ public sealed class DropBoxSyncService(
                 startWidth: maxConcurrency,
                 maxWidth: MaxAdaptiveConcurrency,
                 minWidth: 1,
-                settleTime: TimeSpan.FromSeconds(30));
+                settleTime: TimeSpan.FromSeconds(30),
+                folderGate: folderGate);
 
             // Published so the busy screen can show the width the walk settled on.
             _controller = controller;
@@ -811,7 +821,7 @@ public sealed class DropBoxSyncService(
     private async Task ExpandFolderAsync(
         string ns, Guid runId, string path, long folderId, int depth,
         bool unlimited, int maxDepth, bool enrichFileMetadata,
-        AdaptiveConcurrencyGate requestGate, SemaphoreSlim folderGate,
+        AdaptiveConcurrencyGate requestGate, AdaptiveConcurrencyGate folderGate,
         SyncCounts counts,
         ConcurrentBag<ChildRef> childrenOut,
         IProgress<DropBoxSyncProgress>? progress, Stopwatch sw, int batchSize, CancellationToken ct)

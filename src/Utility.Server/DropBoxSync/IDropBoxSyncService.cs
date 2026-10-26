@@ -194,7 +194,7 @@ public interface IDropBoxSyncService : INotifyPropertyChanged
         IProgress<DropBoxSyncProgress>? progress = null,
         int batchSize = 50,
         int maxDepth = 0,
-        int maxConcurrency = 6,
+        int maxConcurrency = 24,
         bool enrichFileMetadata = true,
         CancellationToken ct = default);
 
@@ -216,7 +216,7 @@ public interface IDropBoxSyncService : INotifyPropertyChanged
         IProgress<DropBoxSyncProgress>? progress = null,
         int batchSize = 50,
         int maxDepth = 0,
-        int maxConcurrency = 6,
+        int maxConcurrency = 24,
         bool enrichFileMetadata = true,
         CancellationToken ct = default);
 }

@@ -41,6 +41,20 @@ public sealed class DropboxConcurrencyController
     private readonly AdaptiveConcurrencyGate _gate;
     private readonly DropboxRequestRateMeter _meter;
 
+    /// <summary>
+    /// The gate that bounds how many FOLDERS are expanded at once.
+    /// <para>
+    /// It follows the request gate, because the two must agree: the request gate
+    /// says how many Dropbox calls may be in flight, and the folder gate says how
+    /// many folders may be working toward that. A folder that is expanded contributes
+    /// its listing and its per-file metadata calls to the request gate, so a folder
+    /// gate narrower than the request gate makes the wider request width
+    /// unreachable - the walk would idle at the folder gate while the request gate
+    /// sat unused.
+    /// </para>
+    /// </summary>
+    private readonly AdaptiveConcurrencyGate? _folderGate;
+
     /// <summary>The width the walk starts at.</summary>
     private readonly int _startWidth;
 
@@ -82,10 +96,12 @@ public sealed class DropboxConcurrencyController
         int startWidth,
         int maxWidth,
         int minWidth,
-        TimeSpan settleTime)
+        TimeSpan settleTime,
+        AdaptiveConcurrencyGate? folderGate = null)
     {
         _gate = gate;
         _meter = meter;
+        _folderGate = folderGate;
         _startWidth = Math.Max(minWidth, startWidth);
         _maxWidth = Math.Max(_startWidth, maxWidth);
         _minWidth = Math.Max(1, minWidth);
@@ -120,8 +136,10 @@ public sealed class DropboxConcurrencyController
             if (target < _gate.Limit)
             {
                 _gate.SetLimit(target);
+                _folderGate?.SetLimit(target);
                 _lastChange = now;
                 _healthyLatencyMs = 0;
+                _baselineWidth = 0;
             }
 
             return;
@@ -150,9 +168,13 @@ public sealed class DropboxConcurrencyController
         {
             // The width moved: this window becomes the baseline for the new width, and
             // there is nothing to compare it against yet.
+            //
+            // The settle clock is NOT restarted here. It was restarted when the width
+            // changed, and restarting it again would make every step cost TWO settle
+            // periods - so a climb from six to thirty-two took twenty-six minutes,
+            // and the walk spent all that time at the width it started with.
             _baselineWidth = _gate.Limit;
             _healthyLatencyMs = snapshot.MeanLatencyMs;
-            _lastChange = now;
             return;
         }
 
@@ -162,6 +184,7 @@ public sealed class DropboxConcurrencyController
             if (target < _gate.Limit)
             {
                 _gate.SetLimit(target);
+                _folderGate?.SetLimit(target);
                 _lastChange = now;
                 _healthyLatencyMs = 0;
                 _baselineWidth = 0;
@@ -187,6 +210,12 @@ public sealed class DropboxConcurrencyController
         if (_gate.Limit < _maxWidth && now - _lastRateLimit > _settleTime)
         {
             _gate.SetLimit(_gate.Limit + 1);
+
+            // The folder gate follows the request gate, so the wider width is
+            // actually reachable: folders are what feed the request gate, and a
+            // folder gate left at the old width would cap the walk there.
+            _folderGate?.SetLimit(_gate.Limit);
+
             _lastChange = now;
 
             // The baseline belonged to the old width: it is forgotten, so the next
