@@ -106,7 +106,7 @@
                         </TextBlock>
                     </Border>
                     <Border Style="{StaticResource StatPill}" Background="#FEF2F2"
-                            Visibility="{Binding Stats.HasNotSynced, Converter={StaticResource BoolToVis}}"
+                            Visibility="{Binding Stats.ShowPending, Converter={StaticResource BoolToVis}}"
                             ToolTip="Folders whose listing did not complete. The sweep never deletes their contents.">
                         <TextBlock Text="{Binding Stats.NotSyncedHeadline, Mode=OneWay}" FontSize="12" Foreground="#B91C1C" />
                     </Border>
@@ -292,7 +292,7 @@
                             <!-- Not fully listed -->
                             <Border Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1"
                                     CornerRadius="8" Padding="16,12"
-                                    Visibility="{Binding Stats.HasNotSynced, Converter={StaticResource BoolToVis}}">
+                                    Visibility="{Binding Stats.ShowPending, Converter={StaticResource BoolToVis}}">
                                 <StackPanel>
                                     <TextBlock Text="{Binding Stats.NotSyncedHeadline, Mode=OneWay}"
                                                FontSize="14" FontWeight="SemiBold" Foreground="#B91C1C" />
@@ -319,13 +319,50 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+
+                                    <!--
+                                      The button that finishes the job.
+
+                                      It does NOT retry the folders that failed - a folder whose
+                                      listing was refused will be refused again. It picks up at
+                                      the FRONTIER: the folders the walk wrote but never expanded.
+                                      Their contents were never listed and everything below them
+                                      was never discovered, so the tree is missing that whole
+                                      branch. Listing them and walking down into whatever they
+                                      contain is what makes the sync complete.
+
+                                      The busy screen covers the window while it runs, carrying the
+                                      live progress and the Stop button.
+                                    -->
+                                    <Button Content="Continue sync" Command="{Binding ContinueSyncCommand}"
+                                            Padding="16,6" MinWidth="120" Margin="0,12,0,0"
+                                            HorizontalAlignment="Left"
+                                            IsEnabled="{Binding CanContinueSync, Mode=OneWay}"
+                                            ToolTip="Lists the folders the previous walk never expanded, then walks down into whatever they contain, until the tree is complete. The part already synced is not listed again." />
+                                </StackPanel>
+                            </Border>
+
+                            <!--
+                              The figures are not known yet. NOT the same as "everything is
+                              fine": an index nobody has read is an index nobody can say
+                              anything about. So this says what it is actually waiting for.
+                            -->
+                            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1"
+                                    CornerRadius="8" Padding="16,12"
+                                    Visibility="{Binding Stats.ShowNoStats, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Stats.NoStatsHeadline, Mode=OneWay}"
+                                               FontSize="14" FontWeight="SemiBold" Foreground="#475569" />
+                                    <TextBlock Text="{Binding Stats.NoStatsDetail, Mode=OneWay}"
+                                               FontSize="11" Foreground="#64748B" Margin="0,4,0,0"
+                                               TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>
 
                             <!-- All good -->
                             <Border Background="#F0FDF4" BorderBrush="#BBF7D0" BorderThickness="1"
                                     CornerRadius="8" Padding="16,12"
-                                    Visibility="{Binding Stats.HasNotSynced, Converter={StaticResource InverseBoolToVis}}">
+                                    Visibility="{Binding Stats.ShowAllGood, Converter={StaticResource BoolToVis}}">
                                 <TextBlock Text="Every synced folder was listed completely - nothing is pending."
                                            FontSize="12" Foreground="#15803D" />
                             </Border>

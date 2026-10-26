@@ -1,8 +1,12 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Utility.DropBox;
 using Utility.DropBox.Models;
 using Utility.DropBox.Services;
 // Aliased: Utility.DropBox.Models also declares a DropBoxNode (the in-memory tree model).
@@ -54,6 +58,36 @@ public sealed class DropBoxSyncService(
     ILogger<DropBoxSyncService> logger) : IDropBoxSyncService
 {
     private readonly IDbContextFactory<DropBoxDbContext> _contextFactory = contextFactory;
+
+    /// <summary>
+    /// ONE writer at a time for <c>ml.DropBoxNode</c>.
+    /// <para>
+    /// The walk expands six folders in parallel, and every one of them writes to the
+    /// same table - the folder's rows and the folder's own status. Those writes
+    /// overlapped, and SQL Server picked one worker as the deadlock victim: the
+    /// transaction was rolled back, the folder was abandoned, and its whole subtree
+    /// was never discovered.
+    /// </para>
+    /// <para>
+    /// The parallelism that matters is the Dropbox traffic, and that is untouched by
+    /// this: the listing and every per-file metadata call still run six at a time. Only
+    /// the WRITE is serialised, and a write is now a seek of a few milliseconds, so the
+    /// gate is never the bottleneck. One writer at a time means there is no cycle of
+    /// locks between this app's own workers, which is what a deadlock needs.
+    /// </para>
+    /// </summary>
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+
+    /// <summary>
+    /// How many times a write that was chosen as a deadlock victim is retried.
+    /// <para>
+    /// A deadlock victim is a transient failure, not a verdict: its transaction was
+    /// rolled back whole, so running it again is safe and is what SQL Server itself
+    /// asks for ("Rerun the transaction"). Retrying here - rather than letting the
+    /// exception escape - is what stops a lost folder from taking its subtree with it.
+    /// </para>
+    /// </summary>
+    private const int MaxWriteAttempts = 5;
 
     /// <summary>Guards against a second walk while one is in flight.</summary>
     private int _running;
@@ -108,6 +142,69 @@ public sealed class DropBoxSyncService(
     private int _activeDownloaders;
 
     /// <summary>
+    /// The request gate's width for the current run: how many Dropbox requests may be
+    /// in flight at once.
+    /// </summary>
+    private int _maxConcurrency;
+
+    /// <summary>
+    /// The brake every worker of a walk waits at when Dropbox rate-limits one of them.
+    /// <para>
+    /// One brake for the whole walk, because Dropbox's limit is per authorization (per
+    /// user, or per team) and not per request: a 429 means "stop, all of you".
+    /// </para>
+    /// </summary>
+    private readonly DropboxRateLimitBrake _rateLimitBrake = new();
+
+    /// <summary>
+    /// What the walk's own traffic looks like: how fast it is going, how much of it is
+    /// being refused, and how long each call takes.
+    /// </summary>
+    private readonly DropboxRequestRateMeter _rateMeter = new();
+
+    /// <summary>
+    /// Sets the request width from what the meter measured. Null between runs.
+    /// </summary>
+    private DropboxConcurrencyController? _controller;
+
+    /// <summary>
+    /// How many times a single request may be retried after a rate limit before the
+    /// folder is given up on.
+    /// <para>
+    /// Few on purpose: a rate limit that survives a handful of attempts is not going to
+    /// be waited out by retrying harder, and the walk has a whole tree to get through.
+    /// The folder is then recorded as <c>Failed</c>, which the next continuation picks
+    /// up again.
+    /// </para>
+    /// </summary>
+    private const int MaxRateLimitAttempts = 5;
+
+    /// <summary>
+    /// The widest the request gate may grow to.
+    /// <para>
+    /// A ceiling, not a target: the controller widens towards the rate Dropbox will
+    /// actually accept, and this says how far it is allowed to go looking. It is well
+    /// above the six the walk starts at, because the point of adapting is to find out
+    /// that the limit is not six.
+    /// </para>
+    /// </summary>
+    private const int MaxAdaptiveConcurrency = 32;
+
+    /// <summary>
+    /// The wait used when Dropbox did not say how long to wait.
+    /// <para>
+    /// Grows with the attempt, and starts well above a second: a rate limit with no
+    /// stated duration is the API telling us the budget is spent, and a short retry
+    /// only makes it worse - rate-limited requests count against the limit too.
+    /// </para>
+    /// </summary>
+    private static int RateLimitBackoffSeconds(int attempt)
+    {
+        var seconds = 5 * (1 << Math.Min(attempt - 1, 5));
+        return seconds > 300 ? 300 : seconds;
+    }
+
+    /// <summary>
     /// Counts the runs. A snapshot carries the number of the run that produced it, so a
     /// snapshot left over from a previous run is discarded instead of overwriting the
     /// state of the current one.
@@ -117,6 +214,13 @@ public sealed class DropBoxSyncService(
     /// <summary>Published state. Written only on the publishing context.</summary>
     private bool _isRunning;
     private bool _hasPendingResult;
+
+    /// <summary>
+    /// True while the run is a CONTINUATION: it started from the folders a previous walk
+    /// left unexpanded rather than from the root. The busy screen says so, because the
+    /// two runs mean different things.
+    /// </summary>
+    private bool _isContinuation;
     private DropBoxSyncResult? _lastResult;
     private string? _error;
     private IReadOnlyList<DropBoxSyncLevel> _levelView = [];
@@ -163,6 +267,28 @@ public sealed class DropBoxSyncService(
 
     /// <summary>Dropbox calls still in flight.</summary>
     public int ActiveDownloaders => Volatile.Read(ref _activeDownloaders);
+
+    /// <summary>
+    /// How many Dropbox requests the current run may have in flight at once.
+    /// <para>
+    /// This is the request gate's width: one permit per in-flight HTTP call, taken for
+    /// the duration of that call and released immediately. It bounds the load on
+    /// Dropbox's API, so it is worth showing - a run that looks stalled may simply be
+    /// waiting for its permits.
+    /// </para>
+    /// </summary>
+    public int MaxConcurrency => _controller is not null
+        ? _controller.Gate.Limit
+        : Volatile.Read(ref _maxConcurrency);
+
+    /// <summary>
+    /// The walk's own traffic, measured.
+    /// <para>
+    /// Read straight from the meter, not copied into a published field: it changes
+    /// constantly, and the busy screen re-reads it whenever it repaints.
+    /// </para>
+    /// </summary>
+    public DropboxRateSnapshot RateSnapshot => _rateMeter.Snapshot();
 
     /// <summary>The folder currently being listed.</summary>
     public string CurrentPath => Volatile.Read(ref _currentPath);
@@ -234,12 +360,12 @@ public sealed class DropBoxSyncService(
             {
                 // The count is the number of Dropbox calls still in flight. It falls to
                 // zero as they return, and the screen closes itself when it does.
-                return $"Stopping downloads {ActiveDownloaders:N0}";
+                return $"Stopping download processes: {ActiveDownloaders:N0}";
             }
 
             if (_isRunning)
             {
-                return "Syncing from Dropbox";
+                return _isContinuation ? "Continuing the sync" : "Syncing from Dropbox";
             }
 
             if (_error is not null)
@@ -276,7 +402,11 @@ public sealed class DropBoxSyncService(
             ? $"{(int)value.TotalHours}h {value.Minutes:00}m"
             : $"{value.Minutes:00}m {value.Seconds:00}s";
 
-    public async Task<DropBoxSyncResult> SyncAsync(
+    /// <summary>
+    /// Walks the whole subtree under <paramref name="startPath"/>, from the root down to
+    /// the leaves.
+    /// </summary>
+    public Task<DropBoxSyncResult> SyncAsync(
         string startPath,
         string? namespaceId = null,
         IProgress<DropBoxSyncProgress>? progress = null,
@@ -287,6 +417,71 @@ public sealed class DropBoxSyncService(
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(startPath);
+
+        return RunAsync(
+            rootPath: startPath.TrimEnd('/'),
+            namespaceId: namespaceId,
+            continueFromFrontier: false,
+            progress: progress,
+            batchSize: batchSize,
+            maxDepth: maxDepth,
+            maxConcurrency: maxConcurrency,
+            enrichFileMetadata: enrichFileMetadata,
+            ct: ct);
+    }
+
+    /// <summary>
+    /// Continues the sync: lists the folders the last walk wrote but never expanded, and
+    /// carries on down from there to the leaves.
+    /// <para>
+    /// A walk that did not reach the leaves leaves folders with NO status - written,
+    /// never expanded. Their contents were never listed, and everything below them was
+    /// never discovered, so listing them is what makes the tree complete. The part that
+    /// already succeeded is not listed again.
+    /// </para>
+    /// <para>
+    /// A folder whose status is <c>Skipped</c> is included too: its listing was tried
+    /// and refused, so its contents are still unlisted.
+    /// </para>
+    /// </summary>
+    public async Task<DropBoxSyncResult> ContinueAsync(
+        IProgress<DropBoxSyncProgress>? progress = null,
+        int batchSize = 500,
+        int maxDepth = 0,
+        int maxConcurrency = 6,
+        bool enrichFileMetadata = true,
+        CancellationToken ct = default)
+    {
+        // Everything the continuation needs - the namespace, the frontier folders - is
+        // resolved INSIDE the run, after the busy screen has already appeared. Doing it
+        // here instead would leave the button looking dead for the duration.
+        return await RunAsync(
+            rootPath: null,
+            namespaceId: null,
+            continueFromFrontier: true,
+            progress: progress,
+            batchSize: batchSize,
+            maxDepth: maxDepth,
+            maxConcurrency: maxConcurrency,
+            enrichFileMetadata: enrichFileMetadata,
+            ct: ct);
+    }
+
+    /// <summary>
+    /// The walk itself, with its first level chosen by the caller: the whole subtree from
+    /// a root, or the folders a previous walk never expanded.
+    /// </summary>
+    private async Task<DropBoxSyncResult> RunAsync(
+        string? rootPath,
+        string? namespaceId,
+        bool continueFromFrontier,
+        IProgress<DropBoxSyncProgress>? progress,
+        int batchSize,
+        int maxDepth,
+        int maxConcurrency,
+        bool enrichFileMetadata,
+        CancellationToken ct)
+    {
         ArgumentOutOfRangeException.ThrowIfLessThan(batchSize, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrency, 1);
 
@@ -298,7 +493,6 @@ public sealed class DropBoxSyncService(
 
         var sw = Stopwatch.StartNew();
         var runId = Guid.NewGuid();
-        var rootPath = startPath.TrimEnd('/');
 
         // 0 = unlimited depth; the walk goes from the root folder down to the leaves.
         var unlimited = maxDepth <= 0;
@@ -320,61 +514,121 @@ public sealed class DropBoxSyncService(
         _pendingRunning = true;
         _pendingHasResult = false;
         _isRunning = true;
+        _isContinuation = continueFromFrontier;
         _hasPendingResult = false;
-        CurrentPathSet(rootPath);
+        Volatile.Write(ref _maxConcurrency, maxConcurrency);
+        CurrentPathSet(rootPath ?? "continuing the sync");
         Publish(force: true);
 
         try
         {
             // Team folders are invisible from the personal space, so the walk must be
-            // scoped to the team namespace. Its id belongs to the account, so it is
-            // resolved here rather than pinned in this source file.
-            var ns = namespaceId;
-            if (string.IsNullOrWhiteSpace(ns))
+            // scoped to the team namespace.
+            var ns = await ResolveNamespaceAsync(namespaceId, token).ConfigureAwait(false);
+
+            // The resume set: the folders whose contents were never listed.
+            //
+            // Resolved HERE, inside the run, so the busy screen is already up while this
+            // query runs. Resolving it before the run would leave the button looking
+            // dead for the duration of the query.
+            List<SeedFolder>? seeds = null;
+
+            if (continueFromFrontier)
             {
-                var namespaces = await dropBox.GetNamespacesAsync(token).ConfigureAwait(false);
-                var team = namespaces.FirstOrDefault(n => !n.IsPersonal);
-                if (team is null)
+                seeds = await LoadUnexpandedFoldersAsync(ns, token).ConfigureAwait(false);
+
+                if (seeds.Count == 0)
                 {
-                    throw new InvalidOperationException(
-                        "This account has no team namespace, and the personal space cannot be synced by path.");
+                    // Nothing left to continue - the walk already reached the leaves.
+                    sw.Stop();
+
+                    var empty = new DropBoxSyncResult(true, 0, 0, 0, sw.Elapsed, null);
+
+                    _pendingRunning = false;
+                    _pendingHasResult = true;
+                    _pendingLastResult = empty;
+                    _pendingError = null;
+                    return empty;
                 }
 
-                ns = team.Id;
-                logger.LogInformation("Sync scoped to team namespace {NamespaceId}.", ns);
+                // Their old verdict is cleared FIRST, so a folder being listed now does
+                // not keep the verdict of a run that never listed it.
+                await ResetSeedStatusAsync(ns, seeds, token).ConfigureAwait(false);
             }
 
-            // Two semaphores, and the distinction between them matters:
+            // Two gates, and the distinction between them matters:
             //
-            //   requestGate - bounds concurrent Dropbox HTTP requests. It is taken for
-            //                 the duration of ONE request and released immediately, so a
+            //   requestGate - bounds concurrent Dropbox HTTP requests. It is taken for the
+            //                 duration of ONE request and released immediately, so a
             //                 task never holds one while asking for another.
             //   folderGate  - bounds how many folders are expanded at once. It is held
             //                 for a whole folder, so it also bounds how many database
             //                 contexts are open: the team tree has 8000+ folders on its
             //                 widest level, and one context each would swamp SQL Server.
             //
-            // They are separate semaphores on purpose. Sharing one would mean a task
-            // holding it for a whole folder and asking for it again per request - which
-            // deadlocks the moment every permit is held by a request waiting for another.
-            using var requestGate = new SemaphoreSlim(maxConcurrency);
+            // They are separate on purpose. Sharing one would mean a task holding it
+            // for a whole folder and asking for it again per request - which deadlocks
+            // the moment every permit is held by a request waiting for another.
+            //
+            // The request gate's width is ADAPTIVE: it starts at maxConcurrency and the
+            // controller widens or narrows it from what the walk measures. Dropbox does
+            // not publish its limit, so the width that will be accepted can only be
+            // found by trying - and a width chosen by guesswork is wrong in both
+            // directions.
+            using var requestGate = new AdaptiveConcurrencyGate(maxConcurrency);
             using var folderGate = new SemaphoreSlim(maxConcurrency);
 
-            // The root folder must be upserted first: its Id is what its children get as
-            // ParentId. Its own parent is outside the sync scope, so ParentId stays null.
-            var rootId = await UpsertFolderAsync(ns, runId, rootPath, NameOf(rootPath), null, token)
-                .ConfigureAwait(false);
+            // The controller adapts the request gate's width from the measured traffic.
+            var controller = new DropboxConcurrencyController(
+                requestGate,
+                _rateMeter,
+                startWidth: maxConcurrency,
+                maxWidth: MaxAdaptiveConcurrency,
+                minWidth: 1,
+                settleTime: TimeSpan.FromSeconds(30));
 
-            // Level 1 is the start folder itself: one folder, listed once.
-            Volatile.Write(ref GetLevel(1).FoldersTotal, 1);
+            // Published so the busy screen can show the width the walk settled on.
+            _controller = controller;
 
-            // Discovered folders queue for the next level. A ConcurrentBag because from
-            // the second level on, sibling folders expand in parallel and each appends to
-            // it; List<T> is not thread-safe and concurrent Add can lose entries.
+            // The first level of the walk. Either the single root folder of a full sync,
+            // or the folders a previous walk never expanded - the resume points.
+            //
+            // A resume folder ALREADY has a row: its parent listed it, so the row is
+            // there with its Id. That Id is what its children need as their ParentId,
+            // so the row is read, not re-created.
             var discovered = new ConcurrentBag<ChildRef>();
-            await ExpandFolderAsync(ns, runId, rootPath, rootId, depth: 1,
-                                    unlimited, maxDepth, enrichFileMetadata, requestGate, folderGate,
-                                    counts, discovered, progress, sw, batchSize, token).ConfigureAwait(false);
+
+            if (seeds is null)
+            {
+                // The root folder must be upserted first: its Id is what its children get
+                // as ParentId. Its own parent is outside the sync scope, so ParentId stays
+                // null.
+                var rootId = await UpsertFolderAsync(ns, runId, rootPath!, NameOf(rootPath!), null, token)
+                    .ConfigureAwait(false);
+                // Level 1 is the start folder itself: one folder, listed once.
+                Volatile.Write(ref GetLevel(1).FoldersTotal, 1);
+
+                await ExpandFolderAsync(ns, runId, rootPath!, rootId, depth: 1,
+                                        unlimited, maxDepth, enrichFileMetadata, requestGate, folderGate,
+                                        counts, discovered, progress, sw, batchSize, token).ConfigureAwait(false);
+            }
+            else
+            {
+                // The resume set: the folders a previous walk never expanded.
+                //
+                // Their rows exist already - their parents listed them - so each one is
+                // READ with its Id, and that Id is what its children get as ParentId.
+                // Their status is reset to null first: a folder that is being listed now
+                // must not keep the verdict of a run that never listed it.
+                Volatile.Write(ref GetLevel(1).FoldersTotal, seeds.Count);
+
+                await Task.WhenAll(seeds.Select(seed =>
+                {
+                    return ExpandFolderAsync(ns, runId, seed.Path, seed.Id, depth: 1,
+                                             unlimited, maxDepth, enrichFileMetadata, requestGate, folderGate,
+                                             counts, discovered, progress, sw, batchSize, token);
+                })).ConfigureAwait(false);
+            }
 
             // Each depth level is its own parallel fan-out: every folder discovered at this
             // level expands concurrently, and only once all of them are stored does the
@@ -435,7 +689,7 @@ public sealed class DropBoxSyncService(
                 "Dropbox sync of {Path} completed in {ElapsedMs} ms: {Folders} folder(s), {Files} file(s) " +
                 "({Enriched} with dimensions, {PendingMedia} pending, {EnrichFailed} enrichment failure(s)), " +
                 "{Skipped} folder(s) not fully listed, {Bounded} bounded by depth.",
-                rootPath, sw.ElapsedMilliseconds, counts.Folders, counts.Files,
+                rootPath ?? "the unfinished folders", sw.ElapsedMilliseconds, counts.Folders, counts.Files,
                 counts.Enriched, counts.PendingMedia, counts.EnrichFailed,
                 counts.NotOk, counts.BoundedFolders);
 
@@ -487,6 +741,17 @@ public sealed class DropBoxSyncService(
         finally
         {
             _cts = null;
+            _isContinuation = false;
+
+            // The controller is dropped with the gate it controls: the gate is disposed
+            // by the using above, and a controller must not widen a disposed gate.
+            _controller = null;
+
+            // The meter is cleared for the next run, so its figures describe the run
+            // that is running and not the one before it.
+            _rateMeter.Reset();
+            _rateLimitBrake.Reset();
+
             Volatile.Write(ref _running, 0);
 
             // The walk has left the thread pool by now, so the final state is published
@@ -546,7 +811,7 @@ public sealed class DropBoxSyncService(
     private async Task ExpandFolderAsync(
         string ns, Guid runId, string path, long folderId, int depth,
         bool unlimited, int maxDepth, bool enrichFileMetadata,
-        SemaphoreSlim requestGate, SemaphoreSlim folderGate,
+        AdaptiveConcurrencyGate requestGate, SemaphoreSlim folderGate,
         SyncCounts counts,
         ConcurrentBag<ChildRef> childrenOut,
         IProgress<DropBoxSyncProgress>? progress, Stopwatch sw, int batchSize, CancellationToken ct)
@@ -570,7 +835,7 @@ public sealed class DropBoxSyncService(
     private async Task ExpandFolderCoreAsync(
         string ns, Guid runId, string path, long folderId, int depth,
         bool unlimited, int maxDepth, bool enrichFileMetadata,
-        SemaphoreSlim requestGate, LevelProgress level,
+        AdaptiveConcurrencyGate requestGate, LevelProgress level,
         SyncCounts counts,
         ConcurrentBag<ChildRef> childrenOut,
         IProgress<DropBoxSyncProgress>? progress, Stopwatch sw, int batchSize, CancellationToken ct)
@@ -580,14 +845,38 @@ public sealed class DropBoxSyncService(
         {
             entries = await ListFolderAsync(path, ns, requestGate, ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (DropBoxNotFoundException ex)
         {
-            // 404 or no access. Mark it and move on - the folder's subtree is
-            // unverified, and its SyncStatus records that.
+            // The path itself is gone or invisible. That is a property of the PATH,
+            // not of the moment: listing it again would fail the same way. So it is
+            // Skipped - the folder's contents are unverified, and the sweep must not
+            // delete them.
             counts.AddNotOk();
             Interlocked.Increment(ref level.FoldersListed);
-            logger.LogWarning(ex, "Skipping folder {Path} during sync.", path);
-            await SetFolderStatusAsync(ns, path, DropBoxSyncStatus.Skipped, Truncate(ex.Message), ct)
+            logger.LogWarning(ex, "Skipping folder {Path} during sync: not found.", path);
+            await RecordOutcomeAsync(ns, path, DropBoxSyncStatus.Skipped, Truncate(ex.Message), ct)
+                .ConfigureAwait(false);
+            Report(path, depth, counts, sw, progress);
+            return;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // An ERROR, not a missing path: a dropped connection, a TLS failure, a
+            // server fault, a rate limit that would not clear.
+            //
+            // This is a property of the MOMENT. The folder may well list fine on the
+            // next run, so it is recorded as Failed - "not listed this time" - and
+            // NOT as Skipped, which would claim the folder is permanently
+            // inaccessible. Both protect the subtree from the sweep, and both are
+            // picked up by the next continuation, so nothing is lost either way; the
+            // difference is that the verdict tells the truth.
+            //
+            // The reason keeps the whole exception chain: "The SSL connection could
+            // not be established" on its own says nothing about WHY.
+            counts.AddNotOk();
+            Interlocked.Increment(ref level.FoldersListed);
+            logger.LogWarning(ex, "Could not list folder {Path} during sync.", path);
+            await RecordOutcomeAsync(ns, path, DropBoxSyncStatus.Failed, Truncate(DescribeError(ex)), ct)
                 .ConfigureAwait(false);
             Report(path, depth, counts, sw, progress);
             return;
@@ -649,7 +938,30 @@ public sealed class DropBoxSyncService(
                 EnrichFileAsync(row, ns, counts, requestGate, ct))).ConfigureAwait(false);
         }
 
-        await FlushAsync(ns, runId, folderId, path, pending, counts, batchSize, ct).ConfigureAwait(false);
+        // The rows are written BEFORE the verdict, and a failure to write them must
+        // not be treated as "the folder could not be listed" - that verdict abandons
+        // the subtree. So the flush's own failure is caught here, recorded, and the
+        // folder is left unlisted for the next continuation to pick up.
+        try
+        {
+            await FlushAsync(ns, runId, folderId, path, pending, counts, batchSize, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The rows were not written. The folder is NOT verified, and saying it was
+            // would be a lie the next continuation would act on.
+            counts.AddNotOk();
+            Interlocked.Increment(ref level.FoldersListed);
+            logger.LogError(ex, "Could not write the rows of folder {Path}.", path);
+            await RecordOutcomeAsync(ns, path, DropBoxSyncStatus.Failed, Truncate(DescribeError(ex)), ct)
+                .ConfigureAwait(false);
+            Report(path, depth, counts, sw, progress);
+            return;
+        }
 
         // Hand the next level the REAL Ids. SaveChanges has just written
         // entity.Id from the generated identity, so reading it back is exact and costs
@@ -673,7 +985,12 @@ public sealed class DropBoxSyncService(
         }
 
         // Listing succeeded: this folder is fully verified.
-        await SetFolderStatusAsync(ns, path, DropBoxSyncStatus.Ok, null, ct).ConfigureAwait(false);
+        //
+        // The verdict is recorded through RecordOutcomeAsync: a failure to WRITE the
+        // verdict must not abandon the folder, and the rows are already committed by
+        // this point - so the folder is verified even if the verdict could not be
+        // stored. The next continuation will list it again, which is harmless.
+        await RecordOutcomeAsync(ns, path, DropBoxSyncStatus.Ok, null, ct).ConfigureAwait(false);
 
         // The folder's records belong to THIS level: the entries found inside it.
         // Counted only after the flush, so the numbers are the rows actually stored.
@@ -686,29 +1003,89 @@ public sealed class DropBoxSyncService(
 
     /// <summary>
     /// Lists one folder, holding the gate for the call and no longer.
+    /// <para>
+    /// A rate limit is retried HERE, at the request boundary, and not further up: the
+    /// whole point is that the same folder gets listed again rather than abandoned. The
+    /// SDK does not retry a 429 itself - its retry budget covers server errors only - so
+    /// without this the folder would be recorded as un-listable and its entire subtree
+    /// would never be discovered.
+    /// </para>
+    /// <para>
+    /// The wait is shared: see <see cref="DropboxRateLimitBrace"/>.
+    /// </para>
     /// </summary>
     private async Task<IReadOnlyList<FileEntry>> ListFolderAsync(
-        string path, string ns, SemaphoreSlim gate, CancellationToken ct)
+        string path, string ns, AdaptiveConcurrencyGate gate, CancellationToken ct)
     {
-        await gate.WaitAsync(ct).ConfigureAwait(false);
-        try
+        for (var attempt = 1; ; attempt++)
         {
-            // Counted as a downloader for the same reason as the metadata call: the
-            // request is in flight until it returns, and cannot be aborted.
-            Interlocked.Increment(ref _activeDownloaders);
+            // Every worker waits at the brake before it takes a permit, so a rate
+            // limit pauses the whole walk and not just the worker that hit it.
+            await _rateLimitBrake.WaitAsync(ct).ConfigureAwait(false);
+
+            await gate.WaitAsync(ct).ConfigureAwait(false);
+            var started = Stopwatch.GetTimestamp();
             try
             {
-                return await dropBox.ListFolderAsync(path, ns, false, ct).ConfigureAwait(false);
+                // Counted as a downloader for the same reason as the metadata call: the
+                // request is in flight until it returns, and cannot be aborted.
+                Interlocked.Increment(ref _activeDownloaders);
+                try
+                {
+                    var entries = await dropBox.ListFolderAsync(path, ns, false, ct).ConfigureAwait(false);
+
+                    _rateMeter.Record(
+                        Stopwatch.GetElapsedTime(started),
+                        DropboxRequestOutcome.Success);
+
+                    return entries;
+                }
+                catch (DropBoxRateLimitedException ex)
+                {
+                    _rateMeter.Record(
+                        Stopwatch.GetElapsedTime(started),
+                        DropboxRequestOutcome.RateLimited);
+
+                    throw;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _rateMeter.Record(
+                        Stopwatch.GetElapsedTime(started),
+                        DropboxRequestOutcome.Failed);
+
+                    throw;
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _activeDownloaders);
+                    PublishDownloads();
+                }
+            }
+            catch (DropBoxRateLimitedException ex)
+            {
+                if (attempt >= MaxRateLimitAttempts)
+                {
+                    throw;
+                }
+
+                // The brake holds for the wait Dropbox asked for. When it did not say,
+                // the backoff grows instead - but the brake still holds every worker,
+                // which is what keeps the retry storm from becoming the storm.
+                var wait = ex.RetryAfterSeconds > 0
+                    ? ex.RetryAfterSeconds
+                    : RateLimitBackoffSeconds(attempt);
+
+                _rateLimitBrake.Hold(wait);
+
+                logger.LogWarning(
+                    "Dropbox rate limited while listing {Path} (attempt {Attempt}/{Max}); holding the walk for {Wait}s.",
+                    path, attempt, MaxRateLimitAttempts, wait);
             }
             finally
             {
-                Interlocked.Decrement(ref _activeDownloaders);
-                PublishDownloads();
+                gate.Release();
             }
-        }
-        finally
-        {
-            gate.Release();
         }
     }
 
@@ -757,6 +1134,11 @@ public sealed class DropBoxSyncService(
     /// </summary>
     private void Publish(bool force)
     {
+        // Adapt the request width to what was measured. This runs on every publish, and
+        // the controller decides for itself whether anything needs to change - so the
+        // cost of asking is one snapshot of the meter.
+        _controller?.Adapt();
+
         // The throttle is claimed with a compare-and-swap, so exactly one worker per
         // interval gets to publish. Without the CAS every parallel worker would pass the
         // check and post its own snapshot, flooding the dispatcher.
@@ -825,6 +1207,12 @@ public sealed class DropBoxSyncService(
         Raise(nameof(IsStopping));
         Raise(nameof(CanStop));
         Raise(nameof(ActiveDownloaders));
+        Raise(nameof(MaxConcurrency));
+
+        // The rate snapshot is a struct read straight from the meter, so the binding
+        // would cache the first value it saw. Raising it here makes the busy screen
+        // re-read it on every publish - which is every time the walk moves.
+        Raise(nameof(RateSnapshot));
         Raise(nameof(LastResult));
         Raise(nameof(Error));
         Raise(nameof(Headline));
@@ -847,6 +1235,12 @@ public sealed class DropBoxSyncService(
         // and will be discarded when it lands.
         Interlocked.Increment(ref _runGeneration);
 
+        // The meter and the brake start empty, so their figures describe THIS run.
+        // The meter is cleared HERE rather than at the end of the last one, so the
+        // final publish of a finished run still shows what that run cost.
+        _rateMeter.Reset();
+        _rateLimitBrake.Reset();
+
         _levels.Clear();
         Volatile.Write(ref _currentPath, string.Empty);
 
@@ -863,6 +1257,36 @@ public sealed class DropBoxSyncService(
     /// <summary>Sets the folder being listed. Safe from any thread.</summary>
     private void CurrentPathSet(string path) => Volatile.Write(ref _currentPath, path);
 
+    /// <summary>
+    /// The whole exception chain in one line.
+    /// <para>
+    /// The outer message alone often says nothing: "The SSL connection could not be
+    /// established, see inner exception" names the symptom, and the cause is one level
+    /// down. The chain keeps the cause, which is what makes the stored reason worth
+    /// reading.
+    /// </para>
+    /// </summary>
+    private static string DescribeError(Exception ex)
+    {
+        var parts = new List<string>();
+        var current = ex;
+        var depth = 0;
+
+        while (current is not null && depth < 5)
+        {
+            var message = current.Message?.Trim();
+            if (!string.IsNullOrEmpty(message) && !parts.Contains(message))
+            {
+                parts.Add(message);
+            }
+
+            current = current.InnerException;
+            depth++;
+        }
+
+        return parts.Count > 0 ? string.Join(" -> ", parts) : ex.GetType().Name;
+    }
+
     /// <summary>The counters of one level of the walk.</summary>
     private LevelProgress GetLevel(int depth) =>
         _levels.GetOrAdd(depth, d => new LevelProgress(d));
@@ -875,39 +1299,46 @@ public sealed class DropBoxSyncService(
         string ns, Guid runId, string path, string name, long? parentId, CancellationToken ct)
     {
         var lower = path.ToLowerInvariant();
+        var hash = PathHashOf(ns, lower);
 
-        await using var db = CreateContext();
-
-        var existing = await db.Nodes
-            .FirstOrDefaultAsync(n => n.NamespaceId == ns && n.PathLower == lower, ct)
-            .ConfigureAwait(false);
-
-        if (existing is not null)
+        // ONE writer at a time, like every other write to this table. See WriteAsync.
+        return await WriteAsync(async () =>
         {
-            existing.SyncRunId = runId;
-            existing.SyncedUtc = DateTimeOffset.UtcNow;
-            existing.Name = name;
-            existing.SyncStatus = null;   // provisional; ExpandFolderAsync sets the real one
-            existing.SyncStatusReason = null;
+            await using var db = CreateContext();
+
+            // Found by the path HASH: PathLower cannot be seeked on, so a predicate on
+            // it would scan the whole namespace. See PathHashOf.
+            var existing = await db.Nodes
+                .FirstOrDefaultAsync(n => n.NamespaceId == ns && n.PathHash == hash, ct)
+                .ConfigureAwait(false);
+
+            if (existing is not null)
+            {
+                existing.SyncRunId = runId;
+                existing.SyncedUtc = DateTimeOffset.UtcNow;
+                existing.Name = name;
+                existing.SyncStatus = null;   // provisional; ExpandFolderAsync sets the real one
+                existing.SyncStatusReason = null;
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                return existing.Id;
+            }
+
+            var row = new DropBoxNodeEntity
+            {
+                NamespaceId = ns,
+                PathDisplay = path,
+                PathLower = lower,
+                Name = name,
+                IsFolder = true,
+                ParentId = parentId,
+                SyncRunId = runId,
+                SyncedUtc = DateTimeOffset.UtcNow
+            };
+
+            db.Nodes.Add(row);
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
-            return existing.Id;
-        }
-
-        var row = new DropBoxNodeEntity
-        {
-            NamespaceId = ns,
-            PathDisplay = path,
-            PathLower = lower,
-            Name = name,
-            IsFolder = true,
-            ParentId = parentId,
-            SyncRunId = runId,
-            SyncedUtc = DateTimeOffset.UtcNow
-        };
-
-        db.Nodes.Add(row);
-        await db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return row.Id;
+            return row.Id;
+        }, ct).ConfigureAwait(false);
     }
 
     private static DropBoxNodeEntity ToEntity(
@@ -953,19 +1384,32 @@ public sealed class DropBoxSyncService(
             return;
         }
 
-        foreach (var chunk in Chunk(pending, batchSize))
+        // ONE writer at a time, and the same path the status write takes. The flush and
+        // the status write both touch this folder's rows; running them concurrently is
+        // what deadlocked the walk. The Dropbox side of the folder - the listing and
+        // every per-file metadata call - is already done by the time this runs, and is
+        // unaffected.
+        await WriteAsync(async () =>
         {
-            ct.ThrowIfCancellationRequested();
+            foreach (var chunk in Chunk(pending, batchSize))
+            {
+                ct.ThrowIfCancellationRequested();
 
-            await using var db = CreateContext();
-            var keys = chunk.Select(p => p.PathLower).ToList();
+                await using var db = CreateContext();
+                var keys = chunk.Select(p => p.PathLower).ToList();
 
-            // ONE tracked query for the whole chunk: loading tracked means the updates
-            // below need no per-row fetch.
-            var existing = await db.Nodes
-                .Where(n => n.NamespaceId == ns && keys.Contains(n.PathLower))
-                .ToDictionaryAsync(n => n.PathLower, StringComparer.OrdinalIgnoreCase, ct)
-                .ConfigureAwait(false);
+                // The rows are found by their PATH HASH, not by their path: PathLower is
+                // too long to be an index key, so a predicate on it cannot seek and the
+                // lookup scans the whole namespace. The hash is what the natural key
+                // index is built on. See PathHashOf.
+                var hashes = chunk.Select(p => PathHashOf(ns, p.PathLower)).ToList();
+
+                // ONE tracked query for the whole chunk: loading tracked means the updates
+                // below need no per-row fetch.
+                var existing = await db.Nodes
+                    .Where(n => n.NamespaceId == ns && hashes.Contains(n.PathHash))
+                    .ToDictionaryAsync(n => n.PathLower, StringComparer.OrdinalIgnoreCase, ct)
+                    .ConfigureAwait(false);
 
             foreach (var row in chunk)
             {
@@ -1027,7 +1471,8 @@ public sealed class DropBoxSyncService(
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             counts.AddWritten(chunk.Count);
-        }
+            }
+        }, ct).ConfigureAwait(false);
 
         pending.Clear();
     }
@@ -1044,38 +1489,227 @@ public sealed class DropBoxSyncService(
     /// </para>
     /// </summary>
     private async Task EnrichFileAsync(
-        DropBoxNodeEntity row, string ns, SyncCounts counts, SemaphoreSlim gate, CancellationToken ct)
+        DropBoxNodeEntity row, string ns, SyncCounts counts, AdaptiveConcurrencyGate gate, CancellationToken ct)
     {
-        await gate.WaitAsync(ct).ConfigureAwait(false);
-        try
+        for (var attempt = 1; ; attempt++)
         {
-            // Counted as a downloader: the get_metadata call is in flight from here until
-            // it returns, and the SDK does not take a cancellation token, so a stop has
-            // to wait for it.
-            Interlocked.Increment(ref _activeDownloaders);
-            FileEntry info;
+            // The brake is waited on BEFORE the permit, for the same reason as in the
+            // listing: a rate limit pauses every worker, not just this one.
+            await _rateLimitBrake.WaitAsync(ct).ConfigureAwait(false);
+
+            await gate.WaitAsync(ct).ConfigureAwait(false);
+            var started = Stopwatch.GetTimestamp();
             try
             {
-                info = await dropBox.GetFileInfoAsync(row.PathDisplay, ns, true, ct).ConfigureAwait(false);
+                // Counted as a downloader: the get_metadata call is in flight from here until
+                // it returns, and the SDK does not take a cancellation token, so a stop has
+                // to wait for it.
+                Interlocked.Increment(ref _activeDownloaders);
+                FileEntry info;
+                try
+                {
+                    info = await dropBox.GetFileInfoAsync(row.PathDisplay, ns, true, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _activeDownloaders);
+                    PublishDownloads();
+                }
+
+                _rateMeter.Record(
+                    Stopwatch.GetElapsedTime(started),
+                    DropboxRequestOutcome.Success);
+
+                row.WidthPixels = info.HasDimensions ? (int?)info.WidthPixels : null;
+                row.HeightPixels = info.HasDimensions ? (int?)info.HeightPixels : null;
+                row.MediaInfoTag = info.MediaKind;
+
+                if (info.HasDimensions)
+                {
+                    counts.AddEnriched();
+                }
+                else if (info.IsMediaInfoPending)
+                {
+                    counts.AddPending();
+                }
+
+                return;
+            }
+            catch (DropBoxRateLimitedException ex)
+            {
+                _rateMeter.Record(
+                    Stopwatch.GetElapsedTime(started),
+                    DropboxRequestOutcome.RateLimited);
+
+                // Same rule as the listing: retry the call rather than lose the row's
+                // dimensions. Enrichment failure is never fatal - but a rate limit is
+                // not a failure, it is a queue, so it is waited out.
+                if (attempt >= MaxRateLimitAttempts)
+                {
+                    counts.AddEnrichFailed();
+                    logger.LogDebug(ex, "Media enrichment rate limited for {Path}; row kept without dimensions.", row.PathDisplay);
+                    return;
+                }
+
+                var wait = ex.RetryAfterSeconds > 0
+                    ? ex.RetryAfterSeconds
+                    : RateLimitBackoffSeconds(attempt);
+
+                _rateLimitBrake.Hold(wait);
+
+                logger.LogWarning(
+                    "Dropbox rate limited while reading metadata for {Path} (attempt {Attempt}/{Max}); holding the walk for {Wait}s.",
+                    row.PathDisplay, attempt, MaxRateLimitAttempts, wait);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _rateMeter.Record(
+                    Stopwatch.GetElapsedTime(started),
+                    DropboxRequestOutcome.Failed);
+
+                // Never let an enrichment failure abort the run or drop the row.
+                counts.AddEnrichFailed();
+                logger.LogDebug(ex, "Media enrichment failed for {Path}; row kept without dimensions.", row.PathDisplay);
+                return;
             }
             finally
             {
-                Interlocked.Decrement(ref _activeDownloaders);
-                PublishDownloads();
+                gate.Release();
             }
+        }
+    }
 
-            row.WidthPixels = info.HasDimensions ? (int?)info.WidthPixels : null;
-            row.HeightPixels = info.HasDimensions ? (int?)info.HeightPixels : null;
-            row.MediaInfoTag = info.MediaKind;
+    /// <summary>
+    /// Runs a write against <c>ml.DropBoxNode</c>, alone and with retries.
+    /// <para>
+    /// <b>Alone.</b> One writer at a time. The walk expands six folders in parallel and
+    /// they all write to this table, and those overlapping writes deadlocked: SQL
+    /// Server chose one as the victim, rolled its transaction back, and the folder was
+    /// abandoned with its whole subtree. There is no cycle of locks between this app's
+    /// own workers when only one of them writes at a time.
+    /// </para>
+    /// <para>
+    /// <b>With retries.</b> A deadlock can still be declared against a writer OUTSIDE
+    /// this app, and the victim's transaction is rolled back whole, so the write is
+    /// simply run again - which is what SQL Server itself asks for.
+    /// </para>
+    /// <para>
+    /// The DROPBOX side of a folder - the listing and every per-file metadata call -
+    /// is not touched by any of this, and still runs six at a time.
+    /// </para>
+    /// </summary>
+    private async Task<T> WriteAsync<T>(Func<Task<T>> write, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            await _writeGate.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                return await write().ConfigureAwait(false);
+            }
+            catch (SqlException ex) when (IsDeadlock(ex) && attempt < MaxWriteAttempts)
+            {
+                // The transaction was rolled back whole, so nothing was written and the
+                // write can be run again unchanged.
+                logger.LogWarning(
+                    ex,
+                    "Database write was chosen as a deadlock victim (attempt {Attempt} of {Max}); retrying.",
+                    attempt, MaxWriteAttempts);
 
-            if (info.HasDimensions)
-            {
-                counts.AddEnriched();
+                // A short, growing pause: the other writer needs to finish and release
+                // its locks before this one can take them.
+                await Task.Delay(TimeSpan.FromMilliseconds(50 * attempt), ct).ConfigureAwait(false);
             }
-            else if (info.IsMediaInfoPending)
+            finally
             {
-                counts.AddPending();
+                _writeGate.Release();
             }
+        }
+    }
+
+    /// <summary>
+    /// Runs a write against <c>ml.DropBoxNode</c> that returns nothing.
+    /// </summary>
+    private async Task WriteAsync(Func<Task> write, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            await _writeGate.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await write().ConfigureAwait(false);
+                return;
+            }
+            catch (SqlException ex) when (IsDeadlock(ex) && attempt < MaxWriteAttempts)
+            {
+                // The transaction was rolled back whole, so nothing was written and the
+                // write can be run again unchanged.
+                logger.LogWarning(
+                    ex,
+                    "Database write was chosen as a deadlock victim (attempt {Attempt} of {Max}); retrying.",
+                    attempt, MaxWriteAttempts);
+
+                // A short, growing pause: the other writer needs to finish and release
+                // its locks before this one can take them.
+                await Task.Delay(TimeSpan.FromMilliseconds(50 * attempt), ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
+        }
+    }
+
+    /// <summary>SQL Server's deadlock victim error number.</summary>
+    private static bool IsDeadlock(SqlException ex) => ex.Number == 1205;
+
+    /// <summary>
+    /// The path hash the database computes for its natural key.
+    /// <para>
+    /// <c>PathHash</c> is a PERSISTED computed column:
+    /// <c>hashbytes('SHA2_256', CONVERT(varbinary(8000), NamespaceId + '|' + PathLower))</c>.
+    /// The CONVERT to varbinary makes the bytes UTF-16LE, NOT UTF-8 - so the hash is
+    /// taken over <see cref="Encoding.Unicode"/> bytes, exactly.
+    /// </para>
+    /// <para>
+    /// Why this matters: <c>PathLower</c> is nvarchar(2048), which is longer than
+    /// SQL Server's 1700-byte index key limit, so it CANNOT be an index key column. It
+    /// is only an INCLUDE on <c>IX_DropBoxNode_SyncStatus</c>, and a predicate on an
+    /// included column cannot seek. Every status write therefore SCANNED the whole
+    /// namespace - 240,000 rows - taking shared locks across all of them, which is
+    /// what deadlocked the walk. The hash is short, indexed, and seeks in single-digit
+    /// milliseconds.
+    /// </para>
+    /// </summary>
+    private static byte[] PathHashOf(string namespaceId, string pathLower) =>
+        SHA256.HashData(Encoding.Unicode.GetBytes(namespaceId + "|" + pathLower));
+
+    /// <summary>
+    /// Records a folder's outcome, and NEVER lets the recording fail the folder.
+    /// <para>
+    /// This is the write that used to be able to kill a whole subtree. A deadlock
+    /// victim - or any other failure writing the status - propagated out of here, and
+    /// the folder was abandoned with everything under it still undiscovered. That is
+    /// the opposite of what a transient database error should do.
+    /// </para>
+    /// <para>
+    /// So the write is retried when SQL Server names us a deadlock victim, and if it
+    /// still fails, the failure is RECORDED and the walk carries on. The folder's
+    /// status stays whatever it was, which for a folder that was never listed is
+    /// null - and a null status is exactly what the next continuation picks up. The
+    /// subtree is therefore still discovered by the next run, instead of being lost.
+    /// </para>
+    /// </summary>
+    private async Task RecordOutcomeAsync(
+        string ns, string path, string status, string? reason, CancellationToken ct)
+    {
+        try
+        {
+            await SetFolderStatusAsync(ns, path, status, reason, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -1083,13 +1717,12 @@ public sealed class DropBoxSyncService(
         }
         catch (Exception ex)
         {
-            // Never let an enrichment failure abort the run or drop the row.
-            counts.AddEnrichFailed();
-            logger.LogDebug(ex, "Media enrichment failed for {Path}; row kept without dimensions.", row.PathDisplay);
-        }
-        finally
-        {
-            gate.Release();
+            // The verdict could not be stored. The folder keeps the status it had, so
+            // the next continuation lists it again - which is the correct outcome.
+            logger.LogError(
+                ex,
+                "Could not record {Status} for folder {Path}; the folder stays unlisted and will be retried.",
+                status, path);
         }
     }
 
@@ -1100,19 +1733,28 @@ public sealed class DropBoxSyncService(
     /// the tree, and the team tree holds thousands of them. The row always exists - it
     /// was committed by the parent's flush before this folder was expanded.
     /// </para>
+    /// <para>
+    /// The row is found by <c>PathHash</c>, not by <c>PathLower</c>: see
+    /// <see cref="PathHashOf"/> for why the path itself cannot be seeked on.
+    /// </para>
     /// </summary>
     private async Task SetFolderStatusAsync(
         string ns, string path, string status, string? reason, CancellationToken ct)
     {
-        await using var db = CreateContext();
         var lower = path.ToLowerInvariant();
+        var hash = PathHashOf(ns, lower);
 
-        await db.Nodes
-            .Where(n => n.NamespaceId == ns && n.PathLower == lower)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(n => n.SyncStatus, status)
-                .SetProperty(n => n.SyncStatusReason, reason), ct)
-            .ConfigureAwait(false);
+        await WriteAsync(async () =>
+        {
+            await using var db = CreateContext();
+
+            await db.Nodes
+                .Where(n => n.NamespaceId == ns && n.PathHash == hash)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(n => n.SyncStatus, status)
+                    .SetProperty(n => n.SyncStatusReason, reason), ct)
+                .ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1126,15 +1768,24 @@ public sealed class DropBoxSyncService(
             return;
         }
 
-        await using var db = CreateContext();
-        var keys = children.Select(c => c.Path.ToLowerInvariant()).ToList();
+        // ONE writer at a time, like every other write to this table. This one is a
+        // BULK update over thousands of rows, so overlapping another writer's locks
+        // over the same rows is exactly how a deadlock is built. See WriteAsync.
+        await WriteAsync(async () =>
+        {
+            await using var db = CreateContext();
 
-        await db.Nodes
-            .Where(n => n.NamespaceId == ns && keys.Contains(n.PathLower))
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(n => n.SyncStatus, DropBoxSyncStatus.Partial)
-                .SetProperty(n => n.SyncStatusReason, (string?)"depth cap"), ct)
-            .ConfigureAwait(false);
+            // Found by the path HASH: PathLower cannot be seeked on, so a predicate on
+            // it would scan the whole namespace. See PathHashOf.
+            var hashes = children.Select(c => PathHashOf(ns, c.Path.ToLowerInvariant())).ToList();
+
+            await db.Nodes
+                .Where(n => n.NamespaceId == ns && hashes.Contains(n.PathHash))
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(n => n.SyncStatus, DropBoxSyncStatus.Partial)
+                    .SetProperty(n => n.SyncStatusReason, (string?)"depth cap"), ct)
+                .ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     private static IEnumerable<List<T>> Chunk<T>(List<T> source, int size)
@@ -1154,6 +1805,114 @@ public sealed class DropBoxSyncService(
         var trimmed = path.TrimEnd('/');
         var slash = trimmed.LastIndexOf('/');
         return slash >= 0 ? trimmed[(slash + 1)..] : trimmed;
+    }
+
+    /// <summary>
+    /// A folder a previous walk wrote but never expanded - the resume point of a
+    /// continued sync.
+    /// <para>
+    /// Its row already exists: its parent listed it, so the row carries the Id that its
+    /// children need as their ParentId. That is why the Id travels with the path.
+    /// </para>
+    /// </summary>
+    private readonly record struct SeedFolder(long Id, string Path);
+
+    /// <summary>
+    /// The team namespace the walk is scoped to.
+    /// <para>
+    /// Team folders are invisible from the personal space, so the walk must be scoped to
+    /// the team root. Its id belongs to the account, so it is resolved here rather than
+    /// pinned in this source file.
+    /// </para>
+    /// </summary>
+    private async Task<string> ResolveNamespaceAsync(string? namespaceId, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(namespaceId))
+        {
+            return namespaceId;
+        }
+
+        var namespaces = await dropBox.GetNamespacesAsync(ct).ConfigureAwait(false);
+        var team = namespaces.FirstOrDefault(n => !n.IsPersonal);
+        if (team is null)
+        {
+            throw new InvalidOperationException(
+                "This account has no team namespace, and the personal space cannot be synced by path.");
+        }
+
+        logger.LogInformation("Sync scoped to team namespace {NamespaceId}.", team.Id);
+        return team.Id;
+    }
+
+    /// <summary>
+    /// The folders the index holds whose contents were never listed - the resume points
+    /// of a continued sync.
+    /// <para>
+    /// Two kinds qualify. A folder with NO status was written by its parent's listing and
+    /// never expanded, so nothing below it was ever discovered. A folder marked
+    /// <c>Skipped</c> was expanded and refused (the path is gone), so its contents are
+    /// still unlisted. A folder marked <c>Failed</c> hit an ERROR - a rate limit, a
+    /// dropped connection - so its contents are unlisted too, and it may well list
+    /// fine next time. A folder marked <c>Ok</c> is complete and is not included.
+    /// </para>
+    /// <para>
+    /// So a continuation retries everything that is not <c>Ok</c>: the unexpanded
+    /// frontier, the gone paths, and the folders that merely errored. The last group is
+    /// exactly the one a retry can fix.
+    /// </para>
+    /// <para>
+    /// The query is served by <c>IX_DropBoxNode_SyncStatus</c>, which is filtered on
+    /// <c>IsFolder = 1</c> for exactly this purpose.
+    /// </para>
+    /// </summary>
+    private async Task<List<SeedFolder>> LoadUnexpandedFoldersAsync(string ns, CancellationToken ct)
+    {
+        await using var db = CreateContext();
+
+        return await db.Nodes
+            .AsNoTracking()
+            .Where(n => n.NamespaceId == ns
+                        && n.IsFolder
+                        && (n.SyncStatus == null || n.SyncStatus != DropBoxSyncStatus.Ok))
+            .Select(n => new SeedFolder(n.Id, n.PathDisplay))
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Clears the verdict of the folders a continued sync is about to list again.
+    /// <para>
+    /// A folder that is being listed now must not keep the verdict of a run that never
+    /// listed it - <c>Ok</c> would claim its contents were verified, and that is exactly
+    /// what is not yet known. The status is set again by the listing itself.
+    /// </para>
+    /// </summary>
+    private async Task ResetSeedStatusAsync(string ns, IReadOnlyList<SeedFolder> seeds, CancellationToken ct)
+    {
+        if (seeds.Count == 0)
+        {
+            return;
+        }
+
+        // ONE writer at a time, like every other write to this table. This one clears
+        // the verdict of EVERY seed at once - thousands of rows - so it must not
+        // overlap another writer's locks over the same rows. See WriteAsync.
+        await WriteAsync(async () =>
+        {
+            await using var db = CreateContext();
+
+            // The same predicate as the seed query, not a list of ids: the id list would be
+            // one parameter per seed, and there are thousands of them - well past SQL
+            // Server's 2100-parameter limit.
+            await db.Nodes
+                .Where(n => n.NamespaceId == ns
+                            && n.IsFolder
+                            && (n.SyncStatus == null || n.SyncStatus != DropBoxSyncStatus.Ok))
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(n => n.SyncStatus, (string?)null)
+                    .SetProperty(n => n.SyncStatusReason, (string?)null), ct)
+                .ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>A folder discovered at a level, to be expanded on the next one.</summary>

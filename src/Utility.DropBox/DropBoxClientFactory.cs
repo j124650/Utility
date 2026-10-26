@@ -43,6 +43,19 @@ public sealed class DropBoxClientFactory(
 {
     private readonly DropBoxOptions _options = options.Value;
 
+    /// <summary>
+    /// One client per namespace, created once and reused.
+    /// <para>
+    /// The account holds a REFRESH token, and the SDK exchanges it for an access token
+    /// lazily - on the first request a client makes. A client used for one request only
+    /// therefore costs TWO round trips: the OAuth exchange and the call. Reusing the
+    /// client is what stops half the walk's traffic going to the token endpoint.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, DropboxClient> _clients = new(StringComparer.Ordinal);
+
+    private readonly object _clientGate = new();
+
     public bool IsConfigured => _options.IsConfigured;
 
     public DropboxClient CreateClient()
@@ -94,19 +107,61 @@ public sealed class DropBoxClientFactory(
     public async Task<DropboxClient> CreateClientForNamespaceAsync(string? namespaceId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var client = CreateClient();
 
-        // Personal namespace: no path root, which is the SDK default.
-        if (string.IsNullOrWhiteSpace(namespaceId))
+        // The client is CACHED, one per namespace.
+        //
+        // This is not a micro-optimisation - it halves the HTTP traffic. The account
+        // holds a REFRESH token, and the SDK exchanges it for an access token lazily, on
+        // the first request a client makes. So a client that is used once costs TWO
+        // round trips: the OAuth exchange and the call itself. Verified against the SDK:
+        // one client doing 10 requests makes 1 token call and 10 API calls, while ten
+        // clients doing 1 request each make 10 token calls and 10 API calls.
+        //
+        // Building a client per request therefore sent half the walk's traffic to the
+        // token endpoint - and each of those round trips holds a request permit, so it
+        // also halved the walk's effective parallelism.
+        //
+        // WithPathRoot returns a client sharing the same token and transport, so the
+        // scoped one is cached the same way. The token refresh state lives in the
+        // client, and reusing the client is what keeps that state - and the access
+        // token - shared.
+        if (namespaceId is null || string.IsNullOrWhiteSpace(namespaceId))
         {
-            return client;
+            // Personal namespace: no path root, which is the SDK default.
+            return GetOrCreate(null);
         }
 
-        // WithPathRoot returns a new client sharing the same token/transport, so this is
-        // cheap and safe to call per request.
-        var scoped = client.WithPathRoot(new PathRoot.Root(namespaceId));
-        logger.LogInformation("Dropbox client scoped to namespace {NamespaceId}.", namespaceId);
-        return await Task.FromResult(scoped);
+        return GetOrCreate(namespaceId);
+    }
+
+    /// <summary>
+    /// The client for a namespace, created once and reused.
+    /// </summary>
+    private DropboxClient GetOrCreate(string? namespaceId)
+    {
+        var key = namespaceId ?? string.Empty;
+
+        lock (_clientGate)
+        {
+            if (_clients.TryGetValue(key, out var existing))
+            {
+                return existing;
+            }
+
+            var client = CreateClient();
+
+            // Personal namespace: no path root, which is the SDK default.
+            var scoped = namespaceId is null
+                ? client
+                : client.WithPathRoot(new PathRoot.Root(namespaceId));
+
+            logger.LogInformation(
+                "Dropbox client created for namespace {NamespaceId}; it is reused for every request.",
+                namespaceId ?? "(personal)");
+
+            _clients[key] = scoped;
+            return scoped;
+        }
     }
 }
 

@@ -31,9 +31,27 @@ public partial class FinderView : UserControl
         Loaded += OnLoaded;
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// The page is up.
+    /// <para>
+    /// The Finder's data is read HERE - on the page's first activation - and not at
+    /// startup. The pass opens every file in the library and takes a long time; doing it
+    /// at startup would make the app wait for it before showing anything, and would
+    /// start a pass the reader may never look at.
+    /// </para>
+    /// <para>
+    /// The view model is a singleton and remembers that it has run, so coming back to
+    /// this tab does not start a second pass.
+    /// </para>
+    /// </summary>
+    private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         SyncFilterColumns();
+
+        if (DataContext is FinderViewModel finder)
+        {
+            await finder.EnsurePassAsync();
+        }
     }
 
     /// <summary>

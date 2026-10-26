@@ -122,12 +122,99 @@ public sealed class DropBoxDataService(
         // Scoping the client to the namespace is what makes team folders visible;
         // without it Dropbox resolves the path in the personal space and 404s.
         var client = await clientFactory.CreateClientForNamespaceAsync(namespaceId, ct);
-        var entries = await ListLevelAsync(client, path, includeMediaInfo, ct);
+
+        IReadOnlyList<FileEntry> entries;
+        try
+        {
+            entries = await ListLevelAsync(client, path, includeMediaInfo, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw Translate(ex);
+        }
 
         return entries
             .OrderByDescending(x => x.IsFolder)
             .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// Translates an SDK failure into an app-owned exception.
+    /// <para>
+    /// Three outcomes, and the caller must be able to tell them apart:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>
+    /// <c>RateLimitException</c> - HTTP 429. <b>The SDK does NOT retry these</b>: its
+    /// retry budget covers server errors only (a 500 is retried, a 429 is raised
+    /// straight through). So this is the caller's problem to solve.
+    /// </description></item>
+    /// <item><description>
+    /// <c>path/not_found</c> - the path itself is gone or invisible. Permanent: listing
+    /// it again fails the same way.
+    /// </description></item>
+    /// <item><description>
+    /// anything else - a dropped connection, a TLS failure, a server fault. Transient:
+    /// it may well succeed on the next attempt.
+    /// </description></item>
+    /// </list>
+    /// <para>
+    /// The SDK's own <c>RateLimitException.RetryAfter</c> throws a
+    /// <c>NullReferenceException</c> when the body did not parse into a rate-limit
+    /// error, so the parsed <c>ErrorResponse</c> is read instead - and it carries the
+    /// value from the BODY's <c>retry_after</c>, not from the HTTP header. When there
+    /// is no parsed body either, the caller gets zero and picks its own backoff.
+    /// </para>
+    /// </summary>
+    private static Exception Translate(Exception ex) => ex switch
+    {
+        RateLimitException rateLimited => new DropBoxRateLimitedException(
+            ReadRetryAfter(rateLimited),
+            rateLimited.Message,
+            rateLimited),
+
+        // path/not_found arrives as an ApiException whose error union carries the
+        // lookup error. The tag is what says "the path is gone" as opposed to
+        // "malformed path" or "not a folder".
+        //
+        // The union nests: ListFolderError.Path wraps a LookupError, which is where
+        // the not-found tag lives.
+        ApiException<Dropbox.Api.Files.ListFolderError> listFolder
+            when listFolder.ErrorResponse.IsPath
+                 && listFolder.ErrorResponse.AsPath.Value.IsNotFound
+            => new DropBoxNotFoundException(listFolder.Message, listFolder),
+
+        _ => ex
+    };
+
+    /// <summary>
+    /// The wait Dropbox asked for, in seconds, or zero when it did not say.
+    /// <para>
+    /// Read from the parsed error body, which is the only place the SDK exposes it.
+    /// The property on the exception itself throws when the body did not parse, so it
+    /// is never read.
+    /// </para>
+    /// </summary>
+    private static int ReadRetryAfter(RateLimitException ex)
+    {
+        try
+        {
+            var parsed = ex.ErrorResponse;
+            if (parsed is null)
+            {
+                return 0;
+            }
+
+            // The body carries it in seconds. Guard the cast: a hostile or malformed
+            // body must not become a negative wait.
+            var seconds = parsed.RetryAfter;
+            return seconds > int.MaxValue ? int.MaxValue : (int)seconds;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     public async Task<FileEntry> GetFileInfoAsync(
@@ -148,8 +235,19 @@ public sealed class DropBoxDataService(
         // all returned zero media_info). get_metadata DOES honour it and returns real
         // dimensions, e.g. 2000x2500 plus time_taken. That is why per-file metadata is
         // the only working route to dimensions, and why it costs one call per file.
-        var metadata = await client.Files.GetMetadataAsync(
-            path, includeMediaInfo: includeMediaInfo);
+        //
+        // Translated like the listing is: this is where most of a sync's requests go,
+        // so it is where a rate limit will be hit first.
+        Metadata metadata;
+        try
+        {
+            metadata = await client.Files.GetMetadataAsync(
+                path, includeMediaInfo: includeMediaInfo);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw Translate(ex);
+        }
 
         return FileEntry.From(metadata);
     }

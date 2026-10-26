@@ -95,6 +95,19 @@ public interface IDropBoxSyncService : INotifyPropertyChanged
     /// </summary>
     int ActiveDownloaders { get; }
 
+    /// <summary>
+    /// How many Dropbox requests the current run may have in flight at once - the
+    /// request gate's width. A run that looks stalled may simply be waiting for its
+    /// permits.
+    /// </summary>
+    int MaxConcurrency { get; }
+
+    /// <summary>
+    /// The walk's own traffic, measured: requests per minute, how many were refused,
+    /// and the mean latency.
+    /// </summary>
+    DropboxRateSnapshot RateSnapshot { get; }
+
     /// <summary>The folder currently being listed.</summary>
     string CurrentPath { get; }
 
@@ -178,6 +191,28 @@ public interface IDropBoxSyncService : INotifyPropertyChanged
     Task<DropBoxSyncResult> SyncAsync(
         string startPath,
         string? namespaceId = null,
+        IProgress<DropBoxSyncProgress>? progress = null,
+        int batchSize = 50,
+        int maxDepth = 0,
+        int maxConcurrency = 6,
+        bool enrichFileMetadata = true,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Continues a sync that did not finish, and carries it down to the leaves.
+    /// <para>
+    /// A walk that stopped partway leaves folders in <c>ml.DropBoxNode</c> whose
+    /// contents were never listed: their rows exist because their parents listed them,
+    /// but nothing below them was ever discovered. This finds those folders in the
+    /// index and lists them, then keeps going down into whatever they contain - so the
+    /// tree ends up complete instead of stopping at the frontier where the walk broke.
+    /// </para>
+    /// <para>
+    /// The part that is already complete is NOT listed again: only the folders whose
+    /// contents are missing are visited, and everything below them that is new.
+    /// </para>
+    /// </summary>
+    Task<DropBoxSyncResult> ContinueAsync(
         IProgress<DropBoxSyncProgress>? progress = null,
         int batchSize = 50,
         int maxDepth = 0,

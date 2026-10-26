@@ -220,6 +220,29 @@
                                Foreground="#A8ADB2" HorizontalAlignment="Center" Margin="0,6,0,0"
                                MaxWidth="900" TextTrimming="CharacterEllipsis" />
 
+                    <!--
+                      How many Dropbox requests are in flight, and how many may be at once.
+                      Without the limit the first number reads as a stall; with it, it reads
+                      as "this is the gate's width, and the run is using it".
+
+                      The width is ADAPTIVE: it starts at six and the controller widens or
+                      narrows it from what the walk measures. So this number moves.
+                    -->
+                    <TextBlock FontSize="11" Foreground="#A8ADB2" HorizontalAlignment="Center"
+                               Margin="0,3,0,0">
+                        <Run Text="Dropbox requests in flight: " /><Run Text="{Binding ActiveDownloaders, Mode=OneWay}" /><Run Text=" of " /><Run Text="{Binding MaxConcurrency, Mode=OneWay}" /><Run Text=" at a time" />
+                    </TextBlock>
+
+                    <!--
+                      The walk's own traffic, measured: how fast it is going, how much of
+                      it is being refused, and how long each call takes. The latency is
+                      the early warning - it rises before the first 429 arrives.
+                    -->
+                    <TextBlock FontSize="11" Foreground="#A8ADB2" HorizontalAlignment="Center"
+                               Margin="0,2,0,0">
+                        <Run Text="Measured: " /><Run Text="{Binding RateSnapshot.Display, Mode=OneWay}" />
+                    </TextBlock>
+
                     <!-- Level table: one column per level of the walk. -->
                     <ItemsControl ItemsSource="{Binding Levels}" Margin="0,20,0,0">
                         <ItemsControl.ItemsPanel>

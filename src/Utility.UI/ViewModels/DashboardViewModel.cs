@@ -49,6 +49,7 @@ public sealed class DashboardViewModel : ViewModelBase
 
     private AsyncRelayCommand? _readTree;
     private AsyncRelayCommand? _runSync;
+    private AsyncRelayCommand? _continueSync;
     private AsyncRelayCommand? _refreshStats;
 
     public DashboardViewModel(
@@ -67,6 +68,11 @@ public sealed class DashboardViewModel : ViewModelBase
         // the current values once in case the warm-up finished before this was created.
         _stats.PropertyChanged += (_, _) => PublishStats();
         PublishStats();
+
+        // The button's enabled state depends on whether a walk is running, and the run
+        // state lives in the sync service. The service raises PropertyChanged for it, so
+        // the button's state follows the run without anyone copying the flag around.
+        _sync.PropertyChanged += (_, _) => OnPropertyChanged(nameof(CanContinueSync));
     }
 
     /// <summary>Bound directly: the collection instance never changes, only its contents.</summary>
@@ -114,6 +120,29 @@ public sealed class DashboardViewModel : ViewModelBase
     /// </para>
     /// </summary>
     public AsyncRelayCommand RunSyncCommand => _runSync ??= new AsyncRelayCommand(RunSyncAsync);
+
+    /// <summary>
+    /// Carries an unfinished sync to the end.
+    /// <para>
+    /// This is NOT a retry of the folders that failed. A folder whose listing was
+    /// refused (404, no access) will be refused again, and re-listing it changes
+    /// nothing.
+    /// </para>
+    /// <para>
+    /// What it does is find the FRONTIER: the folders the previous walk wrote but never
+    /// expanded. Their contents were never listed, and everything below them was never
+    /// discovered - so the tree is missing that whole branch, not just those folders.
+    /// Listing them, and then walking down into whatever they contain, is what makes
+    /// the sync complete.
+    /// </para>
+    /// </summary>
+    public AsyncRelayCommand ContinueSyncCommand => _continueSync ??= new AsyncRelayCommand(ContinueSyncAsync);
+
+    /// <summary>
+    /// True when there is something to continue: folders whose contents were never
+    /// listed. This is the same set the button acts on.
+    /// </summary>
+    public bool CanContinueSync => Stats.HasNotSynced && !Sync.IsRunning;
 
     private string _syncPath = DefaultSyncPath;
 
@@ -183,6 +212,27 @@ public sealed class DashboardViewModel : ViewModelBase
     /// screen is dismissed, which the window does.
     /// </para>
     /// </summary>
+    private async Task ContinueSyncAsync()
+    {
+        var result = await _sync.ContinueAsync();
+
+        if (result.Completed)
+        {
+            StatusMessage = $"Listed {result.FoldersWritten:N0} folder(s), {result.FilesWritten:N0} file(s).";
+            _log.Info(StatusMessage);
+        }
+        else
+        {
+            // Cancelled or failed: the service already carries the reason.
+            StatusMessage = result.Error ?? "The sync did not complete.";
+            _log.Warn(StatusMessage);
+        }
+
+        // The figures are read here too, not only when the busy screen is dismissed:
+        // the user may dismiss it, and the button's own state depends on the count.
+        await _stats.LoadAsync();
+    }
+
     private async Task RunSyncAsync()
     {
         var path = SyncPath?.Trim() ?? string.Empty;
@@ -241,12 +291,18 @@ public sealed class DashboardViewModel : ViewModelBase
     private void PublishStats()
     {
         var stats = _stats.Stats;
-        Stats = stats is null ? DropBoxSyncStatsView.Empty : DropBoxSyncStatsView.From(stats);
+
+        // Three states, not two: the figures are known, they are being read, or they
+        // are unknown. "Unknown" must not look like "all good".
+        Stats = stats is null
+            ? DropBoxSyncStatsView.NotRead(_stats.IsLoading, _stats.Error)
+            : DropBoxSyncStatsView.From(stats);
 
         OnPropertyChanged(nameof(Stats));
         OnPropertyChanged(nameof(HasTree));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(IsLoading));
         OnPropertyChanged(nameof(TreeError));
+        OnPropertyChanged(nameof(CanContinueSync));
     }
 }

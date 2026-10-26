@@ -63,9 +63,10 @@ public partial class MainWindow : Window
         // singleton (§14.1) - the same pattern as the sync overlay above.
         FinderOverlay.DataContext = _finder;
 
-        // Setting IsChecked raises Checked, which navigates. The app opens on the Finder,
-        // because its pass is what the reader came for.
-        NavFinder.IsChecked = true;
+        // The app opens on the DropBox DB page: it is the index the app is built around,
+        // and it reads its figures from the database at startup - no Dropbox call, no
+        // long pass.
+        NavDashboard.IsChecked = true;
     }
 
     private void OnNavDashboardClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Dashboard);
