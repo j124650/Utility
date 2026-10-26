@@ -59,7 +59,7 @@ public interface IDropBoxDataService
         string path = "",
         string? namespaceId = null,
         int maxDepth = 3,
-        int maxConcurrency = 6,
+        int maxConcurrency = 24,
         bool includeMediaInfo = false,
         CancellationToken ct = default);
 
@@ -256,7 +256,7 @@ public sealed class DropBoxDataService(
         string path = "",
         string? namespaceId = null,
         int maxDepth = 3,
-        int maxConcurrency = 6,
+        int maxConcurrency = 24,
         bool includeMediaInfo = false,
         CancellationToken ct = default)
     {

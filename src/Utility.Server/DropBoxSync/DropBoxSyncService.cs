@@ -142,12 +142,6 @@ public sealed class DropBoxSyncService(
     private int _activeDownloaders;
 
     /// <summary>
-    /// The request gate's width for the current run: how many Dropbox requests may be
-    /// in flight at once.
-    /// </summary>
-    private int _maxConcurrency;
-
-    /// <summary>
     /// The brake every worker of a walk waits at when Dropbox rate-limits one of them.
     /// <para>
     /// One brake for the whole walk, because Dropbox's limit is per authorization (per
@@ -180,17 +174,23 @@ public sealed class DropBoxSyncService(
     private const int MaxRateLimitAttempts = 5;
 
     /// <summary>
-    /// The widest the walk may go.
+    /// The width of the walk: how many Dropbox requests may be in flight at once.
     /// <para>
-    /// Measured against this account, with the same per-file call the walk makes:
-    /// the latency stays flat at about 370 ms from width 1 to width 256, and no width
-    /// produced a single rate limit. Throughput scales with the width - 15.7 calls per
-    /// second at six, 84 at thirty-two, 162 at sixty-four, 436 at one hundred and
-    /// ninety-two. So the API is not the constraint at any width this walk can reach,
-    /// and the ceiling here is a guard rail rather than a measurement.
+    /// ONE number, and it does not move. The request gate, the folder gate and the
+    /// worker pool are all this width, so there is nothing to reconcile between them
+    /// and nothing to discover at runtime.
+    /// </para>
+    /// <para>
+    /// The walk was written to climb towards whatever rate Dropbox would accept, but
+    /// that needed a second number - the ceiling - and the width the walk started at,
+    /// and the folder width and the request width were separate things that had to be
+    /// kept in step. Measured against this account, the API tolerates far more than
+    /// this: the latency stays flat at about 370 ms and no width produced a rate
+    /// limit, up to 256 concurrent. So this is a choice, not a measurement - the walk
+    /// is simply capped, and nothing adapts.
     /// </para>
     /// </summary>
-    private const int MaxAdaptiveConcurrency = 128;
+    private const int WalkWidth = 24;
 
     /// <summary>
     /// The wait used when Dropbox did not say how long to wait.
@@ -278,10 +278,15 @@ public sealed class DropBoxSyncService(
     /// Dropbox's API, so it is worth showing - a run that looks stalled may simply be
     /// waiting for its permits.
     /// </para>
+    /// <para>
+    /// The walk is capped at <see cref="WalkWidth"/>, so this is that cap - unless the
+    /// controller has narrowed it because Dropbox rate-limited the walk, which it may
+    /// do at any time.
+    /// </para>
     /// </summary>
     public int MaxConcurrency => _controller is not null
         ? _controller.Gate.Limit
-        : Volatile.Read(ref _maxConcurrency);
+        : WalkWidth;
 
     /// <summary>
     /// The walk's own traffic, measured.
@@ -414,7 +419,6 @@ public sealed class DropBoxSyncService(
         IProgress<DropBoxSyncProgress>? progress = null,
         int batchSize = 500,
         int maxDepth = 0,
-        int maxConcurrency = 24,
         bool enrichFileMetadata = true,
         CancellationToken ct = default)
     {
@@ -427,7 +431,6 @@ public sealed class DropBoxSyncService(
             progress: progress,
             batchSize: batchSize,
             maxDepth: maxDepth,
-            maxConcurrency: maxConcurrency,
             enrichFileMetadata: enrichFileMetadata,
             ct: ct);
     }
@@ -450,7 +453,6 @@ public sealed class DropBoxSyncService(
         IProgress<DropBoxSyncProgress>? progress = null,
         int batchSize = 500,
         int maxDepth = 0,
-        int maxConcurrency = 24,
         bool enrichFileMetadata = true,
         CancellationToken ct = default)
     {
@@ -464,7 +466,6 @@ public sealed class DropBoxSyncService(
             progress: progress,
             batchSize: batchSize,
             maxDepth: maxDepth,
-            maxConcurrency: maxConcurrency,
             enrichFileMetadata: enrichFileMetadata,
             ct: ct);
     }
@@ -480,12 +481,10 @@ public sealed class DropBoxSyncService(
         IProgress<DropBoxSyncProgress>? progress,
         int batchSize,
         int maxDepth,
-        int maxConcurrency,
         bool enrichFileMetadata,
         CancellationToken ct)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(batchSize, 1);
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrency, 1);
 
         // One walk at a time. The flag is cleared in the finally block.
         if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
@@ -518,7 +517,6 @@ public sealed class DropBoxSyncService(
         _isRunning = true;
         _isContinuation = continueFromFrontier;
         _hasPendingResult = false;
-        Volatile.Write(ref _maxConcurrency, maxConcurrency);
         CurrentPathSet(rootPath ?? "continuing the sync");
         Publish(force: true);
 
@@ -565,34 +563,32 @@ public sealed class DropBoxSyncService(
             //                 task never holds one while asking for another.
             //   folderGate  - bounds how many folders are expanded at once. It is held
             //                 for a whole folder, so it also bounds how many database
-            //                 contexts are open: the team tree has 8000+ folders on its
-            //                 widest level, and one context each would swamp SQL Server.
+            //                 contexts are open.
             //
             // They are separate on purpose. Sharing one would mean a task holding it
             // for a whole folder and asking for it again per request - which deadlocks
             // the moment every permit is held by a request waiting for another.
             //
-            // The request gate's width is ADAPTIVE: it starts at maxConcurrency and the
-            // controller widens or narrows it from what the walk measures. Dropbox does
-            // not publish its limit, so the width that will be accepted can only be
-            // found by trying - and a width chosen by guesswork is wrong in both
-            // directions.
-            using var requestGate = new AdaptiveConcurrencyGate(maxConcurrency);
+            // Both are the walk's width: ONE number, and it does not move. The
+            // controller may NARROW it from what the walk measures - a 429, or the
+            // latency rising - but it never widens it. Dropbox does not publish its
+            // limit, so a refused request is the only thing that says the width is too
+            // wide.
+            //
+            // The writes are serialised behind their own gate, so the contexts these
+            // folders open are opened one at a time anyway.
+            using var requestGate = new AdaptiveConcurrencyGate(WalkWidth);
+            using var folderGate = new AdaptiveConcurrencyGate(WalkWidth);
 
-            // The folder gate follows the request gate, so it is the SAME kind of gate:
-            // a fixed width would cap the walk at the starting width, and the wider
-            // request width the controller finds would never be reached. It bounds how
-            // many folders are expanded at once, and it bounds how many database
-            // contexts are open - but the writes are now serialised behind their own
-            // gate, so the contexts are opened one at a time anyway.
-            using var folderGate = new AdaptiveConcurrencyGate(maxConcurrency);
-
-            // The controller adapts the request gate's width from the measured traffic.
+            // The controller watches the measured traffic and moves the width. Its
+            // ceiling is the width the walk starts at, so the width can only ever be
+            // NARROWED - never widened. A 429 or a latency rise takes it down; it does
+            // not come back up.
             var controller = new DropboxConcurrencyController(
                 requestGate,
                 _rateMeter,
-                startWidth: maxConcurrency,
-                maxWidth: MaxAdaptiveConcurrency,
+                startWidth: WalkWidth,
+                maxWidth: WalkWidth,
                 minWidth: 1,
                 settleTime: TimeSpan.FromSeconds(30),
                 folderGate: folderGate);
@@ -632,12 +628,23 @@ public sealed class DropBoxSyncService(
                 // must not keep the verdict of a run that never listed it.
                 Volatile.Write(ref GetLevel(1).FoldersTotal, seeds.Count);
 
-                await Task.WhenAll(seeds.Select(seed =>
-                {
-                    return ExpandFolderAsync(ns, runId, seed.Path, seed.Id, depth: 1,
-                                             unlimited, maxDepth, enrichFileMetadata, requestGate, folderGate,
-                                             counts, discovered, progress, sw, batchSize, token);
-                })).ConfigureAwait(false);
+                // The seeds are handed to the workers through a work list, not turned
+                // into one task each. There are 5,456 of them, and a task each meant
+                // 5,456 tasks alive before any of them ran - and 5,456 cancellations
+                // when the walk was stopped.
+                //
+                // The pool is sized to the WIDEST the walk may go, not to the width it
+                // starts at. The request gate is what actually limits the concurrent
+                // calls, and it is adaptive; a pool pinned to the starting width would
+                // cap the walk there and the wider width could never be reached.
+                await WorkerPool.RunAsync(
+                    seeds,
+                    WalkWidth,
+                    (seed, ct) => ExpandFolderAsync(
+                        ns, runId, seed.Path, seed.Id, depth: 1,
+                        unlimited, maxDepth, enrichFileMetadata, requestGate, folderGate,
+                        counts, discovered, progress, sw, batchSize, ct),
+                    token).ConfigureAwait(false);
             }
 
             // Each depth level is its own parallel fan-out: every folder discovered at this
@@ -660,14 +667,24 @@ public sealed class DropBoxSyncService(
                 Publish(force: true);
 
                 var nextLevel = new ConcurrentBag<ChildRef>();
-                await Task.WhenAll(toExpand.Select(async child =>
-                {
-                    await ExpandFolderAsync(ns, runId, child.Path, child.Id, level,
-                                            unlimited, maxDepth, enrichFileMetadata,
-                                            requestGate, folderGate,
-                                            counts, nextLevel, progress, sw, batchSize, token)
-                        .ConfigureAwait(false);
-                })).ConfigureAwait(false);
+
+                // The level's folders go through a work list, so the number of live tasks
+                // is the number of workers and not the number of folders. The widest
+                // level of the team tree holds thousands of folders, and a task each
+                // meant thousands of tasks alive at once.
+                //
+                // The pool is sized to the widest the walk may go; the request gate and
+                // the folder gate - which follow it - are what limit how much of it is
+                // used at once.
+                await WorkerPool.RunAsync(
+                    toExpand,
+                    WalkWidth,
+                    (child, ct) => ExpandFolderAsync(
+                        ns, runId, child.Path, child.Id, level,
+                        unlimited, maxDepth, enrichFileMetadata,
+                        requestGate, folderGate,
+                        counts, nextLevel, progress, sw, batchSize, ct),
+                    token).ConfigureAwait(false);
 
                 // Bag order is non-deterministic; sort for a stable, readable walk order.
                 foreach (var child in nextLevel.OrderBy(c => c.Path, StringComparer.Ordinal))
@@ -829,7 +846,14 @@ public sealed class DropBoxSyncService(
         // The level this folder belongs to. Its total was set when the level opened.
         var level = GetLevel(depth);
 
-        await folderGate.WaitAsync(ct).ConfigureAwait(false);
+        // The gate is taken WITHOUT throwing when the walk is stopped. A pool of
+        // workers waiting on a full gate would otherwise raise one exception per
+        // waiting worker, and a debugger prints every one of them.
+        if (!await folderGate.TryWaitAsync(ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
         try
         {
             await ExpandFolderCoreAsync(ns, runId, path, folderId, depth, unlimited, maxDepth,
@@ -942,10 +966,15 @@ public sealed class DropBoxSyncService(
         // holds a permit while asking for another, so there is no deadlock - and the
         // gate still caps the total number of in-flight Dropbox requests at
         // maxConcurrency no matter how many files a folder holds.
+        //
+        // The files go through the queue too, for the same reason the folders do. A
+        // wide folder holds thousands of files, and a task each meant thousands of
+        // tasks alive for that one folder. The queue's width is this folder's SHARE of
+        // the request gate - the gate is what really bounds the calls, and the queue
+        // only bounds the tasks.
         if (enrichFileMetadata && fileRows.Count > 0)
         {
-            await Task.WhenAll(fileRows.Select(row =>
-                EnrichFileAsync(row, ns, counts, requestGate, ct))).ConfigureAwait(false);
+            await EnrichFilesAsync(fileRows, ns, counts, requestGate, ct).ConfigureAwait(false);
         }
 
         // The rows are written BEFORE the verdict, and a failure to write them must
@@ -1033,7 +1062,14 @@ public sealed class DropBoxSyncService(
             // limit pauses the whole walk and not just the worker that hit it.
             await _rateLimitBrake.WaitAsync(ct).ConfigureAwait(false);
 
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            // The permit is taken without throwing when the walk is stopped, so a
+            // pool of workers waiting on a full gate does not raise one exception
+            // per waiting worker.
+            if (!await gate.TryWaitAsync(ct).ConfigureAwait(false))
+            {
+                throw new OperationCanceledException(ct);
+            }
+
             var started = Stopwatch.GetTimestamp();
             try
             {
@@ -1488,6 +1524,86 @@ public sealed class DropBoxSyncService(
     }
 
     /// <summary>
+    /// How many folders are enriching their files right now.
+    /// <para>
+    /// The request gate's width is shared by all of them, so each folder takes a share
+    /// of it rather than the whole of it. Without the share, twenty-four folders would
+    /// each ask for the full width and queue behind each other for permits they could
+    /// have had - and the live task count would be the width squared.
+    /// </para>
+    /// </summary>
+    private int _activeEnrichers;
+
+    /// <summary>
+    /// The width of one folder's enrichment pool.
+    /// <para>
+    /// The request gate is the real limit on how many Dropbox calls are in flight, and
+    /// it is shared. So a folder's pool takes a SHARE of it: with twenty-four folders
+    /// enriching, each takes one permit's worth; with one folder alone, it takes the
+    /// whole width, because nothing else wants those permits.
+    /// </para>
+    /// <para>
+    /// The floor is one, so a folder always makes progress on its own files. A higher
+    /// floor would multiply the live task count - twenty-four folders at a floor of
+    /// four is a hundred enrichment workers for twenty-four permits - and the permits
+    /// are what actually limit the calls, so the extra workers only queue.
+    /// </para>
+    /// </summary>
+    private int EnrichPoolWidth(AdaptiveConcurrencyGate requestGate, int fileCount)
+    {
+        var width = requestGate.Limit;
+        var sharing = Volatile.Read(ref _activeEnrichers);
+
+        var share = sharing <= 1
+            ? width
+            : Math.Clamp(width / sharing, 1, width);
+
+        return Math.Min(fileCount, share);
+    }
+
+    /// <summary>
+    /// Enriches one folder's files, over a pool sized to this folder's share of the
+    /// request gate.
+    /// <para>
+    /// The files go through a queue rather than a fan-out, so the number of live tasks
+    /// is the pool's width and not the number of files. A wide folder holds thousands
+    /// of files, and a task each meant thousands of tasks alive for that one folder -
+    /// and thousands of cancellations when the walk was stopped.
+    /// </para>
+    /// </summary>
+    private async Task EnrichFilesAsync(
+        List<DropBoxNodeEntity> fileRows, string ns, SyncCounts counts,
+        AdaptiveConcurrencyGate requestGate, CancellationToken ct)
+    {
+        if (fileRows.Count == 0)
+        {
+            return;
+        }
+
+        // The folder counts itself BEFORE it works out its share, so a folder that
+        // arrives late sees the others and takes a smaller share. A folder that
+        // arrived first would otherwise take the whole width and leave the rest of
+        // the level queuing behind it.
+        Interlocked.Increment(ref _activeEnrichers);
+        try
+        {
+            // The pool's width is this folder's SHARE of the request gate - the gate is
+            // what really bounds the calls, and the pool only bounds the tasks.
+            var poolWidth = EnrichPoolWidth(requestGate, fileRows.Count);
+
+            await WorkerPool.RunAsync(
+                fileRows,
+                poolWidth,
+                (row, ct2) => EnrichFileAsync(row, ns, counts, requestGate, ct2),
+                ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activeEnrichers);
+        }
+    }
+
+    /// <summary>
     /// Fills a file row's media metadata (dimensions, media kind) via a per-file
     /// <c>get_metadata</c> call.
     /// <para>
@@ -1507,7 +1623,14 @@ public sealed class DropBoxSyncService(
             // listing: a rate limit pauses every worker, not just this one.
             await _rateLimitBrake.WaitAsync(ct).ConfigureAwait(false);
 
-            await gate.WaitAsync(ct).ConfigureAwait(false);
+            // The permit is taken without throwing when the walk is stopped, so a pool
+            // of enrichment workers waiting on a full gate does not raise one exception
+            // per waiting worker.
+            if (!await gate.TryWaitAsync(ct).ConfigureAwait(false))
+            {
+                throw new OperationCanceledException(ct);
+            }
+
             var started = Stopwatch.GetTimestamp();
             try
             {

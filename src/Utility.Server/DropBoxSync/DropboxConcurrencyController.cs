@@ -193,8 +193,9 @@ public sealed class DropboxConcurrencyController
             return;
         }
 
-        // Healthy: track the latency as an average for this width, and widen - but only
-        // one step, and only after a settled period.
+        // Healthy: nothing to do. The walk's width is fixed, so there is no wider width
+        // to move to. The latency is still tracked, because it is the early signal that
+        // the fixed width is too wide - and the check above uses it to trim the width.
         if (_healthyLatencyMs == 0)
         {
             _healthyLatencyMs = snapshot.MeanLatencyMs;
@@ -205,23 +206,6 @@ public sealed class DropboxConcurrencyController
             // window does not redefine "normal", and the baseline still follows a real
             // change in the API's behaviour.
             _healthyLatencyMs = (_healthyLatencyMs * 0.7) + (snapshot.MeanLatencyMs * 0.3);
-        }
-
-        if (_gate.Limit < _maxWidth && now - _lastRateLimit > _settleTime)
-        {
-            _gate.SetLimit(_gate.Limit + 1);
-
-            // The folder gate follows the request gate, so the wider width is
-            // actually reachable: folders are what feed the request gate, and a
-            // folder gate left at the old width would cap the walk there.
-            _folderGate?.SetLimit(_gate.Limit);
-
-            _lastChange = now;
-
-            // The baseline belonged to the old width: it is forgotten, so the next
-            // window is measured afresh at the new width.
-            _healthyLatencyMs = 0;
-            _baselineWidth = 0;
         }
     }
 

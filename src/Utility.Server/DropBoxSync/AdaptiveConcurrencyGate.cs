@@ -104,6 +104,60 @@ public sealed class AdaptiveConcurrencyGate : IDisposable
     }
 
     /// <summary>
+    /// Takes a permit if one is free, and returns false if the walk was cancelled
+    /// instead.
+    /// <para>
+    /// This is <see cref="WaitAsync"/> without the exception. A cancelled walk throws
+    /// from every task it cancels, and a debugger prints each one - so a pool of
+    /// workers waiting on a full gate would print one exception per waiting worker,
+    /// which is the noise the pool was built to remove.
+    /// </para>
+    /// <para>
+    /// The caller checks the flag and steps aside. The wait ends the same way either
+    /// way: the token is cancelled, the walk is stopping, and the permit is released
+    /// by whoever holds it.
+    /// </para>
+    /// </summary>
+    public async Task<bool> TryWaitAsync(CancellationToken ct)
+    {
+        Waiter waiter;
+
+        lock (_sync)
+        {
+            if (_inUse < _limit)
+            {
+                _inUse++;
+                return true;
+            }
+
+            waiter = new Waiter();
+            waiter.Node = _waiters.AddLast(waiter);
+        }
+
+        try
+        {
+            await waiter.Source.Task.WaitAsync(ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            lock (_sync)
+            {
+                if (waiter.Granted)
+                {
+                    waiter.Node?.List?.Remove(waiter.Node);
+                    ReleaseCore();
+                    return false;
+                }
+
+                waiter.Node?.List?.Remove(waiter.Node);
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Gives a permit back.
     /// </summary>
     public void Release()
