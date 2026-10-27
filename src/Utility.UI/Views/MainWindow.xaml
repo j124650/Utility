@@ -118,10 +118,17 @@
                 -->
                 <RadioButton x:Name="NavDashboard" GroupName="Nav" Content="DropBox DB"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavDashboardClick" />
+                <!--
+                  The DropBox files and the Media library tabs are hidden. Their views
+                  and view models are still there, so they can come back without being
+                  rebuilt - but they are not offered.
+                -->
                 <RadioButton x:Name="NavDropBox" GroupName="Nav" Content="DropBox files"
-                             Style="{StaticResource NavButtonStyle}" Checked="OnNavDropBoxClick" />
+                             Style="{StaticResource NavButtonStyle}" Checked="OnNavDropBoxClick"
+                             Visibility="Collapsed" />
                 <RadioButton x:Name="NavMedia" GroupName="Nav" Content="Media library"
-                             Style="{StaticResource NavButtonStyle}" Checked="OnNavMediaClick" />
+                             Style="{StaticResource NavButtonStyle}" Checked="OnNavMediaClick"
+                             Visibility="Collapsed" />
                 <RadioButton x:Name="NavFinder" GroupName="Nav" Content="Finder"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavFinderClick" />
                 <!--
