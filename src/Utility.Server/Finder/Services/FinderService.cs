@@ -40,6 +40,31 @@ public sealed class FinderService(
             return scanState.Rows;
         }
 
+        var rows = await RunPassAsync(parentIds: null, progress, ct);
+
+        var summary = new FinderScanSummary(
+            rows.Count,
+            rows.GroupBy(r => r.Verdict).ToDictionary(g => g.Key, g => g.Count()),
+            DateTimeOffset.Now);
+
+        scanState.Publish(rows, summary);
+
+        progress?.Report(new FinderProgressInfo("Done", rows.Count, rows.Count, $"{rows.Count} pair(s)"));
+        return rows;
+    }
+
+    /// <summary>
+    /// The pass itself: the four phases, and the rows they produce.
+    /// </summary>
+    /// <remarks>
+    /// The ids narrow it to the pairs they name - null is the whole library. The rows are
+    /// NOT published here: the caller decides whether they go into the scan state.
+    /// </remarks>
+    private async Task<IReadOnlyList<FinderRow>> RunPassAsync(
+        IReadOnlyList<Guid>? parentIds,
+        IFinderProgress? progress,
+        CancellationToken ct)
+    {
         var settings = await ml.GetSettingsAsync(ct);
         var configuredRoot = settings?.MediaLibraryLocalPath;
 
@@ -66,7 +91,7 @@ public sealed class FinderService(
         // vocabulary.
         progress?.Report(new FinderProgressInfo("Reading Pairs", 0, 0, "Querying the media library and the DropBox Index"));
 
-        var pairs = await LoadPairsAsync(ct);
+        var pairs = await LoadPairsAsync(parentIds, ct);
         progress?.Report(new FinderProgressInfo("Reading Pairs", 1, 1, $"{pairs.Count} pair(s)"));
 
         // ---- Phase 2: visit every file on disk ----
@@ -184,12 +209,24 @@ public sealed class FinderService(
             }
         }
 
-        var summary = new FinderScanSummary(
-            rows.Count,
-            rows.GroupBy(r => r.Verdict).ToDictionary(g => g.Key, g => g.Count()),
-            DateTimeOffset.Now);
+        return rows;
+    }
 
-        scanState.Publish(rows, summary);
+    /// <summary>
+    /// Re-reads the pairs it is given: their files are visited again and their verdicts are
+    /// decided again (§10.9).
+    /// </summary>
+    /// <remarks>
+    /// The pass, narrowed to the pairs it names. The rows are NOT published to the scan
+    /// state: the state holds the whole library, and publishing a narrowed set into it would
+    /// make a later read of the state return only that set.
+    /// </remarks>
+    public async Task<IReadOnlyList<FinderRow>> RereadMediaPairsAsync(
+        IReadOnlyList<Guid>? parentIds,
+        IFinderProgress? progress = null,
+        CancellationToken ct = default)
+    {
+        var rows = await RunPassAsync(parentIds, progress, ct);
 
         progress?.Report(new FinderProgressInfo("Done", rows.Count, rows.Count, $"{rows.Count} pair(s)"));
         return rows;
@@ -251,7 +288,9 @@ public sealed class FinderService(
     /// The join runs over the whole index, because <c>ml.DropBoxNode.Name</c> has an index and
     /// the query is a join - a per-parent lookup would scan the index once per pair.
     /// </remarks>
-    private async Task<List<PairSeed>> LoadPairsAsync(CancellationToken ct)
+    private async Task<List<PairSeed>> LoadPairsAsync(
+        IReadOnlyList<Guid>? parentIds,
+        CancellationToken ct)
     {
         await using var connection = await OpenConnectionAsync(ct);
 
@@ -286,6 +325,12 @@ public sealed class FinderService(
 
         var pairs = new List<PairSeed>();
 
+        // The narrowed pass reads only the pairs it was given (§10.9). The ids are checked
+        // here, as the rows are read: the query itself is not narrowed, because a list of
+        // thousands of ids is not a query the server can plan and the whole set is read
+        // anyway.
+        var wanted = parentIds is null ? null : new HashSet<Guid>(parentIds);
+
         await using (var command = new SqlCommand(sql, connection))
         {
             command.CommandTimeout = options.Value.CommandTimeoutSeconds;
@@ -293,9 +338,16 @@ public sealed class FinderService(
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
+                var parentId = reader.GetGuid(0);
+
+                if (wanted is not null && !wanted.Contains(parentId))
+                {
+                    continue;
+                }
+
                 pairs.Add(new PairSeed
                 {
-                    ParentId = reader.GetGuid(0),
+                    ParentId = parentId,
                     ParentFileName = reader.GetString(1),
                     ParentFolder = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
                     ParentSize = reader.IsDBNull(3) ? null : reader.GetInt64(3),

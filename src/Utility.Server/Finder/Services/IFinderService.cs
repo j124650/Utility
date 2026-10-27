@@ -34,6 +34,30 @@ public interface IFinderService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Re-reads the pairs it is given: their files are visited again and their verdicts are
+    /// decided again (§10.9).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the pass, narrowed to the pairs it names. The files are visited and the
+    /// verdicts are decided exactly as the full pass decides them, so a row comes back
+    /// carrying the verdict its files now deserve.
+    /// </para>
+    /// <para>
+    /// The rows are NOT published to the scan state: the state holds the whole library, and
+    /// publishing a narrowed set into it would make a later read of the state return only
+    /// that set.
+    /// </para>
+    /// </remarks>
+    /// <param name="parentIds">The parents to re-read, or null to re-read them all.</param>
+    /// <param name="progress">Receives the pass's progress, or null.</param>
+    /// <param name="ct">Cancels the pass.</param>
+    Task<IReadOnlyList<FinderRow>> RereadMediaPairsAsync(
+        IReadOnlyList<Guid>? parentIds,
+        IFinderProgress? progress = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// The ranked candidates for one parent: the files whose name matches it, plus the ones
     /// whose name is similar when the name matched nothing (§9.1, §9.3, §10).
     /// </summary>

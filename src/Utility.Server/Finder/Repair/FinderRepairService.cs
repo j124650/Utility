@@ -68,6 +68,16 @@ public sealed class FinderRepairService(
     private const int DefaultQuality = 35;
 
     /// <summary>
+    /// How often the progress is reported, in records.
+    /// </summary>
+    /// <remarks>
+    /// A hundredth of the run, so the bar moves often enough to look alive whether the run
+    /// is twenty records or a quarter of a million. At least one, so a short run reports
+    /// every record.
+    /// </remarks>
+    private static int Step(int count) => Math.Max(1, count / 100);
+
+    /// <summary>
     /// The resolved library root, kept so it is resolved once.
     /// </summary>
     private string? _libraryRoot;
@@ -166,7 +176,9 @@ public sealed class FinderRepairService(
                     summary = Accumulate(summary, record);
                     done++;
 
-                    if (done % 25 == 0 || done == subject.Count)
+                    // The bar moves often enough to look alive: every step of a small run,
+                    // and a hundredth of a large one.
+                    if (done % Step(subject.Count) == 0 || done == subject.Count)
                     {
                         progress?.Report(new FinderRepairProgress(
                             "Recovering", done, subject.Count, $"{done} of {subject.Count}"));
@@ -193,7 +205,7 @@ public sealed class FinderRepairService(
 
                         var n = Interlocked.Increment(ref done);
 
-                        if (n % 25 == 0 || n == subject.Count)
+                        if (n % Step(subject.Count) == 0 || n == subject.Count)
                         {
                             progress?.Report(new FinderRepairProgress(
                                 "Recovering", n, subject.Count, $"{n} of {subject.Count}"));

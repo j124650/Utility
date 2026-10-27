@@ -70,7 +70,7 @@ public sealed class FinderViewModel(
 
     /// <summary>
     /// The rules the verdict rests on (§18.6) - one line each, so the reader sees why the
-    /// verdict came out the way it did.
+    /// verdict came out that way.
     /// </summary>
     public ObservableCollection<FinderRule> Rules { get; } = [];
 
@@ -188,8 +188,8 @@ public sealed class FinderViewModel(
     /// Liem's List: the report of the pairs the verdict leaves unresolved (§14.5).
     /// </summary>
     /// <remarks>
-    /// The report is written to a temporary file and shown in a window of the app. It is
-    /// a report on the SAME pass this tab runs, so it is only as fresh as that pass.
+    /// The report is written to a temporary file and shown in a window of the app. It is a
+    /// report on the SAME pass this tab runs, so it is only as fresh as that pass.
     /// </remarks>
     public AsyncRelayCommand ShowLiemListCommand => _showLiemList ??= new AsyncRelayCommand(ShowLiemListAsync);
 
@@ -288,9 +288,16 @@ public sealed class FinderViewModel(
 
         _repairCts = new CancellationTokenSource();
 
+        // The re-read happens once the run is under way - a run that never started has
+        // nothing to re-read - and it happens whether the run finished, was cancelled or
+        // failed, because the recovery may have written files before it stopped (§10.9).
+        var started = false;
+
         try
         {
             var progress = new Progress<FinderRepairProgress>(OnRepairProgress);
+
+            started = true;
 
             var summary = await repair.RunAsync(subject, progress, _repairCts.Token);
 
@@ -315,6 +322,21 @@ public sealed class FinderViewModel(
         }
         finally
         {
+            // The re-read happens whatever ended the run: the recovery may have written
+            // files before it was cancelled or failed (§10.9). A re-read that fails does
+            // not undo the recovery, so it is reported on its own.
+            if (started)
+            {
+                try
+                {
+                    await RereadFilteredSetAsync(subject);
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"The re-read failed: {ex}");
+                }
+            }
+
             _repairCts.Dispose();
             _repairCts = null;
 
@@ -325,6 +347,129 @@ public sealed class FinderViewModel(
             OnPropertyChanged(nameof(IsRecovering));
             RecoverSelectedCommand.RaiseCanExecuteChanged();
         }
+    }
+
+    /// <summary>
+    /// Re-reads the filtered set: the files are visited again and the verdicts are decided
+    /// again, so the rows show what the files now deserve (§10.9).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The rows are updated IN PLACE. The filters are not applied again - a row stays in
+    /// the table even if its new verdict no longer matches the verdict filter it was found
+    /// under.
+    /// </para>
+    /// <para>
+    /// The re-read runs on the rows the filters left, which are the rows the repair was
+    /// given. The pass behind it is narrowed to those parents, so it visits their files and
+    /// no others.
+    /// </para>
+    /// </remarks>
+    private async Task RereadFilteredSetAsync(IReadOnlyList<FinderRow> subject)
+    {
+        if (subject.Count == 0)
+        {
+            return;
+        }
+
+        PassStage = "Re-reading";
+        PassDetail = string.Empty;
+        PassDone = 0;
+        PassTotal = subject.Count;
+        PassIsIndeterminate = false;
+
+        var progress = new Progress<FinderProgressInfo>(info => OnRereadProgress(info, subject.Count));
+
+        var reread = await finder.RereadMediaPairsAsync(
+            subject.Select(r => r.ParentId).ToList(),
+            new ProgressAdapter(progress),
+            CancellationToken.None);
+
+        // The re-read row for a parent replaces the row the pass produced. The indexes are
+        // found by one pass over the collection, so the replacement is not a search over
+        // the whole library for every row that was re-read.
+        var byParent = reread.ToDictionary(r => r.ParentId);
+
+        foreach (var index in IndicesOf(AllRows, byParent.Keys))
+        {
+            AllRows[index] = byParent[AllRows[index].ParentId];
+        }
+
+        foreach (var index in IndicesOf(Rows, byParent.Keys))
+        {
+            Rows[index] = byParent[Rows[index].ParentId];
+        }
+
+        // The row the info area shows is the row as it now reads.
+        if (Selected is { } selected && byParent.TryGetValue(selected.ParentId, out var updated))
+        {
+            Selected = updated;
+
+            // The selection was replaced, so the preview is fetched again for the row's
+            // best candidate.
+            _ = PreviewAsync();
+        }
+
+        OnPropertyChanged(nameof(RowsDisplay));
+    }
+
+    /// <summary>
+    /// Carries the re-read's progress onto the busy screen, as its own step.
+    /// </summary>
+    /// <remarks>
+    /// The re-read is a step of the recovery, not a pass the reader started, so it shows
+    /// its own name and its own count - the pairs being re-read - and the bar is
+    /// determinate throughout. The pass behind it counts its own stages, which are the
+    /// pass's business.
+    /// </remarks>
+    private void OnRereadProgress(FinderProgressInfo info, int total)
+    {
+        PassStage = "Re-reading";
+        PassIsIndeterminate = false;
+
+        // The pass's stages are counted in the rows they build; the re-read is counted in
+        // the pairs it re-reads. The stage that visits the files is the one that moves the
+        // bar, because that is the work the reader is waiting for.
+        switch (info.Stage)
+        {
+            case "Checking Files":
+                PassDone = info.Done;
+                PassTotal = info.Total;
+                PassDetail = $"{info.Done:N0} of {info.Total:N0} pair(s)";
+                break;
+
+            case "Done":
+                PassDone = total;
+                PassTotal = total;
+                PassDetail = $"{total:N0} pair(s)";
+                break;
+
+            default:
+                PassDetail = info.Detail;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The indexes of the rows whose parents are among the given ids.
+    /// </summary>
+    private static List<int> IndicesOf(
+        ObservableCollection<FinderRow> rows,
+        IEnumerable<Guid> parentIds)
+    {
+        var wanted = parentIds as IReadOnlyCollection<Guid> ?? parentIds.ToList();
+
+        var indexes = new List<int>();
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (wanted.Contains(rows[i].ParentId))
+            {
+                indexes.Add(i);
+            }
+        }
+
+        return indexes;
     }
 
     /// <summary>Carries the recovery's progress onto the busy screen.</summary>
@@ -664,8 +809,24 @@ public sealed class FinderViewModel(
         await RunPassAsync(force: false);
     }
 
-    /// <summary>Stops the running pass. Whatever was already loaded stays loaded (§18.8).</summary>
-    public void CancelPass() => _passCts?.Cancel();
+    /// <summary>
+    /// Stops whatever is running: the pass or the recovery.
+    /// </summary>
+    /// <remarks>
+    /// The busy screen's Cancel button stops the run the reader is waiting for. The
+    /// recovery is the one that writes files, so it is the one that most needs to be
+    /// stoppable; whatever was already written stays written.
+    /// </remarks>
+    public void CancelPass()
+    {
+        if (_repairCts is not null)
+        {
+            _repairCts.Cancel();
+            return;
+        }
+
+        _passCts?.Cancel();
+    }
 
     private async Task RunPassAsync(bool force)
     {
