@@ -78,7 +78,7 @@ mechanical path, and they are the only ones the repair touches.
 Finder spec forbids restoring a parent on anything but an exact size match, so *no original
 — needs a decision* is a human's job, by the rule the verdict was decided by. *Cannot
 restore* has no candidate at all, so with no parent there is no child to regenerate either.
-Both stay on Liem's List (`finder-spec.md` §11).
+Both are what the generated Liem's List is made of (`finder-spec.md` §11).
 
 **Verdict 0 needs no action** — both files are fine.
 
@@ -140,13 +140,22 @@ The rules are `finder-spec.md` §8, unchanged:
 **The box is square and Magick does the fit** — the same shape as the importer's:
 
 ```csharp
-var size = new MagickGeometry((int)target, (int)target) { IgnoreAspectRatio = false };
+var size = new MagickGeometry((int)target, (int)target)
+{
+    IgnoreAspectRatio = false,
+    Greater = true          // shrink only - a parent below the target is left alone
+};
 image.Resize(size);
 ```
 
 `IgnoreAspectRatio = false` means the image is **fitted inside** the box with its aspect
 ratio preserved, so the source's **longer** side lands on the box's side and the other
 side follows from the source's own proportions.
+
+`Greater = true` means the resize happens **only if the image is greater than the box** —
+so a parent smaller than the target is not scaled up. It is the same rule, expressed on
+the geometry, and it is what makes the shrink-only behaviour below a property of the
+resize rather than a check around it.
 
 **The box's side is the child's declared dimension on the parent's longer axis.** If the
 parent is landscape (width > height), that is the child's **declared width**; if the
@@ -215,14 +224,20 @@ surviving parents — the remaining spread is the encoder, not the format. Writi
 child as PNG regardless gave 6–15× the recorded size, and quality 90 gave 1.4–2.9×, so
 both the format and the quality are pinned by the evidence.
 
-**The child's path** is the child's own `Id` as a GUID, in the parent's folder — the naming
-rule in `finder-spec.md` §5. The child is named by the row that describes it, so its path
-needs no resolving.
+**The child's path** is the child's own `Id` as a GUID, in upper-case (§5.3), in the
+parent's folder — the naming rule in `finder-spec.md` §5. The child is named by the row
+that describes it, so its path needs no resolving.
 
 **The size after a regeneration will not match** the child's recorded size — the bytes are
 not byte-identical to what the importer wrote. The file is left in place; it is a usable
-image of the right size. `ml.media` is read-only to this app, so the recorded `Size` cannot
-be corrected, and the pair goes on Liem's List (`finder-spec.md` §8, §11).
+image of the right size. `ml.media` is read-only to this app, so the recorded `Size`
+cannot be corrected. The row shows the size check that does not match, which is the
+reader's evidence that the bytes are new.
+
+**A recovered pair is not on Liem's List.** The list is generated — its membership is the
+verdict, nothing else — and a recovered pair reads back as verdict 0 (§10.2), so it does
+not meet the criteria and is not in the list. That is the consequence of the verdict, not
+a rule about the list.
 
 **The parent is restored before the child is regenerated.** The child is derived from the
 parent, so regenerating from a missing parent produces nothing. Verdict 3 does both, in
@@ -278,10 +293,20 @@ The parent's bytes come from the **candidate**, not from anywhere else:
 personal space and comes back as `path/not_found`. The client's `WithPathRoot(new
 PathRoot.Root(namespaceId))` is what scopes it.
 
+**The namespace comes with the candidate.** The candidate is a row of the Dropbox index,
+and the namespace is one of that row's fields (§5.2). The repair does not look the
+namespace up separately — it takes the one the candidate carries.
+
 **The candidate is found by the join the pass already makes** — `ml.media.FileName` =
 `ml.DropBoxNode.Name` **and** `ml.media.Size` = `ml.DropBoxNode.SizeBytes`, plus the
 folder rule and the `final` tiebreak. The repair re-uses the row's confirmed candidate
 (§3); it does not run that join again.
+
+**The candidate carries the fields the copy needs.** The row's candidate holds the
+name, the size, the path and the modification date — but not the index row's own id,
+Dropbox's id for the file, the namespace, or the content hash. The repair reads those
+from the index row it fetches, because it has to have that row to fetch the file at all
+(§10.5.2). So the record has them, and the repair makes no lookup of its own.
 
 ### 5.3 The case of the file name
 
@@ -291,8 +316,10 @@ lower-case. The filesystem is case-insensitive, so both name the same file — v
 `ls media/ca05434001/0e42dfc7-409a-49db-bec4-d8981cc08edc` resolves to the file stored
 as `0E42DFC7-...`.
 
-**A copied file should keep the case the other files in the folder use**, so the library
-stays uniform. The copy therefore writes the **upper-case** form.
+**Every file the repair writes is written in upper-case.** The parent and the child
+alike — both are written to the same folder, and a folder holding one upper-case name
+and one lower-case name is not uniform. The upper-case form of the GUID is what the
+folder's other files use, so it is what the repair writes.
 
 ### 5.4 What is written, and what is not
 
@@ -313,7 +340,7 @@ from Dropbox, and the child's file is generated from the parent's copy.
 - **It does not pick a candidate.** The candidate is the one the Finder's pass confirmed.
 - **It does not write the database.** §5.4.
 - **It does not write to Dropbox.**
-- **It does not re-run the whole pass.** It re-reads the records it recovered, and only
+- **It does not re-run the whole pass.** It re-reads the records it attempted, and only
   those (§10.2).
 - **It does not re-read a record it recovered on an earlier run.** §10.3.
 
@@ -363,7 +390,7 @@ The counts come from the verdicts, which the rows already carry:
 | Not recovered | `1,500 pair(s) shown: 1,234 recovered, 266 not recovered.` |
 
 and the reasons are the verdicts — *no original — needs a decision* and *cannot restore*
-are Liem's List's business.
+are what the generated Liem's List is made of (§2).
 
 **The run itself is logged** (§10.5) — one log of what happened, per record, whether the
 run finished or was stopped. The status line is the summary; the log is the detail.
@@ -387,18 +414,19 @@ The rules are **per pair**, and one pair's failure does not stop the others.
 | The child could not be written | the parent stays restored | the parent is the more valuable half |
 | The library root is not configured | nothing is written | — |
 
-**A failure is never silent.** It goes to the log (§10.5) and to the row — and the row is
-re-read, so the record's verdict is recomputed from the files as they actually are
-(§10.2). A pair that failed to recover reads back as the verdict its files deserve.
+**A failure is never silent.** It goes to the log (§10.5) and to the row — and every
+record the run attempted is re-read, so the record's verdict is recomputed from the files
+as they actually are (§10.2). A pair that failed to recover reads back as the verdict its
+files deserve.
 
 **A corrupted parent is replaced, not preserved.** The repair overwrites the file at the
 parent's path, whatever is there. A corrupted parent is a file that exists and does not
 open; it is replaced by the confirmed original, and the corrupted bytes are gone.
 
 **There is no backup of the replaced file.** The file is named by its GUID with no
-extension, so nothing identifies it but its contents — and the original it is replaced by
-*is* the original, recovered byte for byte. The corrupted file was not the imported file
-either: the confirmed original is the one whose length equals the parent's recorded size.
+extension, so nothing identifies it but its contents — and what replaces it *is* the
+original, recovered byte for byte. A corrupted file that is replaced with a valid one is
+an improvement, and the bytes it loses are the bytes of a file that could not be opened.
 
 **A half-finished pair is not a lost one.** The parent's restore and the child's
 regeneration are independent: if the child fails, the parent is still restored, and the
@@ -449,7 +477,7 @@ the figure to quote. The row carries it as `Candidates[0].Size`.
 ### 10.1.1 What the window says
 
 A proposal, for refinement. The figures are read off the rows, and each is a number the
-reader can act on.
+reader can act on. The example below is over a set of 1,500 pairs:
 
 ```
 Recover 1,500 pair(s)?
@@ -495,6 +523,11 @@ The warning is a line in the window, not a second dialog and not a typed word:
               This will take a long time - 1,234 pair(s) and 494 GB.
 ```
 
+**The threshold is on the pairs that will be recovered.** The line names the recoverable
+count and the download volume, so those are what the threshold must agree with — a
+warning about a long time that fires over a set with nothing to recover would be a lie,
+and one that stays quiet over a set of 90 large downloads would be a silence.
+
 **Why a line and not a typed confirmation.** A typed word is a second gate, and a gate
 that is always there stops being read — the reader types it without reading it. A red
 line costs nothing to pass and is still read when the number is big. The threshold is a
@@ -536,15 +569,22 @@ three states of `finder-spec.md` §6 are enough, and **no fourth state is needed
 
 ### 10.3 Recovered records are skipped
 
-**A second run skips the records already recovered.** The run reads the recovery log
-(§10.5) and does not touch a record it has already done.
+**A second run skips the records already recovered.**
 
-**The log records what the recovery did.** It is a log of the run, not of the library:
-what was recovered, what was not, and why — for the reader's own post-analysis.
+**A record is skipped when its files say it is done.** A recovered record is re-read
+(§10.2), so the row carries the verdict its files now deserve — and a pair whose parent
+and child both open is verdict 0, which is not recovered (§2). So the next run over the
+same set finds nothing to do, without anything remembering the last run.
 
-**The log is a text file beside the app's own log** (§10.5.1). It goes through a
-provider, so it can become an `ml.MediaRecoverLog` table later without the recovery
-changing (§10.5).
+**The log is not how the skip works.** The log is the record of the run for the reader's
+own post-analysis (§10.5). It is not consulted to decide what to skip, because it is
+named for the app run that wrote it (§10.5.1) — a recovery that was interrupted and a
+later one would not be able to read each other's logs.
+
+**This holds across a restart.** A recovered file is a file on disk, and the verdict is
+recomputed from the files — so whether the app was closed between the two runs or not
+makes no difference. The run does not re-read the log to know what it did last time; the
+library does.
 
 ### 10.4 The busy screen
 
@@ -559,6 +599,11 @@ showing:
 
 **The recovered records are re-read as the run goes** (§10.2), so the count of done rows
 is the count of records actually finished, not a tick per file.
+
+**The screen shows the current progress and nothing else.** The count of done rows out
+of the count to do, and the stop button. The busy screen is the Finder's own (§18.8 of
+the Finder spec), so it is where the reader already looks for progress — and it is a
+modal over the whole window, so it cannot be missed.
 
 ### 10.5 One log of what happened
 
@@ -672,12 +717,16 @@ checked against the library; one that says what was *written* can.
 A log that only holds the successes cannot answer "what happened to the ones that did
 not work".
 
-**The row does not carry every field the record needs.** The row's candidates carry the
+**The row does not carry every field the record needs.** The row's candidate carries the
 path, the size and the modification date, but **not** the index row's `Id`, its
-`DropboxId`, its `NamespaceId` or its `ContentHash`. The recovery reads those from
+`DropboxId`, its `NamespaceId` or its `ContentHash`. The repair reads those from
 `ml.DropBoxNode` when it fetches the file — it has to, to fetch it at all — so the
 record has them. The row is not extended to carry them: the log is the record of the
 workflow, and the workflow is where they live.
+
+**And the repair looks nothing up for itself.** It reads the row's candidate for the
+path and the size, and it reads the index row it fetched for the rest. Every field in
+the record is a field the workflow already had in its hands.
 ### 10.5.3 The format, for post-mortem parsing
 
 **The log is a line-oriented text file, one record per line, and it is meant to be
@@ -769,12 +818,12 @@ and then one record per pair.
 **The run's outcome is also in the status line** (§8) — the summary is what the reader
 sees without opening anything, and the log is what they open when they want the detail.
 
-**The log's path is in the status line when the run ends**, so the reader can find it
-without hunting. **The log is not opened in a window of the app's own** — unlike Liem's
-List's report. Liem's List is a report on a few hundred pairs; the recovery log is one
-record per pair, and on a full run that is a quarter of a million records. A window
-showing that would be unusable, and a file the reader opens when they want it is what
-they will use.
+**The log's path is in the status line when the run ends** — and when it is stopped, which
+is also an ending. So the reader can find it without hunting. **The log is not opened in a
+window of the app's own** — unlike Liem's List's report. Liem's List is a report on a few
+hundred pairs; the recovery log is one record per pair, and on a full run that is a
+quarter of a million records. A window showing that would be unusable, and a file the
+reader opens when they want it is what they will use.
 
 ### 10.6 The recoverer is sequential, and its width is configured
 
@@ -882,10 +931,12 @@ field is a change to the provider, not to the recovery.
 | 19 | One pair's failure does not stop the others | fail one download in a set of ten | **not built** |
 | 20 | The busy screen shows how many were selected and how many are done | watch a run | **not built** |
 | 21 | The run can be stopped, and says what it did | stop a run part-way | **not built** |
-| 22 | A second run skips the records already recovered | recover a set, run again, check the second run skips them | **not built** |
+| 22 | A second run skips the records already recovered — across an app restart too | recover a set, close the app, run again, check the second run skips them | **not built** |
 | 23 | The log records what was done, per record | run a repair, read the log | **not built** |
 | 24 | The recoverer is sequential, and its width is configured | read the configuration, run with a width of 1 and of 2 | **not built** |
 | 25 | A child with no recorded dimensions is sized from the settings, by its category | size a child from `ml.Settings` and check the target | **not built** |
 | 26 | The confirmation window shows the download volume and the replaced-file count in red | open the window on a large set | **not built** |
+| 27 | Every file the repair writes is named in upper-case | recover a pair, list the folder | **not built** |
+| 28 | The repair makes no lookup of its own — the namespace comes with the candidate | recover a pair, check the namespace the fetch used | **not built** |
 
 Nothing in this list has been checked. The spec is written; the button is not.
