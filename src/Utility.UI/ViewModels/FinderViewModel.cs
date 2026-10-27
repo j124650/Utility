@@ -230,9 +230,8 @@ public sealed class FinderViewModel(
         // The window reads the same rows the repair will act on, so what it says is exactly
         // what the table shows and exactly what the repair will do.
         var subject = Rows.ToList();
-        var confirmation = RecoverConfirmation.From(subject);
 
-        if (confirmation.Recoverable == 0)
+        if (!subject.Any(r => r.Verdict.Id is 1 or 2 or 3))
         {
             SetStatus("Nothing to recover in the rows shown.");
             return;
@@ -252,7 +251,10 @@ public sealed class FinderViewModel(
             return;
         }
 
-        var window = new RecoverConfirmWindow(confirmation, libraryRoot)
+        var confirmation = RecoverConfirmation.From(subject, libraryRoot);
+        var actions = RecoverActionList.From(subject, libraryRoot);
+
+        var window = new RecoverConfirmWindow(confirmation, actions)
         {
             Owner = Application.Current.MainWindow
         };

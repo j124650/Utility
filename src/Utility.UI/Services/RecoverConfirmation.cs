@@ -39,6 +39,9 @@ public sealed record RecoverConfirmation
     /// <summary>How many pairs will be left alone.</summary>
     public required int NotRecovered { get; init; }
 
+    /// <summary>Where the library lives - the root the files are written to.</summary>
+    public required string LibraryRoot { get; init; }
+
     /// <summary>
     /// Whether the window warns that this will take a long time.
     /// </summary>
@@ -57,7 +60,7 @@ public sealed record RecoverConfirmation
     /// <summary>
     /// Reads the figures off the rows the table is showing.
     /// </summary>
-    public static RecoverConfirmation From(IReadOnlyList<FinderRow> rows)
+    public static RecoverConfirmation From(IReadOnlyList<FinderRow> rows, string libraryRoot)
     {
         var subject = rows.Where(r => r.Verdict.Id is 1 or 2 or 3).ToList();
 
@@ -91,6 +94,7 @@ public sealed record RecoverConfirmation
             Replaced = replaced,
             Folders = folders,
             NotRecovered = rows.Count - subject.Count,
+            LibraryRoot = libraryRoot,
         };
     }
 }

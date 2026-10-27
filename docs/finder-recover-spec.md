@@ -1007,6 +1007,39 @@ row needs it. It is specified because a child with no dimensions has no other ta
 **The quality follows the same split** (§4.2), so a child sized from the thumbnail
 settings is written at the thumbnail quality.
 
+### 10.9 The filtered set is re-read after the recovery
+
+**When the run finishes, the set the filters left is re-read.** The files are visited
+again, the verdict is decided from them again, and the row shows the verdict its files now
+deserve — not the one it had.
+
+**The re-read is the pass, narrowed to the filtered set.** The parent ids of the rows the
+filters left go into the pair query, so only those pairs are loaded, only those files are
+visited, and only those rows are rebuilt.
+
+**The steps:**
+
+1. The filtered set is the subject — the same set the repair was given.
+2. Its parent ids go into the pair query (`p.Id IN (...)`) **and** into the candidate
+   query, so both are narrowed by the same set.
+3. The pass runs as it does: the files are visited, the candidates are ranked, the verdict
+   is decided from the checks.
+4. The rows that come back are merged into the table by the parent's id, replacing the
+   ones the run left behind.
+
+**The filtered records are updated in place, and they stay in the table.** The re-read
+replaces each row's state and verdict with what the re-read found. **The filters are not
+applied again** — a row whose new verdict no longer matches the active verdict filter
+stays visible, showing the verdict its files now deserve.
+
+**The narrowed run does not publish to the scan state.** The scan state holds the whole
+library; publishing a narrowed set into it would make a later read of the state return only
+the filtered set. The rows it holds stay as they are.
+
+**The row's size check is the evidence that the bytes are new.** A regenerated child's
+length will not match the recorded size — that is what the check is for. The verdict is
+decided on the file's state, not on its size.
+
 ## 11. What is still open
 
 **Nothing.** Every question the spec raised has been answered, and the answers are in
