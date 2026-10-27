@@ -1,8 +1,8 @@
 # Finder — Recover Selected
 
 > **Preliminary.** This spec states what the **Recover Selected** button does and what it
-> writes. The behaviour around it — what it asks, what it reports, how it is stopped — is
-> §10, and is **not settled**. Nothing here has been built.
+> writes — the behaviour, the paths, the decisions, and the failure rules. Every question
+> it raised has been answered (§11). **Nothing here has been built.**
 
 ---
 
@@ -542,9 +542,9 @@ three states of `finder-spec.md` §6 are enough, and **no fourth state is needed
 **The log records what the recovery did.** It is a log of the run, not of the library:
 what was recovered, what was not, and why — for the reader's own post-analysis.
 
-**Where the log lives is settled separately** (§10.5): an `ml.MediaRecoverLog` table, or a
-text file. Both are considered; a text file is enough if the log is only ever read by
-the user.
+**The log is a text file beside the app's own log** (§10.5.1). It goes through a
+provider, so it can become an `ml.MediaRecoverLog` table later without the recovery
+changing (§10.5).
 
 ### 10.4 The busy screen
 
@@ -849,22 +849,13 @@ settings is written at the thumbnail quality.
 
 ## 11. What is still open
 
-**One thing.** The rest of the behaviour is settled.
+**Nothing.** Every question the spec raised has been answered, and the answers are in
+§1–§10.
 
-| | Question | What is left to decide |
-|---|---|---|
-| 1 | The **log's record fields** — as specified in §10.5.2 and §10.5.3 | whether that field list is complete enough for a post-mortem, and whether the format is fit for parsing |
-
-**Settled by the discussion, and no longer open:**
-
-- **The window's wording** — as proposed in §10.1.1, approved.
-- **The warning's threshold is 100 rows** — the reader's own figure (§10.1.2).
-- **The width is 1**, and the setting's default is 1 — `Server:RecoverWidth` (§10.6).
-- **The log is a text file beside the app's log**, named for the app run (§10.5.1).
-- **The window lists no rows** — counts and the breakdown only (§10.1.3).
-- **The log's records name every object involved** — the media row's ids, the index
-  row's id, Dropbox's own id, the paths, and the content hash (§10.5.2).
-- **The log is not opened in a window** — its path goes in the status line (§10.5.4).
+**The log's record fields** are as specified in §10.5.2 and §10.5.3, and are **good enough
+for now** — the log's shape is settled and its fields can be extended later if a
+post-mortem turns out to want more. The record is written by the provider, so adding a
+field is a change to the provider, not to the recovery.
 
 ## 12. Acceptance
 
@@ -894,5 +885,7 @@ settings is written at the thumbnail quality.
 | 22 | A second run skips the records already recovered | recover a set, run again, check the second run skips them | **not built** |
 | 23 | The log records what was done, per record | run a repair, read the log | **not built** |
 | 24 | The recoverer is sequential, and its width is configured | read the configuration, run with a width of 1 and of 2 | **not built** |
+| 25 | A child with no recorded dimensions is sized from the settings, by its category | size a child from `ml.Settings` and check the target | **not built** |
+| 26 | The confirmation window shows the download volume and the replaced-file count in red | open the window on a large set | **not built** |
 
 Nothing in this list has been checked. The spec is written; the button is not.
