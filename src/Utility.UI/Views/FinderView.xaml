@@ -151,11 +151,20 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+
+            <!--
+              The button is a square, so the arrow is not a thin sliver of a target:
+              30x30 is a comfortable click area, and the 28pt glyph is two and a half
+              times the size it was - at 11pt the triangle read as a speck, too small
+              to see at normal viewing distance.
+            -->
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4">
-                            <TextBlock x:Name="Arrow" Text="▾" FontSize="11" Foreground="#334155"
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6">
+                            <TextBlock x:Name="Arrow" Text="▾" FontSize="28" Foreground="#334155"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -309,7 +318,7 @@
 
                                         <ToggleButton Grid.Column="1" x:Name="HeaderSite"
                                                       Style="{StaticResource SectionToggle}"
-                                                      Margin="0,3,3,3" MinWidth="28"
+                                                      Margin="0,1,1,1"
                                                       IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
