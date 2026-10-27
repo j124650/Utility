@@ -113,8 +113,8 @@ keeps its own color space (`finder-spec.md` §9.2) — which is why the child re
 to RGB instead (§4).
 
 **The namespace is not optional.** A team file fetched without that scope resolves in the
-personal space and comes back as `path/not_found`. The namespace is read from the index, as
-the preview already does.
+personal space and comes back as `path/not_found`. The namespace is the candidate's own
+field (§5.2), so the repair takes it from there and looks nothing up.
 
 **The file is written to a temporary name and moved into place.** A download that is cut
 short leaves a truncated file at the parent's path, and a truncated file is *corrupted* — a
@@ -170,6 +170,11 @@ parent's, so the box's side is also simply `max(child.WidthInPixels, child.Heigh
 **A hand-computed width and height is not needed.** The square box with
 `IgnoreAspectRatio = false` produces the same result, and it is the importer's own shape.
 
+**The child's recorded dimensions come with the row.** The target is
+`max(child.WidthInPixels, child.HeightInPixels)` — the child's own recorded dimensions,
+and the repair reads them off the row (§4.1). They are the numbers the importer wrote,
+so they are the only surviving statement of what that child was.
+
 **A parent smaller than the target keeps its own size.** `Greater = true` on the
 geometry, so the fit is a shrink only: a parent whose longer side is already below the
 target is left alone rather than scaled up. A 800×600 parent against a 1500 target stays
@@ -203,26 +208,29 @@ ColorSpace.CMYK) image.ColorSpace = ColorSpace.RGB;`. A grayscale or Lab parent 
 in its own space. The child's row records no colour space, so the parent's own is what
 carries over.
 
-### 4.3 The format is the parent's
+### 4.3 The format is JPEG
 
 The child's on-disk name is its GUID with **no extension** (§5), so the format has to be
 given to Magick explicitly — `WriteAsync(path)` throws
 `MagickMissingDelegateErrorException: no encode delegate for this image format 'Unknown'`.
 
-**The format is the parent's recorded extension** — `ml.media.FileExtension` on the
-*parent's* row. The child's own row records no extension (all 363,856 of them are empty),
-so the child inherits the parent's format: `.jpg` for 340,626 parents, `.png` for 23,271.
+**The child is always written as JPEG.** Not the parent's extension, not PNG for a PNG
+parent — JPEG, every time, at quality **35**.
 
-| Parent's extension | Child written as |
+| | |
 |---|---|
-| `.jpg` | JPEG, quality **35** |
-| `.png` | PNG, lossless |
+| **Format** | JPEG |
+| **Quality** | 35, or the thumbnail quality for a thumbnail child (§4.2) |
 
-**Measured against the recorded child sizes**, regenerating in the parent's format at
-quality 35 reproduces `ml.media`'s recorded byte count within 0.66–1.11× on **20 of 20**
+**The child inherits nothing from the parent's extension.** The parent's own row records
+its extension, and 340,626 of them are `.jpg` — but the child is a JPEG whatever the
+parent was, so the repair reads no extension at all.
+
+**Measured against the recorded child sizes**, regenerating at quality 35 in the parent's
+format reproduces `ml.media`'s recorded byte count within 0.66–1.11× on **20 of 20**
 surviving parents — the remaining spread is the encoder, not the format. Writing the
 child as PNG regardless gave 6–15× the recorded size, and quality 90 gave 1.4–2.9×, so
-both the format and the quality are pinned by the evidence.
+the quality is pinned by the evidence.
 
 **The child's path** is the child's own `Id` as a GUID, in upper-case (§5.3), in the
 parent's folder — the naming rule in `finder-spec.md` §5. The child is named by the row
@@ -302,11 +310,11 @@ namespace up separately — it takes the one the candidate carries.
 folder rule and the `final` tiebreak. The repair re-uses the row's confirmed candidate
 (§3); it does not run that join again.
 
-**The candidate carries the fields the copy needs.** The row's candidate holds the
-name, the size, the path and the modification date — but not the index row's own id,
-Dropbox's id for the file, the namespace, or the content hash. The repair reads those
-from the index row it fetches, because it has to have that row to fetch the file at all
-(§10.5.2). So the record has them, and the repair makes no lookup of its own.
+**The candidate carries the fields the copy needs.** The candidate is a row of the Dropbox
+index, and the row carries that row's own fields — the namespace, the index row's `Id`,
+Dropbox's `DropboxId` for the file, and the `ContentHash`. The repair reads them from the
+candidate it was given and makes no lookup of its own: the query that found the candidate
+is the query that read them, and it already ran (§5.2).
 
 ### 5.3 The case of the file name
 
@@ -717,16 +725,16 @@ checked against the library; one that says what was *written* can.
 A log that only holds the successes cannot answer "what happened to the ones that did
 not work".
 
-**The row does not carry every field the record needs.** The row's candidate carries the
-path, the size and the modification date, but **not** the index row's `Id`, its
-`DropboxId`, its `NamespaceId` or its `ContentHash`. The repair reads those from
-`ml.DropBoxNode` when it fetches the file — it has to, to fetch it at all — so the
-record has them. The row is not extended to carry them: the log is the record of the
-workflow, and the workflow is where they live.
+**Every field the record needs is a field the candidate carries.** The candidate is a row
+of the Dropbox index, so it holds the path, the size, the modification date, the
+namespace, the index row's `Id`, Dropbox's `DropboxId` and the `ContentHash` — all of
+them, because they are all columns of the same row, and the query that found the
+candidate is the query that read them.
 
-**And the repair looks nothing up for itself.** It reads the row's candidate for the
-path and the size, and it reads the index row it fetched for the rest. Every field in
-the record is a field the workflow already had in its hands.
+**And the repair looks nothing up for itself.** It reads the row's candidate for the path,
+the size and the scope to fetch in, and the index row's own fields come with them. Every
+field in the record is a field the workflow already had in its hands.
+
 ### 10.5.3 The format, for post-mortem parsing
 
 **The log is a line-oriented text file, one record per line, and it is meant to be
@@ -938,5 +946,7 @@ field is a change to the provider, not to the recovery.
 | 26 | The confirmation window shows the download volume and the replaced-file count in red | open the window on a large set | **not built** |
 | 27 | Every file the repair writes is named in upper-case | recover a pair, list the folder | **not built** |
 | 28 | The repair makes no lookup of its own — the namespace comes with the candidate | recover a pair, check the namespace the fetch used | **not built** |
+| 29 | A child is written as JPEG, whatever the parent's extension is | regenerate a child of a PNG parent, read the file's format | **not built** |
+| 30 | The child's recorded dimensions come with the row, and are the resize target | regenerate a child, measure it against `ml.media`'s recorded size | **not built** |
 
 Nothing in this list has been checked. The spec is written; the button is not.
