@@ -21,7 +21,6 @@ namespace Utility.UI.ViewModels;
 /// </summary>
 public sealed class DropBoxViewModel(
     IDropBoxDataService dropBox,
-    IDropBoxRegistrySettings registry,
     ILogSink log) : ViewModelBase
 {
     private AsyncRelayCommand? _refresh;
@@ -58,14 +57,6 @@ public sealed class DropBoxViewModel(
     public AsyncRelayCommand SaveJsonCommand => _saveJson ??= new AsyncRelayCommand(SaveJsonAsync);
 
     public AsyncRelayCommand DownloadCommand => _download ??= new AsyncRelayCommand(DownloadAsync);
-
-    /// <summary>Where the active credentials came from, shown on the page.</summary>
-    public string SettingsSource => registry.IsConfigured
-        ? $"credentials: registry {registry.RegistryKeyPath}"
-        : "credentials: configuration file (no registry key)";
-
-    /// <summary>True when the registry supplied the credentials.</summary>
-    public bool IsUsingRegistry => registry.IsConfigured;
 
     public DropBoxNamespace? SelectedNamespace
     {

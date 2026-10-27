@@ -36,10 +36,6 @@
                               DisplayMemberPath="DisplayLabel"
                               MinWidth="260" Margin="0,0,8,0" Padding="6,4"
                               ToolTip="Personal space, or a team root. Team folders are not visible in Personal." />
-
-                    <TextBlock Grid.Column="2" Text="{Binding SettingsSource}"
-                               FontSize="11" Foreground="#6B7280" VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" MaxWidth="320" />
                 </Grid>
 
                 <!-- Path bar -->

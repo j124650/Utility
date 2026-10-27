@@ -109,7 +109,7 @@ public sealed class FileLog : IDisposable
 /// The pipeline carries everything worth keeping: the sync service's start, its
 /// summary and its failure with the full exception chain, and Entity Framework's
 /// own diagnostics - including the command that timed out and the SQL that caused
-/// it. The level rules in appsettings.json apply here exactly as they do to the
+/// it. The level rules set in App.xaml.cs apply here exactly as they do to the
 /// other providers.
 /// </para>
 /// </summary>

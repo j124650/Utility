@@ -7,60 +7,76 @@
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=vm:SettingsViewModel}">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel>
+    <!--
+      Two rows: the cards scroll, and the actions and the status are PINNED to the
+      bottom of the page. The status lives OUTSIDE the scroll viewer on purpose - inside
+      it, the result of a click lands below the fold and the button looks dead.
+    -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel>
-                    <TextBlock Text="SQL Server" Style="{StaticResource HeaderText}" />
-                    <TextBlock Text="Overrides are written to your user profile; the shipped appsettings.json is left alone. The app only reads — nothing is migrated."
-                               Style="{StaticResource SubHeaderText}" />
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
 
-                    <TextBlock Text="Connection string" Style="{StaticResource FieldLabel}" />
-                    <TextBox Text="{Binding ConnectionString}" FontFamily="Consolas" />
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel>
+                        <TextBlock Text="SQL Server" Style="{StaticResource HeaderText}" />
 
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="Save" Command="{Binding SaveCommand}" />
-                        <Button Content="Test connection" Command="{Binding TestDatabaseCommand}" />
-                        <Button Content="Reload" Command="{Binding ReloadCommand}" />
+                        <TextBlock Text="Connection string" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding ConnectionString}" FontFamily="Consolas" />
+
+                        <!--
+                          The connection test is this card's own action - it tests the
+                          connection string - so it stays with it.
+                        -->
+                        <Button Content="Test connection" Command="{Binding TestDatabaseCommand}"
+                                HorizontalAlignment="Left" />
                     </StackPanel>
+                </Border>
 
-                    <!--
-                      Status sits directly under the buttons, not at the bottom of the
-                      scroll viewer: down there it renders off-screen and the click looks dead.
-                    -->
-                    <ProgressBar IsIndeterminate="True" Height="2" Margin="0,10,0,6"
-                                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Dropbox" Style="{StaticResource HeaderText}" />
+                        <TextBlock Text="Create an app at https://www.dropbox.com/developers/apps, then paste its App Key and a refresh token."
+                                   Style="{StaticResource SubHeaderText}" />
 
-                    <TextBlock Text="{Binding StatusMessage}"
-                               FontSize="12" Foreground="#374151" TextWrapping="Wrap"
-                               Visibility="{Binding StatusMessage, Converter={StaticResource StringToVis}}" />
-                </StackPanel>
-            </Border>
+                        <TextBlock Text="App key" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding DropBoxAppKey}" FontFamily="Consolas" />
 
-            <Border Style="{StaticResource CardStyle}">
-                <StackPanel>
-                    <TextBlock Text="Dropbox" Style="{StaticResource HeaderText}" />
-                    <TextBlock Text="Create an app at https://www.dropbox.com/developers/apps, then paste its App Key and a token."
-                               Style="{StaticResource SubHeaderText}" />
+                        <TextBlock Text="App secret (optional — PKCE apps have none)" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding DropBoxAppSecret}" FontFamily="Consolas" />
 
-                    <TextBlock Text="App key" Style="{StaticResource FieldLabel}" />
-                    <TextBox Text="{Binding DropBoxAppKey}" FontFamily="Consolas" />
+                        <TextBlock Text="Refresh token" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding DropBoxRefreshToken}" FontFamily="Consolas" />
 
-                    <TextBlock Text="Refresh token (recommended)" Style="{StaticResource FieldLabel}" />
-                    <TextBox Text="{Binding DropBoxRefreshToken}" FontFamily="Consolas" />
+                        <TextBlock Text="Retry budget (0-10)" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding DropBoxMaxRetries}" FontFamily="Consolas" />
+                    </StackPanel>
+                </Border>
 
-                    <TextBlock Text="Access token (short-lived, optional)" Style="{StaticResource FieldLabel}" />
-                    <TextBox Text="{Binding DropBoxAccessToken}" FontFamily="Consolas" />
+            </StackPanel>
+        </ScrollViewer>
 
-                    <TextBlock Text="Root path (optional, e.g. /Apps/Utility)" Style="{StaticResource FieldLabel}" />
-                    <TextBox Text="{Binding DropBoxRootPath}" FontFamily="Consolas" />
-                </StackPanel>
-            </Border>
+        <!--
+          The PAGE's actions and its status, pinned below the cards. One save writes the
+          SQL settings AND the Dropbox ones, so it sits where it plainly covers the whole
+          page rather than inside one card where it would read as that card's action.
+        -->
+        <StackPanel Grid.Row="1" Margin="0,12,0,0">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Save all" Command="{Binding SaveCommand}" />
+                <Button Content="Reload" Command="{Binding ReloadCommand}" />
+            </StackPanel>
 
-            <TextBlock Text="{Binding SettingsFilePath}" FontFamily="Consolas" FontSize="11"
-                       Foreground="#6B7280" Margin="0,4,0,12" />
+            <ProgressBar IsIndeterminate="True" Height="2" Margin="0,12,0,6"
+                         Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
 
+            <TextBlock Text="{Binding StatusMessage}"
+                       FontSize="12" Foreground="#374151" TextWrapping="Wrap"
+                       Visibility="{Binding StatusMessage, Converter={StaticResource StringToVis}}" />
         </StackPanel>
-    </ScrollViewer>
+    </Grid>
 </UserControl>

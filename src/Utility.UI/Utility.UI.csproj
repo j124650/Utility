@@ -30,10 +30,10 @@
     <ProjectReference Include="..\Utility.DropBox\Utility.DropBox.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
+  <!--
+    There is no appsettings.json any more: the SQL and Dropbox settings live in the
+    Windows registry (HKCU\Software\BbcUtility\Sql and ...\DropBox), and the registry is
+    the source of truth. The logging levels are set in App.xaml.cs.
+  -->
 
 </Project>

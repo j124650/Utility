@@ -26,6 +26,12 @@ public interface IDropBoxRegistrySettings
     /// configuration-file values rather than being blanked by a missing key.
     /// </summary>
     bool TryApplyTo(DropBoxOptions options);
+
+    /// <summary>
+    /// Writes the current settings back to the registry, so the Settings page and the
+    /// registry never disagree about which values are in force.
+    /// </summary>
+    void Save(DropBoxOptions options);
 }
 
 public sealed class DropBoxRegistrySettings : IDropBoxRegistrySettings
@@ -35,6 +41,8 @@ public sealed class DropBoxRegistrySettings : IDropBoxRegistrySettings
     public const string AppKeyValueName = "AppKey";
     public const string AppSecretValueName = "AppSecret";
     public const string TokenValueName = "Token";
+    public const string RootPathValueName = "RootPath";
+    public const string MaxRetriesValueName = "MaxRetriesOnError";
 
     public string RegistryKeyPath => $@"HKEY_CURRENT_USER\{SubKeyPath}";
 
@@ -97,11 +105,24 @@ public sealed class DropBoxRegistrySettings : IDropBoxRegistrySettings
             options.RefreshToken = token;
 
             // The secret is optional (PKCE apps have none) so only overwrite when present,
-            // which keeps an appsettings.json secret usable.
+            // which keeps a secret set elsewhere usable.
             var secret = ReadString(key, AppSecretValueName);
             if (!string.IsNullOrWhiteSpace(secret))
             {
                 options.AppSecret = secret;
+            }
+
+            // The root path and the retry budget are optional too: a registry that carries
+            // only the credentials leaves the options' own defaults in force.
+            var rootPath = ReadString(key, RootPathValueName);
+            if (!string.IsNullOrWhiteSpace(rootPath))
+            {
+                options.RootPath = rootPath;
+            }
+
+            if (TryReadInt(key, MaxRetriesValueName, out var maxRetries))
+            {
+                options.MaxRetriesOnError = maxRetries;
             }
 
             return true;
@@ -136,6 +157,9 @@ public sealed class DropBoxRegistrySettings : IDropBoxRegistrySettings
         {
             key.SetValue(AppSecretValueName, options.AppSecret!, RegistryValueKind.String);
         }
+
+        key.SetValue(RootPathValueName, options.RootPath ?? string.Empty, RegistryValueKind.String);
+        key.SetValue(MaxRetriesValueName, options.MaxRetriesOnError, RegistryValueKind.DWord);
     }
 
     private static string? ReadString(RegistryKey key, string name)
@@ -147,5 +171,28 @@ public sealed class DropBoxRegistrySettings : IDropBoxRegistrySettings
 
         var value = key.GetValue(name);
         return value as string;
+    }
+
+    /// <summary>
+    /// Reads an integer, accepting the string form as well as the numeric one — a value
+    /// typed into the registry by hand is a string until it is saved by the app.
+    /// </summary>
+    private static bool TryReadInt(RegistryKey key, string name, out int value)
+    {
+        value = 0;
+
+        var raw = key.GetValue(name);
+        if (raw is null)
+        {
+            return false;
+        }
+
+        if (raw is int number)
+        {
+            value = number;
+            return true;
+        }
+
+        return int.TryParse(raw.ToString(), out value);
     }
 }

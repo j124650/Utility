@@ -8,11 +8,24 @@ using Utility.UI.Services;
 namespace Utility.UI.ViewModels;
 
 /// <summary>
-/// Edits the configuration both libraries consume. Values are written to a per-user
-/// override file; the shipped appsettings.json is left untouched.
+/// Edits the configuration both libraries consume.
 /// </summary>
+/// <remarks>
+/// <para>
+/// The values live in the Windows registry, not in a file: the SQL settings at
+/// <c>HKCU\Software\BbcUtility\Sql</c> and the Dropbox ones at
+/// <c>HKCU\Software\BbcUtility\DropBox</c>. The registry is the source of truth, and the
+/// Settings page writes to it — so what the page shows is what the app will use.
+/// </para>
+/// <para>
+/// A value that is not in the registry keeps its default: the timeouts and the retry flag
+/// on <see cref="ServerOptions"/>, the root path and the retry budget on
+/// <see cref="DropBoxOptions"/>.
+/// </para>
+/// </remarks>
 public sealed class SettingsViewModel(
-    ISettingsService settings,
+    ISqlRegistrySettings sql,
+    IDropBoxRegistrySettings dropBox,
     IDatabaseProbe databaseProbe,
     ILogSink log) : ViewModelBase
 {
@@ -22,9 +35,9 @@ public sealed class SettingsViewModel(
 
     private string _connectionString = string.Empty;
     private string _dropBoxAppKey = string.Empty;
+    private string _dropBoxAppSecret = string.Empty;
     private string _dropBoxRefreshToken = string.Empty;
-    private string _dropBoxAccessToken = string.Empty;
-    private string _dropBoxRootPath = string.Empty;
+    private int _dropBoxMaxRetries = 3;
 
     public AsyncRelayCommand SaveCommand => _save ??= new AsyncRelayCommand(SaveAsync);
 
@@ -44,34 +57,40 @@ public sealed class SettingsViewModel(
         set => SetProperty(ref _dropBoxAppKey, value);
     }
 
+    public string DropBoxAppSecret
+    {
+        get => _dropBoxAppSecret;
+        set => SetProperty(ref _dropBoxAppSecret, value);
+    }
+
     public string DropBoxRefreshToken
     {
         get => _dropBoxRefreshToken;
         set => SetProperty(ref _dropBoxRefreshToken, value);
     }
 
-    public string DropBoxAccessToken
+    /// <summary>The SDK's retry budget for server errors — 0 to 10.</summary>
+    public int DropBoxMaxRetries
     {
-        get => _dropBoxAccessToken;
-        set => SetProperty(ref _dropBoxAccessToken, value);
+        get => _dropBoxMaxRetries;
+        set => SetProperty(ref _dropBoxMaxRetries, value);
     }
-
-    public string DropBoxRootPath
-    {
-        get => _dropBoxRootPath;
-        set => SetProperty(ref _dropBoxRootPath, value);
-    }
-
-    public string SettingsFilePath => settings.UserSettingsPath;
 
     public Task LoadAsync()
     {
-        ConnectionString = settings.GetValue($"{ServerOptions.SectionName}:ConnectionString");
+        // The registry is read through the same readers the app uses at startup, so the
+        // page shows the values that are actually in force.
+        var server = new ServerOptions();
+        sql.TryApplyTo(server);
 
-        DropBoxAppKey = settings.GetValue($"{DropBoxOptions.SectionName}:AppKey");
-        DropBoxRefreshToken = settings.GetValue($"{DropBoxOptions.SectionName}:RefreshToken");
-        DropBoxAccessToken = settings.GetValue($"{DropBoxOptions.SectionName}:AccessToken");
-        DropBoxRootPath = settings.GetValue($"{DropBoxOptions.SectionName}:RootPath");
+        var dropbox = new DropBoxOptions();
+        dropBox.TryApplyTo(dropbox);
+
+        ConnectionString = server.ConnectionString;
+        DropBoxAppKey = dropbox.AppKey;
+        DropBoxAppSecret = dropbox.AppSecret ?? string.Empty;
+        DropBoxRefreshToken = dropbox.RefreshToken ?? string.Empty;
+        DropBoxMaxRetries = dropbox.MaxRetriesOnError;
 
         SetStatus("Loaded current settings.");
         return Task.CompletedTask;
@@ -82,15 +101,27 @@ public sealed class SettingsViewModel(
         IsBusy = true;
         try
         {
-            settings.SetValue($"{ServerOptions.SectionName}:ConnectionString", ConnectionString);
+            // The registry is read FIRST, so the values the page does not show — the
+            // timeouts, the retry flag, the app secret — keep the values they have
+            // instead of being written back as defaults.
+            var server = new ServerOptions();
+            sql.TryApplyTo(server);
+            server.ConnectionString = ConnectionString;
 
-            settings.SetValue($"{DropBoxOptions.SectionName}:AppKey", DropBoxAppKey);
-            settings.SetValue($"{DropBoxOptions.SectionName}:RefreshToken", DropBoxRefreshToken);
-            settings.SetValue($"{DropBoxOptions.SectionName}:AccessToken", DropBoxAccessToken);
-            settings.SetValue($"{DropBoxOptions.SectionName}:RootPath", DropBoxRootPath);
+            sql.Save(server);
 
-            SetStatus($"Saved to {settings.UserSettingsPath}. Restart the app to apply.");
-            log.Info("Settings saved to user overrides.");
+            var dropbox = new DropBoxOptions();
+            dropBox.TryApplyTo(dropbox);
+
+            dropbox.AppKey = DropBoxAppKey;
+            dropbox.AppSecret = DropBoxAppSecret;
+            dropbox.RefreshToken = DropBoxRefreshToken;
+            dropbox.MaxRetriesOnError = DropBoxMaxRetries;
+
+            dropBox.Save(dropbox);
+
+            SetStatus("Settings saved. Restart the app to apply.");
+            log.Info("Settings saved to the registry.");
         }
         catch (Exception ex)
         {

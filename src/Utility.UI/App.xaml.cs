@@ -94,12 +94,20 @@ private static async Task WarmUpAsync(IServiceProvider services)
         // channels (the logging pipeline and the sink) land in one file in order.
         builder.Services.AddSingleton(fileLog);
 
-        // appsettings.json next to the exe, then machine/user overrides.
+        // The SQL and Dropbox settings live in the Windows registry and are read by the
+        // two libraries' own options setup - the registry is the source of truth, and
+        // there is no settings file to shadow it. The per-machine JSON and the user
+        // secrets are still here for the values the registry does not carry.
         builder.Configuration
-            .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
             .AddJsonFile($"appsettings.{Environment.MachineName}.json", optional: true, reloadOnChange: true)
             .AddEnvironmentVariables("UTILITY_")
             .AddUserSecrets<App>(optional: true);
+
+        // The logging levels that used to sit in appsettings.json. The file is gone, so
+        // they are set here: EF's command logging is noisy and is not worth keeping, and
+        // everything else is Information.
+        builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+        builder.Logging.SetMinimumLevel(LogLevel.Information);
 
         // Register the two libraries against the shared configuration.
         builder.Services.AddUtilityServer(builder.Configuration);
@@ -107,7 +115,6 @@ private static async Task WarmUpAsync(IServiceProvider services)
 
         // UI services.
         builder.Services.AddSingleton<INavigationService, NavigationService>();
-        builder.Services.AddSingleton<ISettingsService, SettingsService>();
         builder.Services.AddSingleton<ILogSink, LogSink>();
         builder.Services.AddSingleton<IAppStatus, AppStatus>();
         builder.Services.AddSingleton<IDropBoxTreeState, DropBoxTreeState>();

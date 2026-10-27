@@ -2,6 +2,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Utility.Server.DropBoxSync;
 using Utility.Server.Finder.Repair;
@@ -26,10 +27,20 @@ public static class ServerServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        // The SQL settings live in the registry (HKCU\Software\BbcUtility\Sql), not in a
+        // configuration file. The registry REPLACES the file as the source: a value that is
+        // not in the registry keeps the default on ServerOptions.
+        var registry = new SqlRegistrySettings();
+        services.TryAddSingleton<ISqlRegistrySettings>(registry);
+
         services.AddOptions<ServerOptions>()
-            .Bind(configuration.GetSection(ServerOptions.SectionName))
+            .Configure(o =>
+            {
+                registry.TryApplyTo(o);
+            })
             .Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString),
-                      "Server:ConnectionString must be configured.")
+                      "Server:ConnectionString must be configured - set it in the registry at " +
+                      $"{registry.RegistryKeyPath}.")
             .Validate(o => o.CommandTimeoutSeconds > 0,
                       "Server:CommandTimeoutSeconds must be positive.")
             .Validate(o => o.ConnectTimeoutSeconds > 0,
@@ -95,7 +106,7 @@ public static class ServerServiceCollectionExtensions
     /// <para>
     /// Binds <see cref="ServerOptions"/> itself rather than assuming
     /// <see cref="AddUtilityServer"/> ran first. Depending on another registration to
-    /// supply your options is a silent failure: without the bind, ConnectionString stays
+    /// supply your options is a silent failure: without the values, ConnectionString stays
     /// empty and the first query fails with "The ConnectionString property has not been
     /// initialized", which points nowhere near the real cause.
     /// </para>
@@ -108,8 +119,14 @@ public static class ServerServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        // The Server options are read from the registry here too, so this registration
+        // stands on its own. The values are the same ones AddUtilityServer applied, so
+        // applying them twice changes nothing.
         services.AddOptions<ServerOptions>()
-            .Bind(configuration.GetSection(ServerOptions.SectionName));
+            .Configure(o =>
+            {
+                new SqlRegistrySettings().TryApplyTo(o);
+            });
 
         services.AddDbContextFactory<DropBoxDbContext>((sp, db) =>
         {
@@ -172,17 +189,24 @@ public static class ServerServiceCollectionExtensions
     /// <summary>
     /// Connection-string overload for hosts that do not use Microsoft.Extensions.Configuration.
     /// </summary>
+    /// <remarks>
+    /// The registry is the source of truth, so the string given here is the FALLBACK: a
+    /// host with no registry key still starts, and a host with one uses the registry's
+    /// value instead.
+    /// </remarks>
     public static IServiceCollection AddUtilityServer(
         this IServiceCollection services,
         string connectionString)
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
+        services.AddOptions<ServerOptions>()
+            .Configure(o =>
             {
-                [$"{ServerOptions.SectionName}:ConnectionString"] = connectionString
-            })
-            .Build();
+                if (string.IsNullOrWhiteSpace(o.ConnectionString))
+                {
+                    o.ConnectionString = connectionString;
+                }
+            });
 
-        return services.AddUtilityServer(configuration);
+        return services.AddUtilityServer(new ConfigurationBuilder().Build());
     }
 }
