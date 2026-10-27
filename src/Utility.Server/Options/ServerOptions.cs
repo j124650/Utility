@@ -35,4 +35,19 @@ public sealed class ServerOptions
 
     /// <summary>Retry transient SQL faults (failover, network blips).</summary>
     public bool EnableRetryOnFailure { get; set; } = true;
+
+    /// <summary>
+    /// How many records the repairer recovers at the same time.
+    /// <para>
+    /// 1 - the sequential recoverer, which is what runs now. The repair is
+    /// bandwidth-bound rather than request-rate-bound, so the sync walk's width was no
+    /// guide to it, and the width that turns a whole-library run into a sensible duration
+    /// has not been measured. Raising this is a configuration change, not a code change.
+    /// </para>
+    /// <para>
+    /// The width does not change WHAT is written - two records recovered at once are two
+    /// records recovered - only how long it takes.
+    /// </para>
+    /// </summary>
+    public int RecoverWidth { get; set; } = 1;
 }

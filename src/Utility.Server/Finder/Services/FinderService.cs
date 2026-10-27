@@ -129,13 +129,13 @@ public sealed class FinderService(
             var state = states[i];
 
             var candidates = FinderRanking.Rank(
-                pair.NameMatchedCandidates.Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified)).ToList(),
+                pair.NameMatchedCandidates.Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified, c.NamespaceId, c.NodeId, c.DropboxId, c.ContentHash)).ToList(),
                 pair.ParentFileName,
                 pair.ParentSize,
                 pair.ParentFolder);
 
             var selectionSet = FinderRanking.SelectionSet(
-                pair.NameMatchedCandidates.Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified)).ToList(),
+                pair.NameMatchedCandidates.Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified, c.NamespaceId, c.NodeId, c.DropboxId, c.ContentHash)).ToList(),
                 pair.ParentFileName);
 
             var exact = selectionSet
@@ -165,6 +165,8 @@ public sealed class FinderService(
                 ParentDateAdded = pair.ParentDateAdded,
                 Parent = state.Parent,
                 Child = state.Child,
+                ChildWidth = pair.ChildWidth,
+                ChildHeight = pair.ChildHeight,
                 Verdict = verdict,
                 VerdictNote = FinderVerdictRules.Note(
                     verdict, checkOriginalConfirmed, state.Parent.Fault, state.Child.Fault, tiebreakApplied),
@@ -223,7 +225,7 @@ public sealed class FinderService(
 
         return FinderRanking.Rank(
             seed.NameMatchedCandidates
-                .Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified))
+                .Select(c => new CandidateSeed(c.Name, c.Size, c.Width, c.Height, c.Path, c.Modified, c.NamespaceId, c.NodeId, c.DropboxId, c.ContentHash))
                 .ToList(),
             parentFileName,
             parentSize,
@@ -342,7 +344,8 @@ public sealed class FinderService(
         await using var connection = await OpenConnectionAsync(ct);
 
         const string sql = """
-            SELECT d.Name, d.SizeBytes, d.WidthPixels, d.HeightPixels, d.PathDisplay, d.ServerModified, p.Id
+            SELECT d.Name, d.SizeBytes, d.WidthPixels, d.HeightPixels, d.PathDisplay, d.ServerModified,
+                   d.Id, d.NamespaceId, d.DropboxId, d.ContentHash, p.Id
             FROM ml.DropBoxNode d
             JOIN ml.media p ON p.FileName = d.Name
             WHERE d.IsFolder = 0
@@ -359,7 +362,7 @@ public sealed class FinderService(
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
-            var parentId = reader.GetGuid(6);
+            var parentId = reader.GetGuid(10);
             if (!byParent.TryGetValue(parentId, out var pair))
             {
                 continue;
@@ -381,7 +384,11 @@ public sealed class FinderService(
                 Width = reader.IsDBNull(2) ? null : reader.GetInt32(2),
                 Height = reader.IsDBNull(3) ? null : reader.GetInt32(3),
                 Path = reader.GetString(4),
-                Modified = reader.IsDBNull(5) ? null : reader.GetDateTimeOffset(5)
+                Modified = reader.IsDBNull(5) ? null : reader.GetDateTimeOffset(5),
+                NodeId = reader.GetInt64(6),
+                NamespaceId = reader.GetString(7),
+                DropboxId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                ContentHash = reader.IsDBNull(9) ? null : reader.GetString(9)
             });
         }
     }
@@ -398,7 +405,8 @@ public sealed class FinderService(
         await using var connection = await OpenConnectionAsync(ct);
 
         const string sql = """
-            SELECT Name, SizeBytes, WidthPixels, HeightPixels, PathDisplay, ServerModified
+            SELECT Name, SizeBytes, WidthPixels, HeightPixels, PathDisplay, ServerModified,
+                   Id, NamespaceId, DropboxId, ContentHash
             FROM ml.DropBoxNode
             WHERE IsFolder = 0
               AND Name = @name
@@ -418,7 +426,11 @@ public sealed class FinderService(
                 Width = reader.IsDBNull(2) ? null : reader.GetInt32(2),
                 Height = reader.IsDBNull(3) ? null : reader.GetInt32(3),
                 Path = reader.GetString(4),
-                Modified = reader.IsDBNull(5) ? null : reader.GetDateTimeOffset(5)
+                Modified = reader.IsDBNull(5) ? null : reader.GetDateTimeOffset(5),
+                NodeId = reader.GetInt64(6),
+                NamespaceId = reader.GetString(7),
+                DropboxId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                ContentHash = reader.IsDBNull(9) ? null : reader.GetString(9)
             });
         }
     }
@@ -536,7 +548,8 @@ public sealed class FinderService(
         // The join is loose. §10's fuzzy rules, applied in memory below, decide what is
         // actually similar.
         const string joinSql = """
-            SELECT w.ParentId, d.Name, d.SizeBytes, d.WidthPixels, d.HeightPixels, d.PathDisplay, d.ServerModified
+            SELECT w.ParentId, d.Name, d.SizeBytes, d.WidthPixels, d.HeightPixels, d.PathDisplay, d.ServerModified,
+                   d.Id, d.NamespaceId, d.DropboxId, d.ContentHash
             FROM #wanted w
             JOIN ml.DropBoxNode d
               ON d.IsFolder = 0
@@ -569,7 +582,11 @@ public sealed class FinderService(
                     Width = reader.IsDBNull(3) ? null : reader.GetInt32(3),
                     Height = reader.IsDBNull(4) ? null : reader.GetInt32(4),
                     Path = reader.GetString(5),
-                    Modified = reader.IsDBNull(6) ? null : reader.GetDateTimeOffset(6)
+                    Modified = reader.IsDBNull(6) ? null : reader.GetDateTimeOffset(6),
+                    NodeId = reader.GetInt64(7),
+                    NamespaceId = reader.GetString(8),
+                    DropboxId = reader.IsDBNull(9) ? null : reader.GetString(9),
+                    ContentHash = reader.IsDBNull(10) ? null : reader.GetString(10)
                 });
 
                 if (batch.Count >= 25_000)
@@ -647,7 +664,11 @@ public sealed class FinderService(
                 Width = row.Width,
                 Height = row.Height,
                 Path = row.Path,
-                Modified = row.Modified
+                Modified = row.Modified,
+                NodeId = row.NodeId,
+                NamespaceId = row.NamespaceId,
+                DropboxId = row.DropboxId,
+                ContentHash = row.ContentHash
             });
         }
     }
@@ -664,6 +685,10 @@ public sealed class FinderService(
         public int? Height { get; init; }
         public required string Path { get; init; }
         public DateTimeOffset? Modified { get; init; }
+        public long NodeId { get; init; }
+        public string NamespaceId { get; init; } = string.Empty;
+        public string? DropboxId { get; init; }
+        public string? ContentHash { get; init; }
     }
 
     /// <summary>
@@ -798,5 +823,17 @@ public sealed class FinderService(
         public required string Path { get; init; }
 
         public DateTimeOffset? Modified { get; init; }
+
+        /// <summary>The namespace the file is indexed under.</summary>
+        public string NamespaceId { get; init; } = string.Empty;
+
+        /// <summary>The index row's own id.</summary>
+        public long NodeId { get; init; }
+
+        /// <summary>Dropbox's own object id for the file.</summary>
+        public string? DropboxId { get; init; }
+
+        /// <summary>Dropbox's own hash of the file's bytes.</summary>
+        public string? ContentHash { get; init; }
     }
 }

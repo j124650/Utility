@@ -29,6 +29,27 @@ public sealed record FinderCandidate
     /// <summary>When Dropbox last changed the file (<c>ServerModified</c>).</summary>
     public required DateTimeOffset? Modified { get; init; }
 
+    /// <summary>The namespace the file is indexed under (<c>ml.DropBoxNode.NamespaceId</c>).</summary>
+    /// <remarks>
+    /// A team file fetched without that scope resolves in the personal space and comes back
+    /// <c>path/not_found</c>. The repair fetches in this namespace, and it takes it from
+    /// here rather than looking it up.
+    /// </remarks>
+    public string NamespaceId { get; init; } = string.Empty;
+
+    /// <summary>The index row's own id (<c>ml.DropBoxNode.Id</c>).</summary>
+    public long NodeId { get; init; }
+
+    /// <summary>Dropbox's own object id for the file (<c>ml.DropBoxNode.DropboxId</c>).</summary>
+    public string? DropboxId { get; init; }
+
+    /// <summary>Dropbox's own hash of the file's bytes (<c>ml.DropBoxNode.ContentHash</c>).</summary>
+    /// <remarks>
+    /// The one value that says the file in Dropbox and the file in the library are the
+    /// same file, rather than merely the same length.
+    /// </remarks>
+    public string? ContentHash { get; init; }
+
     /// <summary>The size in bytes, as the reader sees it.</summary>
     public string SizeDisplay => Size.HasValue ? Size.Value.ToString("N0") : string.Empty;
 
@@ -85,6 +106,18 @@ public sealed record FinderRow
     public required FinderFileState Parent { get; init; }
 
     public required FinderFileState Child { get; init; }
+
+    // ---- the child's recorded dimensions, as numbers ----
+    //
+    // The child's dimensions are the resize target when the child is regenerated (§4), and
+    // they are the numbers the importer wrote — the only surviving statement of what that
+    // child was. The state carries them as text for display; these are the values.
+
+    /// <summary>The child's recorded width (<c>ml.media.WidthInPixels</c>).</summary>
+    public int? ChildWidth { get; init; }
+
+    /// <summary>The child's recorded height (<c>ml.media.HeightInPixels</c>).</summary>
+    public int? ChildHeight { get; init; }
 
     // ---- the verdict and the checks behind it ----
 

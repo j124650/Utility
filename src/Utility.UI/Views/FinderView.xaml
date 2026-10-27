@@ -403,6 +403,28 @@
                                     <TextBlock Text="Liem's List" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
+
+                            <!--
+                              Recover Selected. It acts on the FILTERED SET - the rows
+                              the table is showing - and it asks before it writes anything
+                              (§10.1). It is offered only when the filtered set holds
+                              something that can be recovered, so the reader is never
+                              offered an action that would do nothing.
+                            -->
+                            <Button Command="{Binding RecoverSelectedCommand}"
+                                    MinWidth="0"
+                                    Padding="10,5"
+                                    ToolTip="Recover the pairs the filters currently show.">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE896;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="13"
+                                               Foreground="#334155"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,6,0" />
+                                    <TextBlock Text="Recover Selected" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </ToolBar>
                     </ToolBarTray>
                 </DockPanel>

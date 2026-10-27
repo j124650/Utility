@@ -34,3 +34,6 @@ desktop.ini
 ## Scratch / logs
 *.log
 scratch/
+# The repair-checks harness builds here.
+tools/repair-checks/bin/
+tools/repair-checks/obj/

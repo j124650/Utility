@@ -5,12 +5,15 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Utility.Server.Finder;
+using Utility.Server.Finder.Repair;
 using Utility.Server.Finder.Services;
 using Utility.UI.Mvvm;
 using Utility.UI.Services;
+using Utility.UI.Views;
 
 namespace Utility.UI.ViewModels;
 
@@ -23,14 +26,17 @@ public sealed class FinderViewModel(
     IFinderScanState scanState,
     IDropBoxPreviewClient preview,
     ILiemListReportPresenter reports,
+    IFinderRepairService repair,
     ILogSink log) : ViewModelBase
 {
     private AsyncRelayCommand? _run;
     private AsyncRelayCommand? _previewCommand;
     private AsyncRelayCommand? _showLiemList;
+    private AsyncRelayCommand? _recoverSelected;
     private RelayCommand? _cancelPass;
 
     private CancellationTokenSource? _passCts;
+    private CancellationTokenSource? _repairCts;
     private bool _hasRunPass;
 
     private string _passStage = string.Empty;
@@ -189,6 +195,147 @@ public sealed class FinderViewModel(
 
     /// <summary>Stops the running pass (§18.8).</summary>
     public RelayCommand CancelPassCommand => _cancelPass ??= new RelayCommand(_ => CancelPass());
+
+    /// <summary>
+    /// Recovers the pairs the filters currently show (§1).
+    /// </summary>
+    /// <remarks>
+    /// The unit of work is the FILTERED SET - the rows the table is showing - not the row
+    /// highlighted in it. Among those rows, only the ones whose verdict is 1, 2 or 3 take
+    /// part; the rest are reported as not recovered.
+    /// </remarks>
+    public AsyncRelayCommand RecoverSelectedCommand =>
+        _recoverSelected ??= new AsyncRelayCommand(RecoverSelectedAsync, () => CanRecoverSelected);
+
+    /// <summary>
+    /// Whether the button is offered: the filtered set holds at least one row that can be
+    /// recovered, and nothing is running.
+    /// </summary>
+    public bool CanRecoverSelected =>
+        !IsBusy && Rows.Any(r => r.Verdict.Id is 1 or 2 or 3);
+
+    /// <summary>Whether a repair is running.</summary>
+    public bool IsRecovering => _repairCts is not null;
+
+    /// <summary>
+    /// Asks the reader first, and then recovers what they confirmed.
+    /// </summary>
+    private async Task RecoverSelectedAsync()
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        // The window reads the same rows the repair will act on, so what it says is exactly
+        // what the table shows and exactly what the repair will do.
+        var subject = Rows.ToList();
+        var confirmation = RecoverConfirmation.From(subject);
+
+        if (confirmation.Recoverable == 0)
+        {
+            SetStatus("Nothing to recover in the rows shown.");
+            return;
+        }
+
+        // The root is resolved before the window opens, so the window can name the folder
+        // the files are written to.
+        string libraryRoot;
+        try
+        {
+            libraryRoot = await repair.GetLibraryRootAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message);
+            log.Error($"The library root could not be resolved: {ex}");
+            return;
+        }
+
+        var window = new RecoverConfirmWindow(confirmation, libraryRoot)
+        {
+            Owner = Application.Current.MainWindow
+        };
+
+        window.ShowDialog();
+
+        if (!window.Confirmed)
+        {
+            SetStatus("Recovery cancelled.");
+            return;
+        }
+
+        await RunRepairAsync(subject);
+    }
+
+    /// <summary>
+    /// Runs the recovery over the confirmed set, and reports what it did.
+    /// </summary>
+    private async Task RunRepairAsync(IReadOnlyList<FinderRow> subject)
+    {
+        IsBusy = true;
+        PassStage = "Recovering";
+        PassDetail = string.Empty;
+        PassDone = 0;
+        PassTotal = 0;
+        PassIsIndeterminate = false;
+        OnPropertyChanged(nameof(IsPassing));
+        OnPropertyChanged(nameof(CanCancelPass));
+        OnPropertyChanged(nameof(CanRecoverSelected));
+        RecoverSelectedCommand.RaiseCanExecuteChanged();
+
+        _repairCts = new CancellationTokenSource();
+
+        try
+        {
+            var progress = new Progress<FinderRepairProgress>(OnRepairProgress);
+
+            var summary = await repair.RunAsync(subject, progress, _repairCts.Token);
+
+            SetStatus(
+                $"{summary.Shown:N0} pair(s) shown: {summary.Recovered:N0} recovered, " +
+                $"{summary.NotRecovered:N0} not recovered." +
+                (summary.LogPath is null ? string.Empty : $" Log: {summary.LogPath}"));
+
+            log.Info(
+                $"Recovery finished - {summary.Recovered:N0} of {summary.Recoverable:N0} recovered, " +
+                $"{summary.Failed:N0} failed. Log: {summary.LogPath}.");
+        }
+        catch (OperationCanceledException)
+        {
+            SetStatus("Recovery cancelled.");
+            log.Info("Recovery cancelled.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message);
+            log.Error($"Recovery failed: {ex}");
+        }
+        finally
+        {
+            _repairCts.Dispose();
+            _repairCts = null;
+
+            IsBusy = false;
+            OnPropertyChanged(nameof(IsPassing));
+            OnPropertyChanged(nameof(CanCancelPass));
+            OnPropertyChanged(nameof(CanRecoverSelected));
+            OnPropertyChanged(nameof(IsRecovering));
+            RecoverSelectedCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    /// <summary>Carries the recovery's progress onto the busy screen.</summary>
+    private void OnRepairProgress(FinderRepairProgress info)
+    {
+        PassStage = info.Stage;
+        PassDetail = info.Detail;
+        PassDone = info.Done;
+        PassTotal = info.Total;
+        PassIsIndeterminate = info.Total <= 0;
+
+        SetStatus($"{info.Stage}: {info.Detail}");
+    }
 
     /// <summary>
     /// Writes Liem's List and shows it in a window (§14.5).
@@ -533,6 +680,7 @@ public sealed class FinderViewModel(
         PassIsIndeterminate = true;
         OnPropertyChanged(nameof(IsPassing));
         OnPropertyChanged(nameof(CanCancelPass));
+        RecoverSelectedCommand.RaiseCanExecuteChanged();
 
         _passCts = new CancellationTokenSource();
 
@@ -580,6 +728,7 @@ public sealed class FinderViewModel(
             // IsPassing is derived from IsBusy, and the base class only announces IsBusy.
             OnPropertyChanged(nameof(IsPassing));
             OnPropertyChanged(nameof(CanCancelPass));
+            RecoverSelectedCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -655,6 +804,11 @@ public sealed class FinderViewModel(
         }
 
         OnPropertyChanged(nameof(RowsDisplay));
+
+        // The Recover Selected button's enabled state depends on the rows the filters
+        // leave, so the command has to be asked again - a command's CanExecute is
+        // evaluated once and cached until its CanExecuteChanged fires.
+        RecoverSelectedCommand.RaiseCanExecuteChanged();
     }
 
     public string RowsDisplay => $"{Rows.Count:N0} of {AllRows.Count:N0} row(s)";

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Utility.Server.DropBoxSync;
+using Utility.Server.Finder.Repair;
 using Utility.Server.Finder.Services;
 using Utility.Server.ML.Data;
 using Utility.Server.ML.Services;
@@ -76,6 +77,12 @@ public static class ServerServiceCollectionExtensions
         // Liem's List: the report of the pairs the verdict leaves unresolved. It reads the
         // rows the pass gathered - it runs no pass of its own.
         services.AddTransient<ILiemListReportService, LiemListReportService>();
+
+        // The REPAIR: what restores the library. It writes files only - never the
+        // database, never Dropbox. The log goes through a provider, so where the records
+        // go can change without the repair changing.
+        services.AddTransient<IFinderRepairService, FinderRepairService>();
+        services.AddSingleton<IFinderRepairLogProvider, TextFinderRepairLogProvider>();
 
         services.AddUtilityDropBoxSync(configuration);
 

@@ -83,7 +83,11 @@ public static class FinderRanking
                 Size = x.Seed.Size,
                 Dimensions = FinderFileState.FormatDimensions(x.Seed.Width, x.Seed.Height),
                 Path = x.Seed.Path,
-                Modified = x.Seed.Modified
+                Modified = x.Seed.Modified,
+                NamespaceId = x.Seed.NamespaceId,
+                NodeId = x.Seed.NodeId,
+                DropboxId = x.Seed.DropboxId,
+                ContentHash = x.Seed.ContentHash
             })
             .ToList();
     }
@@ -121,4 +125,8 @@ public sealed record CandidateSeed(
     int? Width,
     int? Height,
     string Path,
-    DateTimeOffset? Modified);
+    DateTimeOffset? Modified,
+    string NamespaceId = "",
+    long NodeId = 0,
+    string? DropboxId = null,
+    string? ContentHash = null);

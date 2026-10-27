@@ -1,0 +1,92 @@
+<Window x:Class="Utility.UI.Views.RecoverConfirmWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Recover Selected"
+        SizeToContent="Height"
+        Width="520"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#FFFFFF">
+
+    <Grid Margin="24,20,24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!--
+          The scope: how many pairs the filters are showing, and how many of them will
+          actually be recovered. Nothing is written until the reader answers.
+        -->
+        <StackPanel Grid.Row="0">
+            <TextBlock x:Name="ScopeText"
+                       FontSize="16" FontWeight="SemiBold" Foreground="#111827" />
+            <TextBlock x:Name="RecoverableText"
+                       FontSize="13" Foreground="#334155" Margin="0,8,0,0" />
+        </StackPanel>
+
+        <!--
+          The breakdown by verdict: what will actually happen. A parent copy is not a
+          child regeneration, and the reader is about to authorize both.
+        -->
+        <StackPanel Grid.Row="1" Margin="0,12,0,0">
+            <TextBlock x:Name="ParentRestoredText" FontSize="13" Foreground="#334155" />
+            <TextBlock x:Name="ChildRegeneratedText" FontSize="13" Foreground="#334155" Margin="0,2,0,0" />
+            <TextBlock x:Name="BothText" FontSize="13" Foreground="#334155" Margin="0,2,0,0" />
+        </StackPanel>
+
+        <!--
+          The two figures that carry a warning. The rest is information. The download
+          volume and the replaced-file count are the sentences that change a mind.
+        -->
+        <StackPanel Grid.Row="2" Margin="0,12,0,0">
+            <TextBlock x:Name="DownloadText" FontSize="13" FontWeight="SemiBold" Foreground="#B91C1C" />
+            <TextBlock x:Name="ReplacedText" FontSize="13" FontWeight="SemiBold" Foreground="#B91C1C" Margin="0,2,0,0" />
+            <TextBlock x:Name="FoldersText" FontSize="13" Foreground="#334155" Margin="0,2,0,0" />
+        </StackPanel>
+
+        <!--
+          The red warning. A line and not a typed word: a typed word is a gate that is
+          always there, and a gate that is always there stops being read.
+        -->
+        <Border Grid.Row="3"
+                Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1"
+                CornerRadius="6" Padding="12,8" Margin="0,14,0,0"
+                x:Name="WarningPanel" Visibility="Collapsed">
+            <TextBlock x:Name="WarningText"
+                       FontSize="13" FontWeight="SemiBold" Foreground="#B91C1C"
+                       TextWrapping="Wrap" />
+        </Border>
+
+        <!--
+          The scope is honest: the rows that are left alone are not the reader's fault, and
+          the reader should know how many there are.
+        -->
+        <TextBlock Grid.Row="4"
+                   x:Name="NotRecoveredText"
+                   FontSize="12" Foreground="#6B7280"
+                   Margin="0,14,0,0" TextWrapping="Wrap" />
+
+        <!--
+          Cancel is the default: a window that destroys files should not open with the
+          destructive action already chosen.
+        -->
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button x:Name="CancelButton"
+                    Content="Cancel"
+                    IsCancel="True"
+                    IsDefault="True"
+                    MinWidth="100" Padding="18,7" Margin="0,0,8,0"
+                    Click="OnCancel" />
+            <Button x:Name="RecoverButton"
+                    Content="Recover"
+                    MinWidth="100" Padding="18,7"
+                    IsDefault="False"
+                    Click="OnRecover" />
+        </StackPanel>
+    </Grid>
+</Window>
