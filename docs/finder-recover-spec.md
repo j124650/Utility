@@ -476,6 +476,7 @@ Every figure the window shows is a field the row already carries:
 | How much will be downloaded | the sum of the confirmed candidate's size — `Candidates[0].Size` |
 | How many existing files will be replaced | the rows whose parent or child is `corrupted` |
 | How many folders will be written | the distinct `ParentFolder` values of the subject rows |
+| Every row of the details table | the same rows: the pair, the candidate, and the path the repair will write (§10.1.4) |
 
 **The download figure is the confirmed candidate's size, not the parent's.** The confirmed
 candidate is the one the pass already selected by exact size match (§3), so its size is
@@ -484,8 +485,8 @@ the figure to quote. The row carries it as `Candidates[0].Size`.
 
 ### 10.1.1 What the window says
 
-A proposal, for refinement. The figures are read off the rows, and each is a number the
-reader can act on. The example below is over a set of 1,500 pairs:
+The figures are read off the rows, and each is a number the reader can act on. The
+example below is over a set of 1,500 pairs:
 
 ```
 Recover 1,500 pair(s)?
@@ -497,12 +498,10 @@ Recover 1,500 pair(s)?
 
      494 GB will be downloaded
       27 existing file(s) will be replaced
-  14,131 folder(s) will be created in C:\_Recover\media
+  14,131 folder(s) will be written to C:\_Recover\media
 
     266 pair(s) will be left alone - they need a decision, or there is
     nothing to restore them from
-
-                            [ Cancel ]  [ Recover ]
 ```
 
 **The lines, and why each is there:**
@@ -513,12 +512,16 @@ Recover 1,500 pair(s)?
 | *the breakdown by verdict* | **what will actually happen** — a parent copy is not a child regeneration, and the reader is about to authorize both |
 | *how much will be downloaded* | the cost — 494 GB is a different commitment from 4 GB, and it is the number that decides whether this is a good idea |
 | *how many existing files will be replaced* | **what is destroyed.** These files exist and will be overwritten, with no backup (§9) |
-| *how many folders will be created* | the library was destroyed; the repair rebuilds 14,131 folders, and the reader should know that is what is happening |
+| *how many folders will be written* | the library was destroyed; the repair writes into 14,131 folders, and the reader should know that is what is happening |
 | *how many will be left alone, and why* | the scope is honest — the recovery does not touch them, and they are not the reader's fault |
 
 **The download figure and the file count are the two that carry a warning.** The rest is
 information. "494 GB" and "27 existing files will be replaced" are the sentences that
 change a mind.
+
+**The figures say how big the job is; the table below says what the job is** (§10.1.4).
+Neither replaces the other: a count is what a reader decides on, and a list is what they
+check a count against.
 
 ### 10.1.2 A red warning for a long run
 
@@ -551,6 +554,43 @@ would be worse than none.
 
 ### 10.1.3 The window's shape
 
+**The window is split horizontally: the information above, the details table below.** The
+information is the figures — how many pairs, what will happen to them, how much will be
+downloaded, how many files will be replaced. The details table is the answer to *which*
+pairs and *which* files, with the real paths. The figures say how big the job is; the
+table says what it is.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Recover 1,500 pair(s)?                                                     │
+│                                                                            │
+│  1,234 pair(s) will be recovered                                            │
+│       412  parent restored from Dropbox                                     │
+│       611  child regenerated from its parent                                 │
+│       211  parent restored, then the child regenerated from it              │
+│                                                                            │
+│     494 GB will be downloaded                                                │
+│      27 existing file(s) will be replaced                                   │
+│  14,131 folder(s) will be written to C:\_Recover\media                      │
+│                                                                            │
+│    266 pair(s) will be left alone - they need a decision, or there is       │
+│    nothing to restore them from                                             │
+├────────────────────────────────────────────────────────────────────────────┤
+│  1,845 action(s), in the order they will be performed                       │
+│  ┌───┬──────────────────┬──────────────────┬────────────────────┬────────┐ │
+│  │ # │ Pair             │ Action           │ From               │ To     │ │
+│  ├───┼──────────────────┼──────────────────┼────────────────────┼────────┤ │
+│  │ 1 │ CA05434001       │ restore the      │ /Images-Catalogs…  │ C:\_Re…│ │
+│  │   │ CA05434001-Fe…   │ parent           │ CA05434001/CA05…   │ media\…│ │
+│  │ 2 │ CA05434001       │ regenerate the    │ C:\_Recover\media\… │ C:\_Re…│ │
+│  │   │ CA05434001-Fe…   │ child            │ CA05434001\F4D13B… │ media\…│ │
+│  │ 3 │ RL00016100       │ restore the      │ /Images-Catalogs…  │ C:\_Re…│ │
+│  │   │ RL00016100-05.jpg│ parent           │ RL00016100/RL000…  │ media\…│ │
+│  └───┴──────────────────┴──────────────────┴────────────────────┴────────┘ │
+│                                                        [ Cancel ] [Recover]│
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
 **A modal dialog, owned by the main window** — the same way Liem's List's window is
 (§14.5), so the Finder cannot be used while it is up and focus returns to the Finder when
 it closes.
@@ -562,8 +602,58 @@ destroys files should not open with the destructive action already chosen.
 **The title states the scope**, so the window is identifiable in the task bar and in a
 screenshot: *Recover Selected — 1,234 pair(s)*.
 
-**The window lists no rows.** The counts and the breakdown are enough to decide with, and
-a list of 1,234 rows is a list nobody reads. The rows are in the table behind the window.
+**The window is wide, because the details table carries paths.** 1,100 pixels wide and
+700 tall, resizable, with a floor of 800 × 500. The information block above it keeps its
+height whatever the set's size, and the table takes the rest.
+
+**The information is above the table, and the table is below it.** The figures are
+read first — they are the decision — and the detail is what the decision is about. The
+split is horizontal, so the two sit one above the other and both are visible at once.
+
+### 10.1.4 The details table
+
+**The table lists the actions, one per row, in the order they will be performed.** It
+is the answer to *what exactly is going to happen*, and it names the real paths — the
+file in Dropbox, and the file on disk.
+
+| Column | What it says |
+|---|---|
+| `#` | the action's position in the execution order |
+| `Pair` | the parent's file name and its folder — which pair the action belongs to |
+| `Action` | what the action does: *restore the parent* or *regenerate the child* |
+| `From` | where the bytes come from — the candidate's Dropbox path, or the parent's path on disk |
+| `To` | the real path on disk the action writes to |
+| `Detail` | the candidate's size in bytes, or the child's target dimensions |
+
+**One row per action, not one per pair.** A pair whose parent and child both need work
+produces two rows: the parent is restored, and then the child is regenerated from it.
+The order is the execution order, and the parent comes first because the child is
+derived from it.
+
+**The order is the order the repair will use.** The pairs come in the order the filters
+left them, which is the order the pass produced them, and the repair works through the
+subject rows in that order. So the table's first row is the first thing that happens,
+and the last row is the last.
+
+**A pair that is not recovered has no row.** The table is the list of what will be
+**done**. The pairs that are left alone are counted above the table, and why they are
+left alone is their verdict.
+
+**The paths are the real ones.** The `To` column is the file's path in the library — the
+resolved root, the pair's folder, and the upper-case GUID the file is named by (§5.3).
+The `From` column is the candidate's own Dropbox path for a restore, and the parent's own
+path on disk for a regeneration — the file the child is made from.
+
+**The table is virtualized, and its rows are built as they are shown.** A run over the
+whole library is 271,758 pairs and about 400,000 actions. The rows are computed from the
+pair and the action's position, so the window's memory does not grow with the size of
+the set — a question asked of the set, not a document to be read to the end.
+
+**The table is not sortable.** Its order is the execution order, and a sorted table
+would be a lie about what will happen.
+
+**The action's count is stated above the table**, so the reader knows what they are
+looking at before they look at it.
 ### 10.2 The recovered records are re-read
 
 **A record whose media was recovered is re-read the same way the Finder gathers its
@@ -948,5 +1038,10 @@ field is a change to the provider, not to the recovery.
 | 28 | The repair makes no lookup of its own — the namespace comes with the candidate | recover a pair, check the namespace the fetch used | **not built** |
 | 29 | A child is written as JPEG, whatever the parent's extension is | regenerate a child of a PNG parent, read the file's format | **not built** |
 | 30 | The child's recorded dimensions come with the row, and are the resize target | regenerate a child, measure it against `ml.media`'s recorded size | **not built** |
+| 31 | The confirmation window is split: the information above, the details table below | open the window | **not built** |
+| 32 | The details table lists the actions, one per row, in the execution order | open the window over a set, compare the rows with the set | **not built** |
+| 33 | The table names the real paths — the file in Dropbox and the file on disk | open the window, check a `To` path against the disk | **not built** |
+| 34 | A pair that is not recovered has no row in the table | open the window over a mixed set | **not built** |
+| 35 | The table is virtualized, and its memory does not grow with the set | open the window over the whole library | **not built** |
 
 Nothing in this list has been checked. The spec is written; the button is not.
