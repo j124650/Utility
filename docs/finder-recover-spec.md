@@ -577,6 +577,7 @@ table says what it is.
 │    nothing to restore them from                                             │
 ├────────────────────────────────────────────────────────────────────────────┤
 │  1,845 action(s), in the order they will be performed                       │
+│  showing the first 200                                                     │
 │  ┌───┬──────────────────┬──────────────────┬────────────────────┬────────┐ │
 │  │ # │ Pair             │ Action           │ From               │ To     │ │
 │  ├───┼──────────────────┼──────────────────┼────────────────────┼────────┤ │
@@ -603,8 +604,9 @@ destroys files should not open with the destructive action already chosen.
 screenshot: *Recover Selected — 1,234 pair(s)*.
 
 **The window is wide, because the details table carries paths.** 1,100 pixels wide and
-700 tall, resizable, with a floor of 800 × 500. The information block above it keeps its
-height whatever the set's size, and the table takes the rest.
+640 tall, resizable, with a floor of 800 × 500. The information block above it keeps its
+height whatever the set's size, and the table takes the rest — the table is bounded, so
+the window does not grow with the set either.
 
 **The information is above the table, and the table is below it.** The figures are
 read first — they are the decision — and the detail is what the decision is about. The
@@ -644,16 +646,27 @@ resolved root, the pair's folder, and the upper-case GUID the file is named by (
 The `From` column is the candidate's own Dropbox path for a restore, and the parent's own
 path on disk for a regeneration — the file the child is made from.
 
-**The table is virtualized, and its rows are built as they are shown.** A run over the
-whole library is 271,758 pairs and about 400,000 actions. The rows are computed from the
-pair and the action's position, so the window's memory does not grow with the size of
-the set — a question asked of the set, not a document to be read to the end.
+**The table is bounded, and it says what it is bounded to.** It shows the **first 200
+actions** of the run — the first 200 things that will happen, in the order they happen —
+and the line above it carries the whole count.
 
-**The table is not sortable.** Its order is the execution order, and a sorted table
-would be a lie about what will happen.
+This is a confirmation window, not a place to browse a job. The figures above the table
+are what the reader decides on; the table is what they check those figures against, and a
+sample of two hundred actions with real paths does that. A run over the whole library is
+about 400,000 actions, and listing all of them would make the window a data grid with a
+dialog wrapped around it.
 
-**The action's count is stated above the table**, so the reader knows what they are
-looking at before they look at it.
+**The bound is 200, and it is a constant.** Two hundred actions is enough to see the
+shape of a folder's work and to spot anything that is not what it should be — a path in
+the wrong folder, a size that is out of line with its neighbours. It is also small enough
+that the window stays a window.
+
+**When the set is smaller than the bound, every action is shown** and the line says so.
+A set of twenty pairs shows all of its actions, and the reader sees the whole job.
+
+**The order is the execution order, so the table is not sortable.** Sorting the sample
+would put the actions in an order that is not the order they will happen in, which is
+exactly the thing the table exists to tell the truth about.
 ### 10.2 The recovered records are re-read
 
 **A record whose media was recovered is re-read the same way the Finder gathers its
@@ -1042,6 +1055,6 @@ field is a change to the provider, not to the recovery.
 | 32 | The details table lists the actions, one per row, in the execution order | open the window over a set, compare the rows with the set | **not built** |
 | 33 | The table names the real paths — the file in Dropbox and the file on disk | open the window, check a `To` path against the disk | **not built** |
 | 34 | A pair that is not recovered has no row in the table | open the window over a mixed set | **not built** |
-| 35 | The table is virtualized, and its memory does not grow with the set | open the window over the whole library | **not built** |
+| 35 | The table shows at most 200 actions, and says how many there are in all | open the window over a set larger than 200 | **not built** |
 
 Nothing in this list has been checked. The spec is written; the button is not.
