@@ -83,6 +83,23 @@ public interface IFinderService
     Task<IReadOnlyList<FinderRow>> GetLiemListAsync(
         IFinderProgress? progress = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// The groups of parent file names: one group per path the parents sit in, with the
+    /// number of distinct names in each.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It is computed from the rows the last pass produced - the whole gathered set, not
+    /// the rows the table is showing - so it queries nothing and runs no pass of its own.
+    /// It is empty when no pass has produced rows.
+    /// </para>
+    /// <para>
+    /// The paths are directories on disk, so a path and the same path in another case are
+    /// the same folder: the paths are compared case-insensitively.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<NameGroup> GetNameGroups();
 }
 
 /// <summary>Reports the pass's progress back to the caller.</summary>

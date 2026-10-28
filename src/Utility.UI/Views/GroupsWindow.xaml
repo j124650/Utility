@@ -1,0 +1,79 @@
+<Window x:Class="Utility.UI.Views.GroupsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Groups"
+        Width="760"
+        Height="620"
+        MinWidth="520"
+        MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        Background="#FFFFFF">
+
+    <!--
+      The window is a list and a counter (docs/finder-groups-spec.md §4): the counter says
+      how many groups there are and how many names across them, and the list is one row per
+      group - the path, the number of names in it, and the mark.
+    -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- The counter. -->
+        <TextBlock Grid.Row="0"
+                   x:Name="CounterText"
+                   FontSize="13" FontWeight="SemiBold" Foreground="#334155"
+                   Margin="20,18,20,0" />
+
+        <!--
+          The list. The grid is virtualized, so a window holding tens of thousands of
+          groups opens at once and scrolls without lag.
+        -->
+        <DataGrid Grid.Row="1"
+                  x:Name="GroupsGrid"
+                  Margin="20,12,20,0"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserSortColumns="True"
+                  CanUserResizeRows="False"
+                  CanUserReorderColumns="False"
+                  HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal"
+                  RowHeaderWidth="0"
+                  FontSize="12"
+                  BorderBrush="#E5E7EB"
+                  EnableRowVirtualization="True"
+                  EnableColumnVirtualization="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Path" Binding="{Binding Path}" SortMemberPath="Path" Width="*" />
+                <DataGridTextColumn Header="Names" Binding="{Binding Count}" SortMemberPath="Count" Width="90" />
+                <DataGridTemplateColumn Header="" Width="46" SortMemberPath="Path">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Mark}"
+                                       FontSize="13"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       ToolTip="This path's names carry more than one product code." />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!--
+          One button: Close. The window changes nothing, so it has no OK and no Cancel.
+        -->
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="20,16,20,18">
+            <Button Content="Close"
+                    MinWidth="100" Padding="18,7"
+                    IsCancel="True"
+                    IsDefault="True"
+                    Click="OnClose" />
+        </StackPanel>
+    </Grid>
+</Window>

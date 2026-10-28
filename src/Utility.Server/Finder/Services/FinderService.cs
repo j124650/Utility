@@ -281,6 +281,77 @@ public sealed class FinderService(
     }
 
     /// <summary>
+    /// The groups of parent file names: one group per path the parents sit in, with the
+    /// number of distinct names in each.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It reads the rows the last pass produced - the whole gathered set - so it queries
+    /// nothing and runs no pass of its own. With no pass there are no rows and no groups.
+    /// </para>
+    /// <para>
+    /// The paths are directories on disk, so they are compared case-insensitively:
+    /// two paths differing only in case are the same folder. The path a group shows is the
+    /// one the rows carry.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<NameGroup> GetNameGroups()
+    {
+        // The paths, and the names and prefixes in each. The dictionaries are keyed
+        // case-insensitively, because a path is a directory and the filesystem does
+        // not distinguish case.
+        var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var names = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var prefixes = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in scanState.Rows)
+        {
+            var path = row.ParentFolder;
+
+            if (!paths.ContainsKey(path))
+            {
+                paths[path] = path;
+                names[path] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                prefixes[path] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            names[path].Add(row.ParentFileName);
+            prefixes[path].Add(PrefixOf(row.ParentFileName));
+        }
+
+        var groups = new List<NameGroup>(paths.Count);
+
+        foreach (var (key, path) in paths)
+        {
+            groups.Add(new NameGroup
+            {
+                Path = path,
+                Count = names[key].Count,
+                HasTwoPrefixes = prefixes[key].Count > 1,
+            });
+        }
+
+        groups.Sort((a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase));
+
+        return groups;
+    }
+
+    /// <summary>
+    /// The part of a name before its first hyphen - the product code it carries.
+    /// </summary>
+    /// <remarks>
+    /// A name with no hyphen is its own prefix. Every parent name in the library has one,
+    /// so the case does not arise today - but the rule is stated so the code says what it
+    /// does rather than what it happens to be fed.
+    /// </remarks>
+    private static string PrefixOf(string name)
+    {
+        var hyphen = name.IndexOf('-', StringComparison.Ordinal);
+
+        return hyphen < 0 ? name : name[..hyphen];
+    }
+
+    /// <summary>
     /// The one set-based query: the pairs, and the candidates whose name matches the parent's
     /// file name.
     /// </summary>

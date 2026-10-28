@@ -425,6 +425,26 @@
                                     <TextBlock Text="Recover Selected" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
+
+                            <!--
+                              Groups: the paths the parent file names sit in, with the
+                              number of names in each. It reads the rows the pass produced,
+                              so its figures are the library's and not the filters'.
+                            -->
+                            <Button Command="{Binding ShowGroupsCommand}"
+                                    MinWidth="0"
+                                    Padding="10,5"
+                                    ToolTip="The paths the parent file names sit in.">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8D7;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="13"
+                                               Foreground="#334155"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,6,0" />
+                                    <TextBlock Text="Groups" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </ToolBar>
                     </ToolBarTray>
                 </DockPanel>

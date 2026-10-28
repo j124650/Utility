@@ -193,6 +193,24 @@ public sealed class FinderViewModel(
     /// </remarks>
     public AsyncRelayCommand ShowLiemListCommand => _showLiemList ??= new AsyncRelayCommand(ShowLiemListAsync);
 
+    /// <summary>
+    /// Groups: the paths the parent file names sit in, with the number of names in each
+    /// (docs/finder-groups-spec.md §1).
+    /// </summary>
+    /// <remarks>
+    /// The groups come from the rows the pass produced - the whole gathered set, not the
+    /// rows the table is showing - so the window's figures are the library's.
+    /// </remarks>
+    public RelayCommand ShowGroupsCommand =>
+        _showGroups ??= new RelayCommand(_ => ShowGroups(), _ => CanShowGroups);
+
+    /// <summary>
+    /// Whether the button is offered: a pass has produced rows, and nothing is running.
+    /// </summary>
+    public bool CanShowGroups => !IsBusy && AllRows.Count > 0;
+
+    private RelayCommand? _showGroups;
+
     /// <summary>Stops the running pass (§18.8).</summary>
     public RelayCommand CancelPassCommand => _cancelPass ??= new RelayCommand(_ => CancelPass());
 
@@ -286,6 +304,10 @@ public sealed class FinderViewModel(
         OnPropertyChanged(nameof(CanRecoverSelected));
         RecoverSelectedCommand.RaiseCanExecuteChanged();
 
+        // The Groups button is not offered while something is running, so it is asked
+        // again when the recovery starts.
+        ShowGroupsCommand.RaiseCanExecuteChanged();
+
         _repairCts = new CancellationTokenSource();
 
         // The re-read happens once the run is under way - a run that never started has
@@ -346,6 +368,7 @@ public sealed class FinderViewModel(
             OnPropertyChanged(nameof(CanRecoverSelected));
             OnPropertyChanged(nameof(IsRecovering));
             RecoverSelectedCommand.RaiseCanExecuteChanged();
+            ShowGroupsCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -503,6 +526,33 @@ public sealed class FinderViewModel(
         {
             SetStatus(ex.Message);
             log.Error($"Liem's List failed: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// Groups: opens the window with the groups the last pass's rows make.
+    /// </summary>
+    /// <remarks>
+    /// The window is modal and owned by the main window, so the Finder cannot be used while
+    /// it is up, and focus returns to it when the window closes. Nothing is written.
+    /// </remarks>
+    private void ShowGroups()
+    {
+        try
+        {
+            var groups = finder.GetNameGroups();
+
+            var window = new GroupsWindow(groups)
+            {
+                Owner = Application.Current.MainWindow
+            };
+
+            window.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message);
+            log.Error($"Groups failed: {ex}");
         }
     }
 
@@ -844,6 +894,7 @@ public sealed class FinderViewModel(
         OnPropertyChanged(nameof(IsPassing));
         OnPropertyChanged(nameof(CanCancelPass));
         RecoverSelectedCommand.RaiseCanExecuteChanged();
+        ShowGroupsCommand.RaiseCanExecuteChanged();
 
         _passCts = new CancellationTokenSource();
 
@@ -892,6 +943,12 @@ public sealed class FinderViewModel(
             OnPropertyChanged(nameof(IsPassing));
             OnPropertyChanged(nameof(CanCancelPass));
             RecoverSelectedCommand.RaiseCanExecuteChanged();
+
+            // The Groups button is offered once the pass has produced rows, and the pass
+            // has only just finished here - so the command has to be asked again AFTER
+            // IsBusy has gone back to false. ApplyFilters asked it earlier, while the pass
+            // was still running, and the answer was no.
+            ShowGroupsCommand.RaiseCanExecuteChanged();
         }
     }
 
@@ -972,6 +1029,10 @@ public sealed class FinderViewModel(
         // leave, so the command has to be asked again - a command's CanExecute is
         // evaluated once and cached until its CanExecuteChanged fires.
         RecoverSelectedCommand.RaiseCanExecuteChanged();
+
+        // The Groups button is offered when the pass has produced rows, so it is asked
+        // again for the same reason.
+        ShowGroupsCommand.RaiseCanExecuteChanged();
     }
 
     public string RowsDisplay => $"{Rows.Count:N0} of {AllRows.Count:N0} row(s)";
