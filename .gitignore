@@ -40,3 +40,8 @@ tools/repair-checks/obj/
 
 ## The groups harness writes its run output here.
 tools/groups-checks/run.log
+
+## Repo-local agent skills (Matt Pocock's engineering set). Hermes loads these for
+## sessions started inside this repo, but they are a local toolchain choice, not
+## project source — keep them out of the repo.
+.hermes/
