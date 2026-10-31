@@ -2,6 +2,11 @@
 
 > **Preliminary.** This spec states what the **Groups** button does and what it shows — the
 > grouping rule, the window, and the figures it carries. **Nothing here has been built.**
+>
+> **This is an OPTIONAL TEST FEATURE.** The Groups window is a diagnostic tool, not a
+> product feature: it exists to answer a question while the recovery is being planned and
+> built, and it may be removed in whole or in part at any time. Nothing else in the Finder
+> depends on it, and nothing depends on it depending on it. **§9.**
 
 ---
 
@@ -17,6 +22,7 @@ distinct parent file names, **grouped by the path they sit in**.
 | **Opens** | A modal window owned by the main window |
 | **Shows** | The distinct parent file names, grouped by the parent's path (`ml.Media.Path`) — one row per path, with the number of names in it |
 | **Writes** | Nothing |
+| **Status** | **Optional test feature** — removable (§9) |
 
 It is a **debugging and monitoring tool**. It reads the rows the pass already produced and
 organises them; it changes nothing and asks for nothing.
@@ -210,3 +216,34 @@ looked at the window on screen.
 Two numbers the spec carries are now measured, not estimated: **27,736 groups** and
 **357,156 names**. The marked groups are **twelve**, not eleven — `dc01789310` holds a name
 whose prefix carries a trailing space, and SQL Server's `DISTINCT` had hidden it.
+
+## 9. This feature is optional and removable
+
+**The Groups window is a TEST FEATURE.** It was built to answer a question while the
+recovery was being planned — what the library's paths look like, and where a product was
+written two ways. It is not part of the product the Finder is becoming.
+
+**It may be removed at any time, in whole or in part.** Removing it is a normal change,
+not a repair of a mistake.
+
+**Nothing depends on it.** The Finder's pass, the table, the filters, the verdicts, the
+recovery and Liem's List are all unaffected by the button's absence. The window reads the
+scan state's rows and writes nothing, so there is nothing to unwind when it goes.
+
+**What removing it takes:**
+
+| Piece | |
+|---|---|
+| `src/Utility.Server/Finder/NameGroup.cs` | the record — delete |
+| `IFinderService.GetNameGroups()` and its implementation | delete |
+| `src/Utility.UI/Views/GroupsWindow.xaml` and `.xaml.cs` | delete |
+| `ShowGroupsCommand` and `CanShowGroups` in `FinderViewModel` | delete |
+| the toolbar button in `FinderView.xaml` | delete |
+| `tools/groups-checks/` | delete, or keep the grouping checks by moving them into another harness |
+| this document | delete |
+
+**What a removal does NOT touch:** the pass, the rows, the filters, the verdicts, the
+recovery, the recovery's log, and Liem's List.
+
+**If it is kept,** it stays a read-only diagnostic: it writes nothing, it runs no pass of
+its own, and it is offered only when a pass has produced rows.
