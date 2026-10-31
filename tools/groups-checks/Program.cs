@@ -1,7 +1,10 @@
+using System.ComponentModel;
+using System.Windows.Data;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Utility.Server;
+using Utility.Server.Finder;
 using Utility.Server.Finder.Services;
 
 namespace GroupsChecks;
@@ -149,37 +152,80 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine($"Names in more than one path: {namesInTwoPaths:N0}");
 
-        // The order the window opens in is the service's: ordinal, case-insensitive.
-        // The grid's own column sort uses the DEFAULT string comparer, which is
-        // culture-aware. If the two disagree on this data, a reader who clicks the Path
-        // heading would see a different order from the one the window opened in.
-        var serviceOrder = groups.Select(g => g.Path).ToList();
-
-        var gridOrder = groups
-            .Select(g => g.Path)
-            .OrderBy(p => p, Comparer<string>.Default)
-            .ToList();
-
-        var sameOrder = serviceOrder.SequenceEqual(gridOrder);
-
-        Console.WriteLine($"Grid's default sort matches the service's order: {sameOrder}");
-
-        if (!sameOrder)
-        {
-            var firstDiff = serviceOrder
-                .Zip(gridOrder, (a, b) => (a, b))
-                .Select((pair, index) => (pair, index))
-                .First(x => x.pair.a != x.pair.b);
-
-            Console.WriteLine($"  first difference at {firstDiff.index}:");
-            Console.WriteLine($"    service: {firstDiff.pair.a}");
-            Console.WriteLine($"    grid:    {firstDiff.pair.b}");
-        }
+        // ---- the sort, through WPF's OWN mechanism ----
+        //
+        // A DataGrid sorts through the ICollectionView behind its ItemsSource, and the
+        // column's SortMemberPath becomes the SortDescription's property. So this is the
+        // sort the grid performs - not a sort of our own.
+        failures += CheckTheSort(groups);
 
         Console.WriteLine();
         Console.WriteLine(failures == 0 ? "All checks passed." : $"{failures} check(s) FAILED.");
 
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Checks that sorting by the Names column sorts by the AMOUNT.
+    /// </summary>
+    /// <remarks>
+    /// The counts run 1, 2, 3 ... 28. Sorted as TEXT, they run "1", "10", "11", "2" ...
+    /// - so the two orders differ, and the check reads the order WPF's own view produces.
+    /// </remarks>
+    private static int CheckTheSort(IReadOnlyList<NameGroup> groups)
+    {
+        var failures = 0;
+
+        // The view the grid sorts through: a ListCollectionView over the groups.
+        var view = new ListCollectionView(groups.ToList());
+
+        view.SortDescriptions.Add(new SortDescription(nameof(NameGroup.Count), ListSortDirection.Ascending));
+
+        var ascending = view.Cast<NameGroup>().Select(g => g.Count).ToList();
+
+        view.SortDescriptions.Clear();
+        view.SortDescriptions.Add(new SortDescription(nameof(NameGroup.Count), ListSortDirection.Descending));
+
+        var descending = view.Cast<NameGroup>().Select(g => g.Count).ToList();
+
+        Console.WriteLine();
+        Console.WriteLine("The sort the grid does, through WPF's own view:");
+        Console.WriteLine($"  ascending, first 12:   {string.Join(", ", ascending.Take(12))}");
+        Console.WriteLine($"  descending, first 12:  {string.Join(", ", descending.Take(12))}");
+        Console.WriteLine($"  ascending, last 6:     {string.Join(", ", ascending.Skip(ascending.Count - 6))}");
+        Console.WriteLine($"  descending, last 6:    {string.Join(", ", descending.Skip(descending.Count - 6))}");
+
+        // The AMOUNT order: the counts ascend.
+        var byAmount = ascending.Zip(ascending.Skip(1), (a, b) => a <= b).All(x => x);
+
+        if (!byAmount)
+        {
+            Console.WriteLine("FAIL: sorting by Names does not ascend by the amount.");
+            failures++;
+        }
+
+        // The TEXT order: the counts as text, which puts "10" before "2".
+        var byText = ascending
+            .Select(c => c.ToString())
+            .Zip(ascending.Select(c => c.ToString()).Skip(1), (a, b) => string.CompareOrdinal(a, b) <= 0)
+            .All(x => x);
+
+        if (byText)
+        {
+            Console.WriteLine("FAIL: sorting by Names sorts by the TEXT of the number, not the amount.");
+            failures++;
+        }
+
+        // The descending order is the mirror of the ascending one.
+        var mirrored = descending.SequenceEqual(ascending.AsEnumerable().Reverse());
+
+        if (!mirrored)
+        {
+            Console.WriteLine("FAIL: the descending order is not the reverse of the ascending one.");
+            failures++;
+        }
+
+        return failures;
     }
 
     /// <summary>The part of a name before its first hyphen.</summary>

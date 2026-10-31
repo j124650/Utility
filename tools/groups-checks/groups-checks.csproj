@@ -2,7 +2,13 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <!--
+      net10.0-windows with UseWPF, because this harness drives WPF's own sorting
+      mechanism - the ICollectionView a DataGrid sorts through - to check that the
+      Names column sorts by the AMOUNT and not by the text of the number.
+    -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>GroupsChecks</RootNamespace>
