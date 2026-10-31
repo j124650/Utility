@@ -100,6 +100,23 @@ public interface IFinderService
     /// </para>
     /// </remarks>
     IReadOnlyList<NameGroup> GetNameGroups();
+
+    /// <summary>
+    /// The rows in the order the recovery works through them: most recent first (§10.11).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each pair is dated by the MORE RECENT of the two dates it carries - the media row's
+    /// own date added, and the Dropbox file's modification date - and the pairs are sorted
+    /// by that date, descending. A pair with neither date goes last.
+    /// </para>
+    /// <para>
+    /// Ties are broken by the pair's file name, case-insensitively, so the order is
+    /// deterministic: the same set always recovers in the same order, and the confirmation
+    /// window can promise an order the run keeps.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<FinderRow> OrderByMostRecent(IEnumerable<FinderRow> rows);
 }
 
 /// <summary>Reports the pass's progress back to the caller.</summary>

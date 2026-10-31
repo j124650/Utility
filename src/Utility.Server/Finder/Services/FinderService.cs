@@ -295,6 +295,57 @@ public sealed class FinderService(
     /// one the rows carry.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// The rows in the order the recovery works through them: most recent first (§10.11).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A pair is dated by the MORE RECENT of the two dates it carries. The media row's date
+    /// added is when the row joined the library; the candidate's modification date is when
+    /// the Dropbox file itself last changed. They are different things, and the later of
+    /// them is the pair's date - a pair whose row is from 2024 but whose file changed last
+    /// week is dated last week.
+    /// </para>
+    /// <para>
+    /// A pair with neither date goes last: it has no claim on being recent, so it goes to
+    /// the end of the run rather than the front of it.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<FinderRow> OrderByMostRecent(IEnumerable<FinderRow> rows)
+    {
+        // The sort is a projection over the rows the pass produced - it queries nothing
+        // and runs no pass of its own. The date is computed once per row, because the
+        // sort's key would otherwise be recomputed on every comparison.
+        return rows
+            .Select(r => (Row: r, Date: PairDate(r)))
+            .OrderByDescending(x => x.Date)
+            .ThenBy(x => x.Row.ParentFileName, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.Row)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The pair's date: the more recent of its media row's date added and its candidate's
+    /// modification date. Null when it carries neither (§10.11.2).
+    /// </summary>
+    private static DateTimeOffset? PairDate(FinderRow row)
+    {
+        var rowDate = row.ParentDateAdded;
+        var fileDate = row.BestCandidate?.Modified;
+
+        if (rowDate is null)
+        {
+            return fileDate;
+        }
+
+        if (fileDate is null)
+        {
+            return rowDate;
+        }
+
+        return fileDate > rowDate ? fileDate : rowDate;
+    }
+
     public IReadOnlyList<NameGroup> GetNameGroups()
     {
         // The paths, and the names and prefixes in each. The dictionaries are keyed

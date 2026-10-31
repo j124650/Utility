@@ -258,7 +258,12 @@ public sealed class FinderViewModel(
 
         // The window reads the same rows the repair will act on, so what it says is exactly
         // what the table shows and exactly what the repair will do.
-        var subject = Rows.ToList();
+        //
+        // The rows are put in the RECOVERY's order here - most recent first (§10.11) - and
+        // this ONE list is what the window projects and what the run works through. The
+        // window's table lists the actions in the order they will be performed, so the two
+        // must be the same list, not two that agree by accident.
+        var subject = finder.OrderByMostRecent(Rows);
 
         if (!subject.Any(r => r.Verdict.Id is 1 or 2 or 3))
         {

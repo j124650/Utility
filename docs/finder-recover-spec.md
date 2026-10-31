@@ -632,10 +632,10 @@ produces two rows: the parent is restored, and then the child is regenerated fro
 The order is the execution order, and the parent comes first because the child is
 derived from it.
 
-**The order is the order the repair will use.** The pairs come in the order the filters
-left them, which is the order the pass produced them, and the repair works through the
-subject rows in that order. So the table's first row is the first thing that happens,
-and the last row is the last.
+**The order is the order the repair will use.** The pairs are put in the recovery's own
+order — most recent first (§10.11) — and the repair works through the subject rows in
+that order. So the table's first row is the first thing that happens, and the last row is
+the last.
 
 **A pair that is not recovered has no row.** The table is the list of what will be
 **done**. The pairs that are left alone are counted above the table, and why they are
@@ -1140,6 +1140,74 @@ judged on its merits; it was refused.
 (the sync walk's adaptive width is for the walk's request pattern, and the repair's width
 is 1 anyway), and it does not give up on the run — only on the pair.
 
+## 10.11 The recovery starts with the pairs closest to now
+
+**The recovery works through the pairs whose files are MOST RECENT first.** The reader
+clicks **Recover Selected**, and the run begins with the pairs whose date and time are
+closest to now, and works backwards through time from there.
+
+### 10.11.1 Why
+
+**A recovery is a mass operation that gets interrupted, and what is done first is what
+survives.** The run is about 160,000 restores and the same again in regenerations — it
+will be stopped, and it will be run again tomorrow over whatever is left. So the order
+is not a detail: it decides which pairs are whole when the run ends.
+
+**The pairs closest to now are the ones the business cares about now.** The library is
+catalogued by date, and the recent end of it is what the catalogue is for today. Starting
+there means the run delivers the current catalogue first, and the older tail is what a
+later run picks up.
+
+### 10.11.2 Which date
+
+**Each pair is dated by the MORE RECENT of the two dates it carries:**
+
+| The date | What it is |
+|---|---|
+| `ParentDateAdded` | when the parent's **media row** was added to the library (`ml.Media.DateAdded`) |
+| `BestCandidate.Modified` | when the **Dropbox file** was last changed (`ml.DropBoxNode.ServerModified`) |
+
+**The more recent of the two wins.** A pair whose media row was added in 2024 but whose
+Dropbox file was changed last week is dated last week — the file's own date is the truth
+about the file, and the row's date is only the truth about the row. The two are different
+things, and the later of them is the pair's date.
+
+**A pair with neither date is dated LAST.** It has no claim on being recent, so it goes
+to the end of the run rather than to the front of it. A pair whose candidate exists but
+carries no date falls back to its media row's date; if that is missing too, it is undated.
+
+### 10.11.3 The order
+
+**Most recent first.** The pairs are sorted by their date, descending, and the run works
+through them in that order.
+
+**Ties are broken by the pair's file name**, case-insensitively, so the order is
+**deterministic** — the same set always recovers in the same order, and the confirmation
+window's table can promise an order that the run keeps.
+
+**The order is the RECOVERY's order, and it is applied where the run begins** — at
+**Recover Selected**, on the set the filters left. The table's own row order is not
+changed: the reader sorts the table as they please, and the recovery order is the
+run's own.
+
+**The confirmation window shows this order, because it shows the execution order.** Its
+details table lists the actions in the order they will be performed (§10.1.4), so its
+first row is the first thing the run does. That means **the window's rows and the run's
+rows are one list** — the same sorted set, projected two ways — and not two lists that
+agree by accident.
+
+### 10.11.4 What it does not change
+
+- **It does not change WHAT is recovered.** Every pair the filters left, and the verdict
+  chose, is still recovered — the same set, the same counts.
+- **It does not change the table's order.** The table shows the pass's order; the run
+  uses the date order.
+- **It does not change the width.** The width is still how many records are in flight.
+  At a width above one the pairs start in the date order, but they overlap, so the
+  finished order is not the date order.
+- **It does not survive a re-read.** The re-read replaces the rows in the table; the
+  rows carry no order of their own, so nothing about this is stored.
+
 ## 11. What is still open
 
 **Nothing.** Every question the spec raised has been answered, and the answers are in
@@ -1193,6 +1261,7 @@ field is a change to the provider, not to the recovery.
 | 37 | A refused download does not fail its pair — the run waits, backs off and retries | refuse a download, check the pair is still recovered | **built — `tools/repair-throttle-checks` passes 15/15** |
 | 38 | The re-read's merge reports as it goes, and the bar moves while it does | run a recovery and watch the merge | **built** |
 | 39 | The busy screen names the file the run is on, and the line is gone when the recovery ends | run a recovery, cancel it mid-download | **built** |
+| 40 | The recovery works through the pairs closest to now first | filter to a set, recover, check the order | **built — `tools/recovery-order-checks` passes 16/16** |
 
-Nothing in this list has been checked, except rows 36, 37, 38 and 39 — the spec is
+Nothing in this list has been checked, except rows 36, 37, 38, 39 and 40 — the spec is
 written; the button is not.
