@@ -123,6 +123,46 @@ internal static class Program
             File.Exists(landed),
             landed);
 
+        // ---- a FAILED record names the file that was not there ----
+        //
+        // A download that comes back path/not_found has to leave a path behind, or the
+        // reader has nothing to search on. The record carries the source, and the log
+        // writes it.
+        var failed = new FinderRepairRecord
+        {
+            ParentId = Guid.NewGuid(),
+            ChildId = Guid.NewGuid(),
+            ParentName = "Y42408OD-Featured-Bottom.jpg",
+            Folder = "y42408od",
+            NodeId = 173075,
+            DropboxId = "id:sMa5MD0C7uMAAAAAAA7ODA",
+            NamespaceId = "15193064371",
+            ContentHash = "9f113d83040615aa2a78d9441f206d2f39f82802bd7cb3e2a6ca2cdd52fd9190",
+            Source = "/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/New Balance/F27/PROCESSED/Y42408OD/Y42408OD-Featured-Bottom.jpg",
+            Reason = "path/not_found/",
+            Recovered = false,
+        };
+
+        await using (var log = await provider.OpenAsync(summary, openedAt))
+        {
+            await log!.WriteAsync(failed, CancellationToken.None);
+        }
+
+        var failedText = File.ReadAllText(landed);
+
+        Check(
+            "a failed record's log names the file's Dropbox path",
+            failedText.Contains(failed.Source!, StringComparison.Ordinal),
+            failed.Source!);
+
+        Check(
+            "a failed record's log says why it failed",
+            failedText.Contains("reason=path/not_found/", StringComparison.Ordinal));
+
+        Check(
+            "a failed record's log carries the namespace",
+            failedText.Contains("namespace=15193064371", StringComparison.Ordinal));
+
         // ---- 6. each recovery gets its own dated folder ----
         //
         // A recovery on another day gets another folder. The two sit side by side, each

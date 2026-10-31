@@ -51,3 +51,5 @@ tools/groups-checks/run.log
 # The repair-throttle-checks harness builds here.
 tools/repair-throttle-checks/bin/
 tools/repair-throttle-checks/obj/
+tools/recovery-order-checks/bin/
+tools/recovery-order-checks/obj/

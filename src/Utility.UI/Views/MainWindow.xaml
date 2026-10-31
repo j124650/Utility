@@ -368,6 +368,17 @@
                                    MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                    Visibility="{Binding PassFile, Converter={StaticResource StringToVis}}" />
 
+                        <!--
+                          How many are RECOVERED so far, out of how many will be. It is on
+                          its own line because it answers a different question from the
+                          count above it: that one says how far the run has GOT, this one
+                          says how many of those are whole.
+                        -->
+                        <TextBlock Text="{Binding PassRecovered}" FontSize="13" Foreground="#B8C0CC"
+                                   HorizontalAlignment="Center" Margin="0,4,0,0"
+                                   MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                   Visibility="{Binding PassRecovered, Converter={StaticResource StringToVis}}" />
+
                         <ProgressBar Height="4" Margin="0,20,0,0" Minimum="0" Maximum="100"
                                      Value="{Binding PassPercent, Mode=OneWay}"
                                      IsIndeterminate="{Binding PassIsIndeterminate}"

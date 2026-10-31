@@ -52,6 +52,29 @@ public sealed record FinderRepairProgress(string Stage, int Done, int Total, str
     /// in flight, and naming one of them would say something untrue.
     /// </remarks>
     public string File { get; init; } = string.Empty;
+
+    /// <summary>
+    /// How many pairs are RECOVERED so far - not how many were attempted.
+    /// </summary>
+    /// <remarks>
+    /// The count reports say how far the run has GOT; this says how many of those are
+    /// whole. They differ whenever a pair fails, and the reader watching a long run
+    /// wants the second one.
+    /// </remarks>
+    public int Recovered { get; init; }
+
+    /// <summary>How many pairs the run is recovering in all.</summary>
+    public int RecoveredTotal { get; init; }
+
+    /// <summary>
+    /// How long the run is expected to take still, or null when it cannot be told.
+    /// </summary>
+    /// <remarks>
+    /// It is the time the LAST pair took, multiplied by the pairs still to go. The last
+    /// pair is the best measure there is: it is the most recent thing the run actually
+    /// did, at the run's current pace.
+    /// </remarks>
+    public TimeSpan? Remaining { get; init; }
 }
 
 /// <summary>
@@ -223,13 +246,26 @@ public sealed class FinderRepairService(
         {
             if (width == 1)
             {
+                // The time the last pair took. It is the best measure of the run's pace
+                // there is - the most recent thing the run actually did - so the estimate
+                // is that time multiplied by the pairs still to go.
+                var lastPair = TimeSpan.Zero;
+
                 foreach (var row in subject)
                 {
                     ct.ThrowIfCancellationRequested();
 
+                    // The estimate is made BEFORE the pair starts, from the pair before
+                    // it. A pair's own duration is not known until it is done.
+                    var remaining = EstimateRemaining(subject.Count, done, lastPair);
+
+                    var started = DateTimeOffset.Now;
+
                     var record = await RepairOneAsync(
                         row, libraryRoot, quality, thumbnailQuality, vcatWidth, thumbnailWidth,
-                        progress, nameTheFile, ct);
+                        progress, nameTheFile, summary.Recovered, subject.Count, remaining, ct);
+
+                    lastPair = DateTimeOffset.Now - started;
 
                     if (log is not null)
                     {
@@ -252,6 +288,11 @@ public sealed class FinderRepairService(
             {
                 using var gate = new SemaphoreSlim(width);
 
+                // The parallel path folds the summary only at the end, so the recovered
+                // count is counted here as the records come back - otherwise the count
+                // would read zero for the whole run.
+                var recovered = 0;
+
                 var tasks = subject.Select(async row =>
                 {
                     await gate.WaitAsync(ct);
@@ -260,7 +301,13 @@ public sealed class FinderRepairService(
                     {
                         var record = await RepairOneAsync(
                             row, libraryRoot, quality, thumbnailQuality, vcatWidth, thumbnailWidth,
-                            progress, nameTheFile, ct);
+                            progress, nameTheFile, Volatile.Read(ref recovered), subject.Count,
+                            null, ct);
+
+                        if (record.Recovered)
+                        {
+                            Interlocked.Increment(ref recovered);
+                        }
 
                         if (log is not null)
                         {
@@ -318,6 +365,9 @@ public sealed class FinderRepairService(
         int thumbnailWidth,
         IProgress<FinderRepairProgress>? progress,
         bool nameTheFile,
+        int recovered,
+        int recoveredTotal,
+        TimeSpan? remaining,
         CancellationToken ct)
     {
         var candidate = row.BestCandidate;
@@ -366,7 +416,13 @@ public sealed class FinderRepairService(
                 if (nameTheFile)
                 {
                     progress?.Report(new FinderRepairProgress(
-                        "Downloading", 0, 0, string.Empty) { File = candidate.Name });
+                        "Downloading", 0, 0, string.Empty)
+                    {
+                        File = candidate.Name,
+                        Recovered = recovered,
+                        RecoveredTotal = recoveredTotal,
+                        Remaining = remaining,
+                    });
                 }
 
                 try
@@ -420,7 +476,10 @@ public sealed class FinderRepairService(
                     progress?.Report(new FinderRepairProgress(
                         "Resizing", 0, 0, string.Empty)
                     {
-                        File = $"{row.ChildCategoryName} of {row.ParentFileName}"
+                        File = $"{row.ChildCategoryName} of {row.ParentFileName}",
+                        Recovered = recovered,
+                        RecoveredTotal = recoveredTotal,
+                        Remaining = remaining,
                     });
                 }
 
@@ -440,7 +499,21 @@ public sealed class FinderRepairService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "Recovery failed for {ParentId}.", row.ParentId);
+            // The path is named here, because "path/not_found/" on its own says nothing
+            // about WHICH file was missing. The recovery log carries it on the source=
+            // line, but this line is what reaches the app's own log and the Windows
+            // event log, and a reader chasing the failure needs a path to search on.
+            logger.LogWarning(
+                ex,
+                "Recovery failed for {ParentId} ({ParentName}) from {Source}: {Reason}",
+                row.ParentId,
+                row.ParentFileName,
+                record.Source ?? "(no source)",
+                ex.Message);
+
+            // The reason stays the message as it is. It sits mid-line in the log's
+            // token format, where a value carrying spaces would break the parsing - and
+            // the path is already on the record's own source= line, in the same log.
             return record with { Reason = ex.Message };
         }
     }
@@ -581,6 +654,28 @@ public sealed class FinderRepairService(
         {
             // A temporary file that cannot be deleted is not worth failing the pair over.
         }
+    }
+
+    /// <summary>
+    /// How long the run is expected to take still: the last pair's time, multiplied by
+    /// the pairs still to go. Null until a pair has finished, because until then there
+    /// is nothing to base an estimate on.
+    /// </summary>
+    /// <remarks>
+    /// The last pair is the best measure of the run's pace there is - it is the most
+    /// recent thing the run actually did - where an average would still be carrying the
+    /// slow pairs from an hour ago.
+    /// </remarks>
+    public static TimeSpan? EstimateRemaining(int total, int done, TimeSpan lastPair)
+    {
+        if (lastPair <= TimeSpan.Zero)
+        {
+            return null;
+        }
+
+        var left = total - done;
+
+        return left <= 0 ? TimeSpan.Zero : lastPair * left;
     }
 
     /// <summary>

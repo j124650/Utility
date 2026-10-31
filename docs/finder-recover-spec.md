@@ -738,6 +738,47 @@ the re-read is a different phase and "Downloading X" left on screen while the ta
 being re-read would be a lie. The line is also HIDDEN when there is no file, so the
 panel closes up rather than carrying an empty row.
 
+### 10.4.2 How many are recovered
+
+**A second line says how many pairs are RECOVERED so far, out of how many the run is
+recovering** — "12,340 of 160,000 recovered".
+
+**It is a different question from the count above it.** The count says how far the run
+has GOT; this says how many of those are WHOLE. They differ whenever a pair fails, and
+the reader watching a long run wants the second one — a run that has attempted 12,340
+pairs and recovered 12,100 is a different fact from one that has recovered 12,340.
+
+**It rides on the FILE report**, which arrives at every file. The count reports come
+once a hundredth of the run, which for a run of 160,000 pairs is every 1,600 pairs —
+far too coarse to watch. The file report comes at every file, so the recovered count
+moves with the file name.
+
+**It appears only at width 1**, for the same reason the file line does: the count
+rides on that report, and a wider run names no file.
+
+### 10.4.3 How long the run will take
+
+**The same line also says how long the run is expected to take still** — "about 2h 40m
+left" — so the reader can decide whether to let it run or come back tomorrow.
+
+**The estimate is the LAST pair's time, multiplied by the pairs still to go.** The last
+pair is the best measure of the run's pace there is: it is the most recent thing the run
+actually did, at the run's current pace. A run's average would lag — it would still be
+carrying the slow pairs from an hour ago, when the network was busy and the files were
+large.
+
+**The estimate is made from the pair BEFORE the one in flight.** A pair's own duration
+is not known until it is done, so the estimate at any moment is built on the last
+completed one.
+
+**There is no estimate until one pair has finished.** Before that there is nothing to
+base one on, and a guess of "0s" would be worse than nothing.
+
+
+**It is width 1 only**, for the same reason the count is: it rides on the file report.
+At a wider width the pairs overlap, so no single pair's duration describes the run's
+pace — a number there would be a guess dressed as a measurement.
+
 ### 10.5 One log of what happened
 
 **There is one log**, and it answers both "what did the recovery do" (§10.3) and "what
@@ -857,6 +898,17 @@ where the target came from.
 **The result is what the file is now**, measured after the write: the parent's length
 and the child's dimensions. A record that says only what was *attempted* cannot be
 checked against the library; one that says what was *written* can.
+
+**A FAILED DOWNLOAD NAMES THE FILE IT COULD NOT FETCH.** A download that comes back
+`path/not_found/` has to leave a path behind, or the reader has nothing to search on:
+the error names a condition, not a file. **The path is on the record's own `source=`
+line**, beside the namespace and the content hash, and **it is on the app's own log
+line** for the failure — the one that reaches the Windows event log.
+
+**The `reason=` token stays the bare message.** It sits mid-line in the token format,
+where a value carrying spaces would break the parsing — and the path is a separate token
+on the same record, so putting it in the reason would repeat it and break the format at
+the same time.
 
 **A record is written for every pair the run touched, including the ones that failed.**
 A log that only holds the successes cannot answer "what happened to the ones that did
@@ -1262,6 +1314,9 @@ field is a change to the provider, not to the recovery.
 | 38 | The re-read's merge reports as it goes, and the bar moves while it does | run a recovery and watch the merge | **built** |
 | 39 | The busy screen names the file the run is on, and the line is gone when the recovery ends | run a recovery, cancel it mid-download | **built** |
 | 40 | The recovery works through the pairs closest to now first | filter to a set, recover, check the order | **built — `tools/recovery-order-checks` passes 16/16** |
+| 41 | The busy screen says how many pairs are recovered, out of how many will be | run a recovery at width 1 and watch | **built** |
+| 42 | The busy screen says how long the run will take still, from the last pair's time | run a recovery at width 1 and watch | **built** |
+| 43 | A failed download names the file it could not fetch, in the log and in the app's log | fail a download, read both | **built — `tools/repair-log-checks` passes 15/15** |
 
-Nothing in this list has been checked, except rows 36, 37, 38, 39 and 40 — the spec is
-written; the button is not.
+Nothing in this list has been checked, except rows 36, 37, 38, 39, 40, 41, 42 and 43 —
+the spec is written; the button is not.

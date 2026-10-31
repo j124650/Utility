@@ -45,6 +45,8 @@ public sealed class FinderViewModel(
     private int _passTotal;
     private string _passFile = string.Empty;
 
+    private string _passRecovered = string.Empty;
+
     /// <summary>
     /// True while the RECOVERY is running - the phase the file line belongs to.
     /// </summary>
@@ -313,6 +315,7 @@ public sealed class FinderViewModel(
         PassStage = "Recovering";
         PassDetail = string.Empty;
         PassFile = string.Empty;
+        PassRecovered = string.Empty;
         PassDone = 0;
         PassTotal = 0;
         PassIsIndeterminate = false;
@@ -369,6 +372,7 @@ public sealed class FinderViewModel(
             // being re-read would say something untrue.
             _isRecovering = false;
             PassFile = string.Empty;
+            PassRecovered = string.Empty;
 
             // The re-read happens whatever ended the run: the recovery may have written
             // files before it was cancelled or failed (§10.9). A re-read that fails does
@@ -592,6 +596,24 @@ public sealed class FinderViewModel(
     }
 
     /// <summary>Carries the recovery's progress onto the busy screen.</summary>
+    /// <summary>
+    /// A duration as the reader reads it: "2h 40m", "35m", "12s".
+    /// </summary>
+    private static string FormatRemaining(TimeSpan value)
+    {
+        if (value.TotalHours >= 1)
+        {
+            return $"{(int)value.TotalHours}h {value.Minutes}m";
+        }
+
+        if (value.TotalMinutes >= 1)
+        {
+            return $"{(int)value.TotalMinutes}m";
+        }
+
+        return $"{(int)value.TotalSeconds}s";
+    }
+
     private void OnRepairProgress(FinderRepairProgress info)
     {
         // A report that names a file says what the run is doing RIGHT NOW - which file it
@@ -604,6 +626,13 @@ public sealed class FinderViewModel(
             if (_isRecovering)
             {
                 PassFile = $"{info.Stage} {info.File}";
+
+                // How many are RECOVERED so far, out of how many will be. It rides on the
+                // file report because that is the report that arrives at every file - the
+                // count reports come once a hundredth of the run, which is far too coarse
+                // to watch a long run by.
+                PassRecovered = $"{info.Recovered:N0} of {info.RecoveredTotal:N0} recovered"
+                    + (info.Remaining is { } left ? $" - about {FormatRemaining(left)} left" : string.Empty);
             }
 
             return;
@@ -752,6 +781,19 @@ public sealed class FinderViewModel(
     {
         get => _passFile;
         private set => SetProperty(ref _passFile, value);
+    }
+
+    /// <summary>
+    /// How many pairs are recovered so far, out of how many the run is recovering.
+    /// </summary>
+    /// <remarks>
+    /// Empty when the run is not on a single file - the count rides on the file report,
+    /// and a wider run names no file.
+    /// </remarks>
+    public string PassRecovered
+    {
+        get => _passRecovered;
+        private set => SetProperty(ref _passRecovered, value);
     }
 
     /// <summary>The stage's own words: "N of M".</summary>
