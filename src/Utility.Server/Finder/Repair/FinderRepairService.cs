@@ -42,7 +42,17 @@ public interface IFinderRepairService
 /// <summary>
 /// How far the repair has got.
 /// </summary>
-public sealed record FinderRepairProgress(string Stage, int Done, int Total, string Detail);
+public sealed record FinderRepairProgress(string Stage, int Done, int Total, string Detail)
+{
+    /// <summary>
+    /// The file the run is working on RIGHT NOW - the one being downloaded or resized.
+    /// </summary>
+    /// <remarks>
+    /// Empty when the run is not on a single file: at a width above one there are several
+    /// in flight, and naming one of them would say something untrue.
+    /// </remarks>
+    public string File { get; init; } = string.Empty;
+}
 
 /// <summary>
 /// The repairer: it restores the parents and regenerates the children.
@@ -200,6 +210,11 @@ public sealed class FinderRepairService(
         // it takes.
         var width = Math.Max(1, options.Value.RecoverWidth);
 
+        // At width 1 exactly one file is in flight, so the run can name it. At a wider
+        // width several are, and naming one of them would say something untrue - so the
+        // file is left out and the count stands alone.
+        var nameTheFile = width == 1;
+
         // A run starts with no hold on it: the brake is shared, and a hold left over
         // from a previous run would delay this one for nothing.
         _rateLimitBrake.Reset();
@@ -213,7 +228,8 @@ public sealed class FinderRepairService(
                     ct.ThrowIfCancellationRequested();
 
                     var record = await RepairOneAsync(
-                        row, libraryRoot, quality, thumbnailQuality, vcatWidth, thumbnailWidth, ct);
+                        row, libraryRoot, quality, thumbnailQuality, vcatWidth, thumbnailWidth,
+                        progress, nameTheFile, ct);
 
                     if (log is not null)
                     {
@@ -243,7 +259,8 @@ public sealed class FinderRepairService(
                     try
                     {
                         var record = await RepairOneAsync(
-                            row, libraryRoot, quality, thumbnailQuality, vcatWidth, thumbnailWidth, ct);
+                            row, libraryRoot, quality, thumbnailQuality, vcatWidth, thumbnailWidth,
+                            progress, nameTheFile, ct);
 
                         if (log is not null)
                         {
@@ -299,6 +316,8 @@ public sealed class FinderRepairService(
         int thumbnailQuality,
         int vcatWidth,
         int thumbnailWidth,
+        IProgress<FinderRepairProgress>? progress,
+        bool nameTheFile,
         CancellationToken ct)
     {
         var candidate = row.BestCandidate;
@@ -340,6 +359,15 @@ public sealed class FinderRepairService(
                 // place: a download cut short leaves a truncated file, and a truncated file
                 // at the parent's path is CORRUPTED, which is worse than missing.
                 var temporaryPath = parentPath + ".download";
+
+                // The file the run is on, so the reader can see WHAT it is fetching.
+                // Only when the run is narrow enough that one file is the truth: at a
+                // wider width several are in flight and naming one would be a lie.
+                if (nameTheFile)
+                {
+                    progress?.Report(new FinderRepairProgress(
+                        "Downloading", 0, 0, string.Empty) { File = candidate.Name });
+                }
 
                 try
                 {
@@ -383,6 +411,18 @@ public sealed class FinderRepairService(
                     libraryRoot, row.ParentFolder, row.ChildId.ToString().ToUpperInvariant());
 
                 Directory.CreateDirectory(Path.GetDirectoryName(childPath)!);
+
+                // The child is written under a GUID with no extension, so the reader would
+                // recognise nothing. It is named by the PRODUCT it belongs to - the
+                // parent's file name - and by WHAT is being produced of it.
+                if (nameTheFile)
+                {
+                    progress?.Report(new FinderRepairProgress(
+                        "Resizing", 0, 0, string.Empty)
+                    {
+                        File = $"{row.ChildCategoryName} of {row.ParentFileName}"
+                    });
+                }
 
                 await WriteChildAsync(parentPath, childPath, target, childQuality, ct);
 

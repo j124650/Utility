@@ -43,6 +43,17 @@ public sealed class FinderViewModel(
     private string _passDetail = string.Empty;
     private int _passDone;
     private int _passTotal;
+    private string _passFile = string.Empty;
+
+    /// <summary>
+    /// True while the RECOVERY is running - the phase the file line belongs to.
+    /// </summary>
+    /// <remarks>
+    /// The progress reports are POSTED to the UI thread, so a file report can arrive
+    /// after the run has moved on. The re-read that follows the recovery is a different
+    /// phase, and a file report landing during it must not put the line back.
+    /// </remarks>
+    private bool _isRecovering;
     private bool _passIsIndeterminate = true;
 
     private FinderRow? _selected;
@@ -296,9 +307,12 @@ public sealed class FinderViewModel(
         IsBusy = true;
         PassStage = "Recovering";
         PassDetail = string.Empty;
+        PassFile = string.Empty;
         PassDone = 0;
         PassTotal = 0;
         PassIsIndeterminate = false;
+
+        _isRecovering = true;
         OnPropertyChanged(nameof(IsPassing));
         OnPropertyChanged(nameof(CanCancelPass));
         OnPropertyChanged(nameof(CanRecoverSelected));
@@ -344,6 +358,13 @@ public sealed class FinderViewModel(
         }
         finally
         {
+            // The recovery is over - finished, cancelled or failed - so the file line
+            // goes with it. It is cleared HERE, before the re-read, because the re-read
+            // is a different phase: "Downloading X" left on screen while the table is
+            // being re-read would say something untrue.
+            _isRecovering = false;
+            PassFile = string.Empty;
+
             // The re-read happens whatever ended the run: the recovery may have written
             // files before it was cancelled or failed (§10.9). A re-read that fails does
             // not undo the recovery, so it is reported on its own.
@@ -542,6 +563,7 @@ public sealed class FinderViewModel(
         PassDone = total;
         PassDetail = $"{total:N0} row(s)";
     }
+
     /// <summary>
     /// The indexes of the rows whose parents are among the given ids.
     /// </summary>
@@ -567,6 +589,21 @@ public sealed class FinderViewModel(
     /// <summary>Carries the recovery's progress onto the busy screen.</summary>
     private void OnRepairProgress(FinderRepairProgress info)
     {
+        // A report that names a file says what the run is doing RIGHT NOW - which file it
+        // is downloading or resizing. It carries no counts, so it does not move the bar:
+        // the count reports do that.
+        if (!string.IsNullOrEmpty(info.File))
+        {
+            // Only during the recovery itself: a report that lands after the re-read has
+            // begun belongs to a phase that is over.
+            if (_isRecovering)
+            {
+                PassFile = $"{info.Stage} {info.File}";
+            }
+
+            return;
+        }
+
         PassStage = info.Stage;
         PassDetail = info.Detail;
         PassDone = info.Done;
@@ -697,6 +734,19 @@ public sealed class FinderViewModel(
     {
         get => _passStage;
         private set => SetProperty(ref _passStage, value);
+    }
+
+    /// <summary>
+    /// The file the run is working on right now: "Downloading X" or "Resizing X".
+    /// </summary>
+    /// <remarks>
+    /// Empty when the run is not on a single file - at a width above one there are
+    /// several in flight, and naming one of them would say something untrue.
+    /// </remarks>
+    public string PassFile
+    {
+        get => _passFile;
+        private set => SetProperty(ref _passFile, value);
     }
 
     /// <summary>The stage's own words: "N of M".</summary>

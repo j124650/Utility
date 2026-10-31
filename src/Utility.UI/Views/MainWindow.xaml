@@ -353,6 +353,21 @@
                                    HorizontalAlignment="Center" Margin="0,8,0,0"
                                    MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
 
+                        <!--
+                          The file the run is working on RIGHT NOW - "Downloading X" or
+                          "Resizing X". It is there so the reader can see WHAT the run is
+                          doing, not only how far along it is.
+
+                          It is hidden when there is no such file: at a width above one
+                          several are in flight, and naming one of them would say something
+                          untrue. So the line comes and goes, and the panel closes up when
+                          it is gone.
+                        -->
+                        <TextBlock Text="{Binding PassFile}" FontSize="13" Foreground="#B8C0CC"
+                                   HorizontalAlignment="Center" Margin="0,6,0,0"
+                                   MaxWidth="540" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                   Visibility="{Binding PassFile, Converter={StaticResource StringToVis}}" />
+
                         <ProgressBar Height="4" Margin="0,20,0,0" Minimum="0" Maximum="100"
                                      Value="{Binding PassPercent, Mode=OneWay}"
                                      IsIndeterminate="{Binding PassIsIndeterminate}"

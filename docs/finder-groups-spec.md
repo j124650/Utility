@@ -1,7 +1,8 @@
 # Finder — Groups
 
 > **Preliminary.** This spec states what the **Groups** button does and what it shows — the
-> grouping rule, the window, and the figures it carries. **Nothing here has been built.**
+> grouping rule, the window, and the figures it carries. **This is built and verified**;
+> see §8 for what was checked against the live library.
 >
 > **This is an OPTIONAL TEST FEATURE.** The Groups window is a diagnostic tool, not a
 > product feature: it exists to answer a question while the recovery is being planned and

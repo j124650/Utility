@@ -716,6 +716,28 @@ of the count to do, and the stop button. The busy screen is the Finder's own (§
 the Finder spec), so it is where the reader already looks for progress — and it is a
 modal over the whole window, so it cannot be missed.
 
+### 10.4.1 The file the run is on
+
+**The busy screen also names the file the run is working on right now** — "Downloading
+X" or "Resizing X". It is there because "1,200 of 160,000 pair(s)" says how far along
+the run is and not what it is doing; the file says the second thing.
+
+| The line says | |
+|---|---|
+| **Downloading** | the parent being restored, by the file name in Dropbox |
+| **Resizing** | the child being regenerated, as `{category} of {parent file name}` — the child is written under a GUID with no extension, so it is named by the product it belongs to and what is being produced of it |
+
+**The line appears only when the run is at WIDTH 1** — one file at a time. At a wider
+width several files are in flight, and naming one of them would say something untrue: the
+reader would think the run is on that file and nothing else. So the line is there at
+width 1 and gone above it, and it comes and goes with the work.
+
+**The line belongs to the RECOVERY and to no other phase.** It is cleared when the
+recovery ends — finished, cancelled or failed — and before the re-read begins, because
+the re-read is a different phase and "Downloading X" left on screen while the table is
+being re-read would be a lie. The line is also HIDDEN when there is no file, so the
+panel closes up rather than carrying an empty row.
+
 ### 10.5 One log of what happened
 
 **There is one log**, and it answers both "what did the recovery do" (§10.3) and "what
@@ -1170,6 +1192,7 @@ field is a change to the provider, not to the recovery.
 | 36 | The recovery's log goes in a folder named for the date the recovery started, with the month a number | run a recovery, list the log folder | **built — `tools/repair-log-checks` passes 12/12** |
 | 37 | A refused download does not fail its pair — the run waits, backs off and retries | refuse a download, check the pair is still recovered | **built — `tools/repair-throttle-checks` passes 15/15** |
 | 38 | The re-read's merge reports as it goes, and the bar moves while it does | run a recovery and watch the merge | **built** |
+| 39 | The busy screen names the file the run is on, and the line is gone when the recovery ends | run a recovery, cancel it mid-download | **built** |
 
-Nothing in this list has been checked, except rows 36 and 37 — the spec is written; the
-button is not.
+Nothing in this list has been checked, except rows 36, 37, 38 and 39 — the spec is
+written; the button is not.
