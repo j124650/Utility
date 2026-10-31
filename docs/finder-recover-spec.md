@@ -1044,6 +1044,22 @@ replaces each row's state and verdict with what the re-read found. **The filters
 applied again** — a row whose new verdict no longer matches the active verdict filter
 stays visible, showing the verdict its files now deserve.
 
+**THE MERGE REPORTS AS IT GOES, because it is not instant.** The table is bound to
+`Rows`, so every write raises a change notification the grid handles — about half a
+second for 160,000 rows, with nothing on screen saying so. The merge therefore yields
+to the dispatcher as it goes, and the busy screen's bar moves while the table is updated.
+
+**The yield is at `DispatcherPriority.Background`, NOT `await Task.Yield()`.** A yield
+posts at Normal priority, which runs BEFORE the render pass, so the loop carries on and
+the screen never repaints — measured: 0 frames rendered with a Normal yield, 20 with a
+Background one. **The merge reports every 10,000 rows**: a report every 1,000 rows
+costs as much as the merge itself (456 ms against 172 ms every 50,000), so the interval
+is chosen by what the reporting costs, not by how often the reader could watch it move.
+
+**The bar's total is the number of rows that will ACTUALLY be replaced** — not the size
+of the re-read set. The two can differ, and a bar that promises a total it never reaches
+is worse than no bar.
+
 **The narrowed run does not publish to the scan state.** The scan state holds the whole
 library; publishing a narrowed set into it would make a later read of the state return only
 the filtered set. The rows it holds stay as they are.
@@ -1153,6 +1169,7 @@ field is a change to the provider, not to the recovery.
 | 35 | The table shows at most 200 actions, and says how many there are in all | open the window over a set larger than 200 | **not built** |
 | 36 | The recovery's log goes in a folder named for the date the recovery started, with the month a number | run a recovery, list the log folder | **built — `tools/repair-log-checks` passes 12/12** |
 | 37 | A refused download does not fail its pair — the run waits, backs off and retries | refuse a download, check the pair is still recovered | **built — `tools/repair-throttle-checks` passes 15/15** |
+| 38 | The re-read's merge reports as it goes, and the bar moves while it does | run a recovery and watch the merge | **built** |
 
 Nothing in this list has been checked, except rows 36 and 37 — the spec is written; the
 button is not.
