@@ -37,6 +37,9 @@ scratch/
 # The repair-checks harness builds here.
 tools/repair-checks/bin/
 tools/repair-checks/obj/
+# The repair-log-checks harness builds here.
+tools/repair-log-checks/bin/
+tools/repair-log-checks/obj/
 
 ## The groups harness writes its run output here.
 tools/groups-checks/run.log

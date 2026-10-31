@@ -117,6 +117,11 @@ public sealed class FinderRepairService(
         IProgress<FinderRepairProgress>? progress = null,
         CancellationToken ct = default)
     {
+        // The moment the procedure started. It names the log's folder and file (§10.5.1),
+        // so it is taken HERE - before the settings and the library root are read - and
+        // not when the log opens, which is later and can be on the next day.
+        var startedAt = DateTimeOffset.Now;
+
         var settings = await ml.GetSettingsAsync(ct);
 
         var libraryRoot = await GetLibraryRootAsync(ct);
@@ -146,8 +151,9 @@ public sealed class FinderRepairService(
         };
 
         // The log opens with the run's summary — the same figures the confirmation window
-        // showed, so the two agree (§10.5.4).
-        var log = await logs.OpenAsync(summary, ct);
+        // showed, so the two agree (§10.5.4). It goes in the folder named for the date the
+        // recovery started.
+        var log = await logs.OpenAsync(summary, startedAt, ct);
         summary = summary with { LogPath = log?.Path };
 
         var done = 0;

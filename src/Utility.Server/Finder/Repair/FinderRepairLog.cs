@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Logging;
 
@@ -16,11 +17,21 @@ public interface IFinderRepairLogProvider
     /// <summary>
     /// Opens the log for a run and writes its summary.
     /// </summary>
+    /// <param name="summary">The run's figures, as the confirmation window showed them.</param>
+    /// <param name="startedAt">
+    /// The moment the recovery started. It names the folder the log goes in (§10.5.1) — the
+    /// date the procedure STARTED, so a run that crosses midnight is filed under the day it
+    /// began.
+    /// </param>
+    /// <param name="ct">Cancels the open.</param>
     /// <returns>
     /// The path of the log, or null when it could not be opened. A log that cannot be
     /// written must never stop the recovery.
     /// </returns>
-    Task<IFinderRepairLog?> OpenAsync(FinderRepairSummary summary, CancellationToken ct = default);
+    Task<IFinderRepairLog?> OpenAsync(
+        FinderRepairSummary summary,
+        DateTimeOffset startedAt,
+        CancellationToken ct = default);
 }
 
 /// <summary>
@@ -50,8 +61,10 @@ public interface IFinderRepairLog : IAsyncDisposable
 /// </summary>
 /// <remarks>
 /// <para>
-/// The file is named for the app run it belongs in — <c>Recover 2026-10-26_18-20-01.log</c>
-/// — so the two sit together and sort together, and every line in it belongs to that run.
+/// The log goes in a FOLDER named for the date the recovery started — <c>2026-10-28</c> —
+/// so the logs of a day sit together and the day's folder says what it holds. The file
+/// inside carries the same stamp as the app's own log, so the two still name the same
+/// moment and can be read together.
 /// </para>
 /// <para>
 /// The lines are flushed as they are written. The run worth reading is the one that ended
@@ -59,26 +72,78 @@ public interface IFinderRepairLog : IAsyncDisposable
 /// that explain why.
 /// </para>
 /// </remarks>
-public sealed class TextFinderRepairLogProvider(ILogger<TextFinderRepairLogProvider> logger) : IFinderRepairLogProvider
+public sealed class TextFinderRepairLogProvider : IFinderRepairLogProvider
 {
-    /// <summary>Where the log lives: beside the app's own log.</summary>
+    private readonly ILogger<TextFinderRepairLogProvider> _logger;
+    private readonly string _baseDirectory;
+
+    /// <summary>
+    /// The provider the app uses: the logs live beside the app's own log.
+    /// </summary>
+    public TextFinderRepairLogProvider(ILogger<TextFinderRepairLogProvider> logger)
+        : this(logger, LogDirectory)
+    {
+    }
+
+    /// <summary>
+    /// The provider with the logs in a folder of its own — the harness's.
+    /// </summary>
+    public TextFinderRepairLogProvider(
+        ILogger<TextFinderRepairLogProvider> logger,
+        string baseDirectory)
+    {
+        _logger = logger;
+        _baseDirectory = baseDirectory;
+    }
+
+    /// <summary>Where the logs live: beside the app's own log.</summary>
     public static string LogDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Utility",
         "logs");
 
+    /// <summary>The folder the logs are written into.</summary>
+    public string BaseDirectory => _baseDirectory;
+
+    /// <summary>
+    /// The folder one recovery's log goes in: the date the recovery STARTED.
+    /// </summary>
+    /// <remarks>
+    /// The date, not the time: the folder says which day the run belongs to, and the file
+    /// inside says when in the day it began. A run that crosses midnight is filed under the
+    /// day it began — the procedure's start is what names it.
+    /// <para>
+    /// The invariant culture, so the folder carries the Gregorian date whatever the
+    /// machine's locale is. A culture with its own calendar would otherwise name the
+    /// folder by a year that is not this one.
+    /// </para>
+    /// </remarks>
+    public static string RunDirectory(string baseDirectory, DateTimeOffset startedAt) =>
+        Path.Combine(baseDirectory, startedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// The file one recovery's log is: the same stamp as the app's own log.
+    /// </summary>
+    /// <remarks>
+    /// No colon in the name — a colon is not legal in a Windows file name — so the time
+    /// carries a dash between the hours and the minutes.
+    /// </remarks>
+    public static string RunFileName(DateTimeOffset startedAt) =>
+        $"Recover {startedAt.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture)}.log";
+
+    /// <summary>The full path of one recovery's log.</summary>
+    public static string RunPath(string baseDirectory, DateTimeOffset startedAt) =>
+        Path.Combine(RunDirectory(baseDirectory, startedAt), RunFileName(startedAt));
+
     public async Task<IFinderRepairLog?> OpenAsync(
         FinderRepairSummary summary,
+        DateTimeOffset startedAt,
         CancellationToken ct = default)
     {
         try
         {
-            Directory.CreateDirectory(LogDirectory);
-
-            // The stamp is the app run's, not the recovery's: a recovery happens inside a
-            // run, and the run's stamp is what the app's own log carries.
-            var stamp = DateTime.Now;
-            var path = Path.Combine(LogDirectory, $"Recover {stamp:yyyy-MM-dd_HH-mm-ss}.log");
+            var path = RunPath(_baseDirectory, startedAt);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
             var writer = new StreamWriter(
                 new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read),
@@ -87,20 +152,20 @@ public sealed class TextFinderRepairLogProvider(ILogger<TextFinderRepairLogProvi
                 AutoFlush = true
             };
 
-            await writer.WriteLineAsync($"Recovery run - {stamp:yyyy-MM-dd HH:mm}");
+            await writer.WriteLineAsync($"Recovery run - {startedAt:yyyy-MM-dd HH:mm}");
             await writer.WriteLineAsync($"  Filtered set      {summary.Shown:N0} pair(s)");
             await writer.WriteLineAsync($"  Recoverable       {summary.Recoverable:N0}");
             await writer.WriteLineAsync($"  Folders           {summary.Folders:N0}");
             await writer.WriteLineAsync();
 
-            logger.LogInformation("Recovery log opened at {Path}.", path);
+            _logger.LogInformation("Recovery log opened at {Path}.", path);
 
             return new TextFinderRepairLog(path, writer);
         }
         catch (Exception ex)
         {
             // A log that cannot be written must never stop the recovery.
-            logger.LogError(ex, "The recovery log could not be opened.");
+            _logger.LogError(ex, "The recovery log could not be opened.");
             return null;
         }
     }

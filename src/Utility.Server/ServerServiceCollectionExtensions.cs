@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Utility.Server.DropBoxSync;
 using Utility.Server.Finder.Repair;
@@ -93,7 +94,13 @@ public static class ServerServiceCollectionExtensions
         // database, never Dropbox. The log goes through a provider, so where the records
         // go can change without the repair changing.
         services.AddTransient<IFinderRepairService, FinderRepairService>();
-        services.AddSingleton<IFinderRepairLogProvider, TextFinderRepairLogProvider>();
+
+        // The log goes in a folder named for the date the recovery started. The factory says
+        // so explicitly: the provider has a second constructor that takes the folder, and the
+        // container must not be left to choose between them.
+        services.AddSingleton<IFinderRepairLogProvider>(sp =>
+            new TextFinderRepairLogProvider(
+                sp.GetRequiredService<ILogger<TextFinderRepairLogProvider>>()));
 
         services.AddUtilityDropBoxSync(configuration);
 

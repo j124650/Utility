@@ -743,20 +743,32 @@ own log file is written to (`App.xaml.cs`, `FileLog.TryOpen`). **Not the tempora
 folder**: a log in `%TEMP%` is a log that gets cleaned up, and this is the record of what
 happened to the media library.
 
-The app's own log is one file per run, named for the moment the app started
-(`2026-10-26_18-20-01.log`). The recovery log follows the same rule and the same
-naming, so the two sit together and sort together:
+**Each recovery's log goes in a FOLDER named for the date the recovery started** — and the
+file sits inside it:
+
+```
+%LOCALAPPDATA%\Utility\logs\2026-10-28\Recover 2026-10-28_18-20-01.log
+```
 
 | | |
 |---|---|
-| **Folder** | `%LOCALAPPDATA%\Utility\logs\` |
-| **Name** | `Recover 2026-10-26_18-20-01.log` — the same stamp as the app's log, so a recovery is tied to the run it happened in |
-| **One file per run** | a second run writes its own file and leaves the first exactly as it was |
+| **Folder** | `%LOCALAPPDATA%\Utility\logs\<the date the recovery started>\` — `yyyy-MM-dd`, the month a **number** (`2026-10-28`, not `2026-Oct-28`) |
+| **File** | `Recover 2026-10-28_18-20-01.log` — the same stamp as the folder, so the file names the moment inside the day that holds it |
+| **One folder per day** | the day's logs sit together, and the day's folder says what it holds |
+| **One file per run** | two recoveries on the same day share the folder and still get separate files |
 
-**The stamp is the app run's start time, not the recovery's.** A recovery happens inside
-a run, and the run's stamp is what the app's own log carries — so the two files name the
-same moment and can be read together. If the app is restarted, the new run's recovery
-writes to the new run's file.
+**The date is the recovery's START, not its end.** A recovery that starts at 23:59 and
+ends at 00:05 the next day belongs to the day it began — the procedure's start is what
+names it. The moment is captured when the procedure starts, before the settings and the
+library root are read, so it cannot slip across midnight while the run gets under way.
+
+**The month is a number, so the folders sort as dates.** `2026-10-28` comes before
+`2026-10-29` comes before `2026-11-01`. A folder named for a month would break that, and
+the folders are read in date order.
+
+**The app's own log stays flat**, one file per run, named for the moment the app started
+(`2026-10-26_18-20-01.log`). It is the app's own record of its own run, and it does not
+move into a dated folder — only the recovery's log does.
 
 **No colon in the name** — a colon is not a legal character in a Windows file name, so
 the time carries a dash between the hours and the minutes. The same rule as the app's own
@@ -1089,5 +1101,7 @@ field is a change to the provider, not to the recovery.
 | 33 | The table names the real paths — the file in Dropbox and the file on disk | open the window, check a `To` path against the disk | **not built** |
 | 34 | A pair that is not recovered has no row in the table | open the window over a mixed set | **not built** |
 | 35 | The table shows at most 200 actions, and says how many there are in all | open the window over a set larger than 200 | **not built** |
+| 36 | The recovery's log goes in a folder named for the date the recovery started, with the month a number | run a recovery, list the log folder | **built — `tools/repair-log-checks` passes 12/12** |
 
-Nothing in this list has been checked. The spec is written; the button is not.
+Nothing in this list has been checked, except row 36 — the spec is written; the button is
+not.
