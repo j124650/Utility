@@ -48,3 +48,6 @@ tools/groups-checks/run.log
 ## sessions started inside this repo, but they are a local toolchain choice, not
 ## project source — keep them out of the repo.
 .hermes/
+# The repair-throttle-checks harness builds here.
+tools/repair-throttle-checks/bin/
+tools/repair-throttle-checks/obj/

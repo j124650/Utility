@@ -1,6 +1,7 @@
 using ImageMagick;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Utility.DropBox;
 using Utility.DropBox.Services;
 using Utility.Server.Finder.Services;
 using Utility.Server.ML.Services;
@@ -66,6 +67,42 @@ public sealed class FinderRepairService(
 {
     /// <summary>The quality used when the settings carry none.</summary>
     private const int DefaultQuality = 35;
+
+    /// <summary>
+    /// How many times a download may be refused before the pair is given up on.
+    /// </summary>
+    /// <remarks>
+    /// Fifty, because the run is a MASS operation - about 160,000 downloads - and a pair
+    /// it loses to a rate limit is lost for good: nothing recovers it later unless the
+    /// reader runs the repair again by hand. A rate limit is a signal to slow down, not a
+    /// verdict on the file, so the run waits it out.
+    /// </remarks>
+    private const int MaxRateLimitAttempts = 50;
+
+    /// <summary>
+    /// The wait when Dropbox did not say how long to wait: it grows with the attempt.
+    /// </summary>
+    /// <remarks>
+    /// The same shape the sync walk uses, so a run of either kind backs off the same way:
+    /// five seconds, then ten, twenty, forty, eighty - and then it stays at the cap,
+    /// because a limit that has not cleared after a minute and a half is not going to
+    /// clear in the next second either.
+    /// </remarks>
+    private static int RateLimitBackoffSeconds(int attempt)
+    {
+        var seconds = 5 * (1 << Math.Min(attempt - 1, 5));
+        return seconds > 300 ? 300 : seconds;
+    }
+
+    /// <summary>
+    /// The brake every worker waits at when Dropbox rate-limits the run.
+    /// </summary>
+    /// <remarks>
+    /// Dropbox's limit is per AUTHORIZATION - per user, or per team - so a 429 is a
+    /// signal about the whole run and not about the one request that was refused. One
+    /// brake, shared: the longest wait any worker was given holds everyone.
+    /// </remarks>
+    private readonly DropboxRateLimitBrake _rateLimitBrake = new();
 
     /// <summary>
     /// How often the progress is reported, in records.
@@ -162,6 +199,10 @@ public sealed class FinderRepairService(
         // the sequential recoverer - and it does not change WHAT is written, only how long
         // it takes.
         var width = Math.Max(1, options.Value.RecoverWidth);
+
+        // A run starts with no hold on it: the brake is shared, and a hold left over
+        // from a previous run would delay this one for nothing.
+        _rateLimitBrake.Reset();
 
         try
         {
@@ -302,8 +343,7 @@ public sealed class FinderRepairService(
 
                 try
                 {
-                    await dropBox.DownloadAsync(
-                        candidate.Path, temporaryPath, candidate.NamespaceId, ct);
+                    await DownloadWithRateLimitAsync(candidate, temporaryPath, ct);
 
                     File.Move(temporaryPath, parentPath, overwrite: true);
                 }
@@ -362,6 +402,66 @@ public sealed class FinderRepairService(
         {
             logger.LogWarning(ex, "Recovery failed for {ParentId}.", row.ParentId);
             return record with { Reason = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Downloads one file, riding out a rate limit.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A 429 is the API saying "stop" - and because the limit is per authorization, it
+    /// applies to every worker and not to the one request that was refused. So the wait is
+    /// shared: this worker holds the brake, and every worker waits at it before its next
+    /// request.
+    /// </para>
+    /// <para>
+    /// Without this, a refused download fails its pair outright - the recovery writes
+    /// nothing for it and moves on, and a run of 160,000 downloads loses every pair the
+    /// API happened to refuse. A rate limit is a signal to slow down, not a verdict on
+    /// the file.
+    /// </para>
+    /// </remarks>
+    private async Task DownloadWithRateLimitAsync(
+        FinderCandidate candidate,
+        string temporaryPath,
+        CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            // Every worker waits at the brake before its request: a 429 is a signal
+            // about the whole run, not about one request.
+            await _rateLimitBrake.WaitAsync(ct).ConfigureAwait(false);
+
+            try
+            {
+                await dropBox.DownloadAsync(
+                    candidate.Path, temporaryPath, candidate.NamespaceId, ct);
+                return;
+            }
+            catch (DropBoxRateLimitedException ex)
+            {
+                if (attempt >= MaxRateLimitAttempts)
+                {
+                    throw new InvalidOperationException(
+                        $"Dropbox rate limited the download after {attempt} attempts.", ex);
+                }
+
+                // The wait is the one Dropbox asked for; when it did not say, the backoff
+                // grows. Either way the brake holds EVERY worker.
+                var wait = ex.RetryAfterSeconds > 0
+                    ? ex.RetryAfterSeconds
+                    : RateLimitBackoffSeconds(attempt);
+
+                _rateLimitBrake.Hold(wait);
+
+                logger.LogWarning(
+                    "Dropbox rate limited the download of {Path} (attempt {Attempt}/{Max}); holding the run for {Wait}s.",
+                    candidate.Path, attempt, MaxRateLimitAttempts, wait);
+
+                // A partial download must not be mistaken for a good one on the retry.
+                TryDelete(temporaryPath);
+            }
         }
     }
 

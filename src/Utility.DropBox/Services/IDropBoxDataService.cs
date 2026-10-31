@@ -404,12 +404,25 @@ public sealed class DropBoxDataService(
             Directory.CreateDirectory(directory);
         }
 
-        using var response = await client.Files.DownloadAsync(dropboxPath);
-        await using var source = await response.GetContentAsStreamAsync()
-            ?? throw new InvalidOperationException($"Dropbox returned no content stream for '{dropboxPath}'.");
-        await using var destination = File.Create(destinationPath);
+        try
+        {
+            using var response = await client.Files.DownloadAsync(dropboxPath);
+            await using var source = await response.GetContentAsStreamAsync()
+                ?? throw new InvalidOperationException($"Dropbox returned no content stream for '{dropboxPath}'.");
+            await using var destination = File.Create(destinationPath);
 
-        await source.CopyToAsync(destination, ct);
+            await source.CopyToAsync(destination, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Translated like the listing and the metadata are: a 429 must arrive as the
+            // app's own exception, so the caller above can hold and retry instead of
+            // failing the record outright. The SDK does NOT retry a rate limit - its
+            // retry budget covers server errors only - so this is what the caller has to
+            // act on.
+            throw Translate(ex);
+        }
+
         logger.LogInformation("Downloaded {DropboxPath} to {Destination}.", dropboxPath, destinationPath);
 
         return destinationPath;

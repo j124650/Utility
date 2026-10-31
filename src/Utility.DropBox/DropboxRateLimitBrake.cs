@@ -1,11 +1,11 @@
-namespace Utility.Server.DropBoxSync;
+namespace Utility.DropBox;
 
 /// <summary>
-/// A brake that holds back EVERY worker of a walk when Dropbox rate-limits one of them.
+/// A brake that holds back EVERY worker of a run when Dropbox rate-limits one of them.
 /// <para>
 /// <b>Why one shared brake and not a per-worker backoff.</b> Dropbox's limit is per
-/// authorization - per user, or per team - not per request. When the walk is working on
-/// one team folder, every request counts against the same budget. So a 429 is not one
+/// authorization - per user, or per team - not per request. When a run is working on one
+/// team folder, every request counts against the same budget. So a 429 is not one
 /// unlucky request: it is the API saying "stop, all of you". A per-worker backoff would
 /// let the other five keep hammering while the sixth waits, and Dropbox counts
 /// rate-limited requests against the limit too - so the retry storm would keep the limit

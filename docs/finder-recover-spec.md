@@ -1052,6 +1052,56 @@ the filtered set. The rows it holds stay as they are.
 length will not match the recorded size — that is what the check is for. The verdict is
 decided on the file's state, not on its size.
 
+## 10.10 A rate limit is a signal to slow down, not a verdict on the file
+
+**Dropbox refuses a request that comes too fast (HTTP 429), and the repair must ride it
+out rather than lose the pair.**
+
+The rule this section states: **a refused download does not fail its pair.** The run
+waits, backs off and tries again; only a download refused fifty times in a row gives up,
+and then it says so.
+
+**Why it matters here, and not in passing.** The repair is a MASS operation — about
+160,000 downloads — and **a pair it loses to a rate limit is lost for good.** Nothing
+recovers it later: the skip mechanism is the verdict, and the verdict of a pair whose
+parent was never restored stays "restore parent". So a run that treated every 429 as a
+failure would quietly shed pairs, and the reader would have to find them by hand.
+
+**The SDK does not retry a rate limit.** Its retry budget
+(`DropBox:MaxRetriesOnError`, default 3) covers **server errors only** — a 500 is
+retried, a 429 is raised straight through. So the handling is the app's own job.
+
+**The refusal arrives as the app's own exception.** The download path translates the
+SDK's `RateLimitException` into `DropBoxRateLimitedException`, which carries the wait
+Dropbox asked for in seconds. The listing and the metadata already did this; the download
+did not, which is why a refusal used to arrive as an opaque SDK failure and fall through
+the recovery's catch-all as an ordinary failed pair.
+
+**The wait is SHARED, because the limit is per AUTHORIZATION.** Dropbox's limit is per
+user or per team, not per request: every request the repair makes counts against the same
+budget. So a 429 is not one unlucky request — it is the API saying *"stop, all of you"*.
+One **brake** holds the run, and every worker waits at it before its next request, so the
+fleet pauses together and resumes together. A per-worker backoff would let the others keep
+hammering while one waits, and Dropbox counts rate-limited requests against the limit
+too — the retry storm would keep the limit in place.
+
+**The wait is the one Dropbox asked for.** When it named none, the backoff grows: five
+seconds, then ten, twenty, forty, eighty, and then it stays at the cap — a limit that has
+not cleared after a minute and a half is not going to clear in the next second either.
+The sync walk backs off the same way.
+
+**A partial download is deleted before the retry.** A file that was cut short must not be
+mistaken for a good one on the next attempt.
+
+**The give-up is loud.** A download refused fifty times in a row fails its pair with the
+reason *"Dropbox rate limited the download after 50 attempts."* — in the log, in the
+summary, and where the reader can see it. A pair that failed for this reason was not
+judged on its merits; it was refused.
+
+**What the repair does NOT do:** it does not narrow its own width in response to a 429
+(the sync walk's adaptive width is for the walk's request pattern, and the repair's width
+is 1 anyway), and it does not give up on the run — only on the pair.
+
 ## 11. What is still open
 
 **Nothing.** Every question the spec raised has been answered, and the answers are in
@@ -1102,6 +1152,7 @@ field is a change to the provider, not to the recovery.
 | 34 | A pair that is not recovered has no row in the table | open the window over a mixed set | **not built** |
 | 35 | The table shows at most 200 actions, and says how many there are in all | open the window over a set larger than 200 | **not built** |
 | 36 | The recovery's log goes in a folder named for the date the recovery started, with the month a number | run a recovery, list the log folder | **built — `tools/repair-log-checks` passes 12/12** |
+| 37 | A refused download does not fail its pair — the run waits, backs off and retries | refuse a download, check the pair is still recovered | **built — `tools/repair-throttle-checks` passes 15/15** |
 
-Nothing in this list has been checked, except row 36 — the spec is written; the button is
-not.
+Nothing in this list has been checked, except rows 36 and 37 — the spec is written; the
+button is not.
