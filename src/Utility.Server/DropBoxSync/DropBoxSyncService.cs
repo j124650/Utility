@@ -56,9 +56,18 @@ public sealed class DropBoxSyncService(
     IDropBoxDataService dropBox,
     IDbContextFactory<DropBoxDbContext> contextFactory,
     DropBoxWriteGate writeGate,
+    SqlRoundTripCounter sqlCounter,
     ILogger<DropBoxSyncService> logger) : IDropBoxSyncService
 {
     private readonly IDbContextFactory<DropBoxDbContext> _contextFactory = contextFactory;
+
+    /// <summary>
+    /// The round trips this app has made to the database. The counter is cumulative, so
+    /// a run takes a snapshot before it starts and reports the difference: that
+    /// difference is the run's own cost, and it is the number the walk's throughput is
+    /// bounded by.
+    /// </summary>
+    private readonly SqlRoundTripCounter _sqlCounter = sqlCounter;
 
     /// <summary>
     /// ONE writer at a time for <c>ml.DropBoxNode</c>.
@@ -499,6 +508,9 @@ public sealed class DropBoxSyncService(
         }
 
         var sw = Stopwatch.StartNew();
+
+        // What this run costs the database, measured from here.
+        var sqlBefore = _sqlCounter.Snapshot();
         var runId = Guid.NewGuid();
 
         // 0 = unlimited depth; the walk goes from the root folder down to the leaves.
@@ -721,10 +733,13 @@ public sealed class DropBoxSyncService(
             logger.LogInformation(
                 "Dropbox sync of {Path} completed in {ElapsedMs} ms: {Folders} folder(s), {Files} file(s) " +
                 "({Enriched} with dimensions, {PendingMedia} pending, {EnrichFailed} enrichment failure(s)), " +
-                "{Skipped} folder(s) not fully listed, {Bounded} bounded by depth.",
+                "{Skipped} folder(s) not fully listed, {Bounded} bounded by depth. " +
+                "The database cost {RoundTrips}, and {RowsUpdated} row(s) changed while {RowsUnchanged} did not.",
                 rootPath ?? "the unfinished folders", sw.ElapsedMilliseconds, counts.Folders, counts.Files,
                 counts.Enriched, counts.PendingMedia, counts.EnrichFailed,
-                counts.NotOk, counts.BoundedFolders);
+                counts.NotOk, counts.BoundedFolders,
+                SqlRoundTripSnapshot.Since(sqlBefore, _sqlCounter.Snapshot()).Describe(),
+                counts.RowsUpdated, counts.RowsUnchanged);
 
             _pendingRunning = false;
             _pendingHasResult = true;
@@ -1562,17 +1577,28 @@ public sealed class DropBoxSyncService(
             // statuses, and a folder is always written.
             db.ChangeTracker.DetectChanges();
 
+            var updated = 0;
+
             foreach (var (entity, source) in trackedRows)
             {
                 if (db.Entry(entity).State == EntityState.Modified)
                 {
                     entity.SyncRunId = source.SyncRunId;
                     entity.SyncedUtc = source.SyncedUtc;
+                    updated++;
                 }
             }
 
+            // The rows that were the same as they were were not written, and the rows
+            // that were not in the table at all were added. Both are counted, because
+            // "how much did this run write" is the question the write path is judged by.
+            var added = chunk.Count - trackedRows.Count;
+
+            counts.AddRowsUpdated(updated);
+            counts.AddRowsUnchanged(trackedRows.Count - updated);
+            counts.AddWritten(updated + added);
+
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
-            counts.AddWritten(chunk.Count);
             }
         }, ct).ConfigureAwait(false);
 
@@ -2092,6 +2118,8 @@ public sealed class DropBoxSyncService(
         private int _enriched;
         private int _pendingMedia;
         private int _enrichFailed;
+        private int _rowsUpdated;
+        private int _rowsUnchanged;
 
         // Properties are plain reads; mutation goes through the Add* methods. A property
         // with an Interlocked side effect would increment on every log line that reads it.
@@ -2104,6 +2132,12 @@ public sealed class DropBoxSyncService(
         public int PendingMedia => Volatile.Read(ref _pendingMedia);
         public int EnrichFailed => Volatile.Read(ref _enrichFailed);
 
+        /// <summary>The rows whose values changed, and so were written.</summary>
+        public int RowsUpdated => Volatile.Read(ref _rowsUpdated);
+
+        /// <summary>The rows that were the same as they were, and so were not written.</summary>
+        public int RowsUnchanged => Volatile.Read(ref _rowsUnchanged);
+
         public void AddFolders(int n = 1) => Interlocked.Add(ref _folders, n);
         public void AddFiles(int n = 1) => Interlocked.Add(ref _files, n);
         public void AddWritten(int n) => Interlocked.Add(ref _written, n);
@@ -2112,6 +2146,8 @@ public sealed class DropBoxSyncService(
         public void AddEnriched(int n = 1) => Interlocked.Add(ref _enriched, n);
         public void AddPending(int n = 1) => Interlocked.Add(ref _pendingMedia, n);
         public void AddEnrichFailed(int n = 1) => Interlocked.Add(ref _enrichFailed, n);
+        public void AddRowsUpdated(int n) => Interlocked.Add(ref _rowsUpdated, n);
+        public void AddRowsUnchanged(int n) => Interlocked.Add(ref _rowsUnchanged, n);
     }
 
     private static string Truncate(string message, int max = 256) =>

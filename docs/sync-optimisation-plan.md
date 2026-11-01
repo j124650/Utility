@@ -137,9 +137,9 @@ first: an optimisation that cannot be measured is not an optimisation, it is a h
 
 | counter | where it is counted | how it is reported |
 |---|---|---|
-| **SQL round trips** | an EF `DbCommandInterceptor` on the app's own context factory — one command is one round trip, because EF batches a `SaveChanges` into one command | the run's summary |
+| **SQL round trips** | an EF `DbCommandInterceptor` on the app's own context factory — one command is one round trip, because EF batches a `SaveChanges` into one command | the run's summary — **built**: `SqlRoundTripCounter`, and the sync's completion log line carries it |
 | **round trips by kind** | the same interceptor, tagged by the statement's shape: the tracked query, the flush's update, the folder's status write, the enrichment's write | the run's summary, and one line per write at Debug |
-| **rows written / skipped / inserted** | the flush, which already knows: it counts the chunk, the rows EF marked as modified, and the rows it added | the run's summary; one line per chunk at Debug |
+| **rows written / skipped / inserted** | the flush, which already knows: it counts the chunk, the rows EF marked as modified, and the rows it added | the run's summary — **built**: the completion log line says how many rows changed and how many did not |
 | **Dropbox requests** | `DropBoxSyncService.RateSnapshot.TotalRequests` | the run's summary |
 | **Dropbox requests by kind** | **a gap today**: the enrichment's calls are not metered, so a phase-2 run reports zero requests | the run's summary — to be counted |
 | **gate wait** | the write gate's acquisition time, per write | one line per write at Debug; the total in the summary |
@@ -183,9 +183,10 @@ round trip saved at the cost of rows written twice is not a saving.
 
 ## 5. The order
 
-1. **§4's counters**, so every later change is measurable. The interceptor is already
-   written in `tools/two-phase-service-checks` — it moves into the app, behind the
-   app's own options.
+1. **§4's counters**, so every later change is measurable. **Done**: the interceptor
+   lives in the app (`SqlRoundTripCounter`), the sync's completion log line carries the
+   round trips by kind and the rows that changed against the rows that did not, and
+   the harness reads the app's own counter rather than a second one.
 2. **O1**, the flush's per-chunk write — the largest measured cost that is not a rule
    change.
 3. **O2**, the enrichment's per-row writes — small, self-contained, and it is the
@@ -221,6 +222,7 @@ round trip saved at the cost of rows written twice is not a saving.
 | 8 | the library's name queries survive without the `PathDisplay` include | the library's read patterns measured, then the plan compared | not measured |
 | 9 | the gate may be per folder | the deadlock reproduced and the fix measured — the shipped harness in the sync skill | not measured |
 | 10 | an unchanged walk's listing floor is the delta, not 19,851 calls | the cursor delta against the live account | not measured |
+| 11 | the app counts its own round trips, by kind, and says so in its log | the sync's completion log line | **measured** — "The database cost 22 round trip(s) (11 select, 10 update, 0 insert, 0 delete, 1 other), and 0 row(s) changed while 108 did not" |
 
 ---
 

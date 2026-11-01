@@ -149,6 +149,11 @@ public static class ServerServiceCollectionExtensions
                 new SqlRegistrySettings().TryApplyTo(o);
             });
 
+        // The round trips, counted. One command is one round trip, because EF batches a
+        // SaveChanges into one command - and the walk's throughput is bounded by them,
+        // since every write to ml.DropBoxNode is serialised behind one gate.
+        services.AddSingleton<SqlRoundTripCounter>();
+
         services.AddDbContextFactory<DropBoxDbContext>((sp, db) =>
         {
             var opts = sp.GetRequiredService<IOptions<ServerOptions>>().Value;
@@ -168,7 +173,8 @@ public static class ServerServiceCollectionExtensions
                                              maxRetryDelay: TimeSpan.FromSeconds(10),
                                              errorNumbersToAdd: null);
                 }
-            });
+            })
+            .AddInterceptors(sp.GetRequiredService<SqlRoundTripCounter>());
         }, ServiceLifetime.Singleton);
 
         // ONE writer at a time for ml.DropBoxNode, and it is SHARED: the walk and the
