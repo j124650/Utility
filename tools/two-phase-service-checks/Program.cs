@@ -1,7 +1,10 @@
 using System.Data;
+using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Utility.DropBox;
@@ -71,6 +74,20 @@ internal static class Program
         builder.Services.AddUtilityServer(builder.Configuration);
         builder.Services.AddUtilityDropBox(builder.Configuration);
 
+        // The app's own factory, with a counter on it, so the SQL round trips are counted
+        // the same way the Dropbox requests are: one command is one round trip.
+        var sqlCounter = new SqlCounter();
+        builder.Services.AddSingleton<IDbContextFactory<DropBoxDbContext>>(sp =>
+        {
+            var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Utility.Server.Options.ServerOptions>>().Value;
+
+            return new CountingDbContextFactory(
+                new DbContextOptionsBuilder<DropBoxDbContext>()
+                    .UseSqlServer(opts.ConnectionString)
+                    .AddInterceptors(sqlCounter)
+                    .Options);
+        });
+
         using var host = builder.Build();
 
         var service = host.Services.GetRequiredService<IDropBoxSyncTwoPhaseService>();
@@ -80,9 +97,11 @@ internal static class Program
         await using var db = new SqlConnection(options.Value.ConnectionString);
         await db.OpenAsync();
 
+        var sync = host.Services.GetRequiredService<IDropBoxSyncService>();
+
         if (full)
         {
-            return await RunFullAsync(service, db, subtree, Namespace, depth);
+            return await RunFullAsync(service, sync, db, sqlCounter, subtree, Namespace, depth);
         }
 
         Console.WriteLine($"path: {subtree}");
@@ -209,7 +228,9 @@ internal static class Program
     /// </summary>
     private static async Task<int> RunFullAsync(
         IDropBoxSyncTwoPhaseService service,
+        IDropBoxSyncService sync,
         SqlConnection db,
+        SqlCounter sqlCounter,
         string path,
         string ns,
         int depth)
@@ -219,6 +240,9 @@ internal static class Program
         Console.WriteLine();
 
         var before = await FiguresAsync(db);
+
+        var sqlBefore = sqlCounter.Commands;
+        var dropboxBefore = sync.RateSnapshot.TotalRequests;
 
         Console.WriteLine("--- before ---");
         Console.WriteLine($"  rows        : {before.Rows:N0}");
@@ -239,6 +263,16 @@ internal static class Program
         Console.WriteLine();
 
         var after = await FiguresAsync(db);
+
+        var sqlCalls = sqlCounter.Commands - sqlBefore;
+        var dropboxCalls = sync.RateSnapshot.TotalRequests - dropboxBefore;
+
+        Console.WriteLine("--- the two sides, counted the same way ---");
+        Console.WriteLine($"  SQL round trips : {sqlCalls:N0}");
+        Console.WriteLine($"  Dropbox requests: {dropboxCalls:N0}");
+        Console.WriteLine($"  SQL per second  : {sqlCalls / Math.Max(1, sw.Elapsed.TotalSeconds):N1}");
+        Console.WriteLine($"  Dropbox per sec : {dropboxCalls / Math.Max(1, sw.Elapsed.TotalSeconds):N1}");
+        Console.WriteLine();
 
         Console.WriteLine("--- after ---");
         Console.WriteLine($"  rows        : {after.Rows:N0}  ({(after.Rows - before.Rows):+N0;-N0;0})");
@@ -269,6 +303,77 @@ internal static class Program
         var pending = await ScalarAsync(db, "SELECT COUNT(*) FROM ml.DropBoxNode WHERE MediaInfoTag = 'pending'");
 
         return new Figures(rows, dims, pending);
+    }
+
+    /// <summary>
+    /// Hands out the app's contexts, so the interceptor sees every command.
+    /// </summary>
+    private sealed class CountingDbContextFactory : IDbContextFactory<DropBoxDbContext>
+    {
+        private readonly DbContextOptions<DropBoxDbContext> _options;
+
+        public CountingDbContextFactory(DbContextOptions<DropBoxDbContext> options) => _options = options;
+
+        public DropBoxDbContext CreateDbContext() => new(_options);
+    }
+
+    /// <summary>
+    /// Counts the SQL round trips, so the two sides of a run are counted the same way:
+    /// the Dropbox requests by the app's own rate meter, and the database commands here.
+    /// </summary>
+    /// <remarks>
+    /// EF batches the UPDATEs of one SaveChanges into ONE command, so a command is a
+    /// round trip - which is what the cost is.
+    /// </remarks>
+    private sealed class SqlCounter : DbCommandInterceptor
+    {
+        private int _commands;
+
+        public int Commands => Volatile.Read(ref _commands);
+
+        private void Count(DbCommand command) => Interlocked.Increment(ref _commands);
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            Count(command);
+
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken ct = default)
+        {
+            Count(command);
+
+            return new ValueTask<InterceptionResult<DbDataReader>>(result);
+        }
+
+        public override InterceptionResult<int> NonQueryExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<int> result)
+        {
+            Count(command);
+
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken ct = default)
+        {
+            Count(command);
+
+            return new ValueTask<InterceptionResult<int>>(result);
+        }
+
+        public override InterceptionResult<object> ScalarExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<object> result)
+        {
+            Count(command);
+
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<object> result, CancellationToken ct = default)
+        {
+            Count(command);
+
+            return new ValueTask<InterceptionResult<object>>(result);
+        }
     }
 
     // ------------------------------------------------------------------ the rows
