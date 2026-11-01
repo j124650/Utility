@@ -96,17 +96,28 @@ before. The 882-row pass would cost about eight.
   dimensions and their media kind, and the table finished on 423,698 rows with
   359,280 dimensions and nothing pending, exactly as it started.
 
-### O3 — three covering indexes carry `PathDisplay`
+### O3 — the two indexes nothing reads: DONE
 
-`IX_Dimensions`, `IX_Name` and `IX_NameKey` each include `PathDisplay nvarchar(4096)`,
-so every row update rewrites about 660 bytes of path across three wide index entries.
-They are there so the media library's name queries do not need a key lookup.
+The premise was wrong, and measuring it is what found that out. **The media library
+queries a different table** — `ml.media`, with `Path`, `FileName`, `Size` and
+`DateAdded` — so it was never the consumer of `ml.DropBoxNode`'s indexes.
 
-- **Change:** drop the include from the indexes the walk does not need, if the
-  library's queries can afford the key lookup.
-- **This one is NOT measured yet, and it must not be touched until it is.** The
-  library's read patterns have not been measured, and the trade is the walk's write
-  volume against the library's read cost. Measure the library first.
+SQL Server's own counters on the live table settled it:
+
+| index | seeks | lookups | scans | updates |
+|---|---|---|---|---|
+| `IX_DropBoxNode_NameKey` | **0** | **0** | **0** | 4,649 |
+| `IX_DropBoxNode_Dimensions` | **0** | **0** | **0** | 3,384 |
+| `IX_DropBoxNode_Name` | 1 | 0 | 54 | 4,649 |
+
+Two of them are **read by nothing** and are maintained by every row that changes. The
+third is read, so it stays. The tree browser's search does not use any of them — it
+scans the clustered index, 423,698 rows, because `PathLower` cannot be seeked on.
+
+**Both write-only indexes are dropped** — `src/Utility.Server/Sql/DropUnusedDropBoxNodeIndexes.sql`,
+which recreates them verbatim in comments, so the way back is one paste. A row update
+now dirties the clustered row and the one or two indexes whose key actually changed,
+instead of five entries — three of them carrying `PathDisplay` at about 220 bytes each.
 
 ### O4 — the cursor: an unchanged walk still lists every folder
 
@@ -260,7 +271,7 @@ the number that decides the walk's width.
 | 5 | the run's cost is reported on both sides | the harness prints SQL round trips and Dropbox requests | **measured** (the enrichment's requests are not counted — see §4.2) |
 | 6 | the flush's chunk costs two round trips, not four | the round-trip count by kind, on S1 | **measured** — 22 round trips for the 109-row subtree, of which 0 were transactions; a chunk is a tracked query and one batched update |
 | 7 | the enrichment's writes are batched | the round-trip count by kind, on S4 | **measured** — 4 round trips for 50 rows, against two per row before |
-| 8 | the library's name queries survive without the `PathDisplay` include | the library's read patterns measured, then the plan compared | not measured |
+| 8 | the write-only indexes are gone | SQL Server's own index counters, before and after | **measured** — `IX_DropBoxNode_NameKey` and `IX_DropBoxNode_Dimensions` had 0 seeks, 0 lookups and 0 scans against 4,649 and 3,384 updates; both dropped |
 | 9 | the gate may be per folder | the deadlock reproduced and the fix measured — the shipped harness in the sync skill | **closed** — the decision is to leave the gate as it is; the deadlock it prevented is no longer reachable, and the gate is no longer the bottleneck |
 | 10 | an unchanged walk's listing floor is the delta, not 19,851 calls | the cursor delta against the live account | not measured |
 | 11 | the app counts its own round trips, by kind, and says so in its log | the sync's completion log line | **measured** — "The database cost 22 round trip(s) (11 select, 10 update, 0 insert, 0 delete, 1 other), and 0 row(s) changed while 108 did not" |
