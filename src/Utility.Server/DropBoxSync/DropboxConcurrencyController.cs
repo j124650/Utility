@@ -66,6 +66,13 @@ public sealed class DropboxConcurrencyController
     /// </summary>
     private int _maxWidth;
 
+    /// <summary>
+    /// The ceiling the ceiling comes back to. It is separate from the ceiling itself,
+    /// because a refusal LOWERS the ceiling - and the ceiling must still have somewhere
+    /// to climb back to, which is the whole point of giving a width back.
+    /// </summary>
+    private readonly int _ceilingCap;
+
     /// <summary>The width the walk may shrink to.</summary>
     private readonly int _minWidth;
 
@@ -112,6 +119,7 @@ public sealed class DropboxConcurrencyController
         // The ceiling may be BELOW the start: a width that has been refused must not
         // be climbed back into, and the walk still begins where it always began.
         _maxWidth = Math.Max(minWidth, maxWidth);
+        _ceilingCap = _maxWidth;
         _minWidth = Math.Max(1, minWidth);
         _settleTime = settleTime;
     }
@@ -142,9 +150,9 @@ public sealed class DropboxConcurrencyController
         // property of the MOMENT - it may have been another consumer of the same
         // authorization - and a lesson that never fades is a permanent penalty for a
         // moment's problem.
-        if (_maxWidth < _startWidth && now - _lastRateLimit > _settleTime * QuietWindowsForCeiling)
+        if (_maxWidth < _ceilingCap && now - _lastRateLimit > _settleTime * QuietWindowsForCeiling)
         {
-            _maxWidth = Math.Min(_startWidth, _maxWidth + 1);
+            _maxWidth = Math.Min(_ceilingCap, _maxWidth + 1);
             _lastRateLimit = now;
         }
 

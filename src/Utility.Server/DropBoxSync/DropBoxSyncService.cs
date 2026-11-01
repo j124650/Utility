@@ -177,16 +177,6 @@ public sealed class DropBoxSyncService(
     private DropboxConcurrencyController? _controller;
 
     /// <summary>
-    /// The width the walk starts at, and the one it settled on.
-    /// <para>
-    /// A width that is refused is not retried at the next run: the walk begins where
-    /// it finished, which is the width the API last accepted. The controller gives a
-    /// width back during a run, and this carries that lesson to the next one.
-    /// </para>
-    /// </summary>
-    private int _learnedWidth = WalkWidth;
-
-    /// <summary>
     /// How many times a single request may be retried after a rate limit before the
     /// folder is given up on.
     /// <para>
@@ -235,6 +225,18 @@ public sealed class DropBoxSyncService(
     /// </para>
     /// </summary>
     internal const int WalkWidth = 4;
+
+    /// <summary>
+    /// The widest the walk may climb to while it stays healthy.
+    /// <para>
+    /// The walk starts at <see cref="WalkWidth"/> and climbs from there, a step at a
+    /// time, for as long as nothing refuses it - so the width it runs at is something
+    /// it earned rather than something it was told. Twenty-four is the width the walk
+    /// used before the account's allowance was measured, and it is inside what the
+    /// listing ramp carried without a refusal.
+    /// </para>
+    /// </summary>
+    internal const int WalkMaxWidth = 24;
 
     /// <summary>
     /// The wait used when Dropbox did not say how long to wait.
@@ -637,8 +639,13 @@ public sealed class DropBoxSyncService(
             var controller = new DropboxConcurrencyController(
                 requestGate,
                 _rateMeter,
-                startWidth: _learnedWidth,
-                maxWidth: _learnedWidth,
+                // The walk STARTS at the measured width, every run, and climbs from
+                // there while it is healthy. A width that gets refused is taken away
+                // for a while and given back - but the next run does not begin lower,
+                // because a width lost to one moment's refusal is not a lesson about
+                // the account, it is a fact about that moment.
+                startWidth: WalkWidth,
+                maxWidth: WalkMaxWidth,
                 // The floor is a FRACTION of the start, not one. A refusal means slow
                 // down, not stop: at a width of one a walk takes thirty times longer
                 // than it needs to.
@@ -756,9 +763,6 @@ public sealed class DropBoxSyncService(
             }
 
             sw.Stop();
-
-            // The width the walk settled on is the width the next one starts at.
-            _learnedWidth = controller.CurrentWidth;
 
             var result = new DropBoxSyncResult(
                 Completed: true,
