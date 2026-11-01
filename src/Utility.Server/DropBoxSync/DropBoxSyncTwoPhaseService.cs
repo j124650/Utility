@@ -57,21 +57,22 @@ public sealed class DropBoxSyncTwoPhaseService(
 
     // ------------------------------------------------------------------ phase 1
 
-    public Task<DropBoxSyncResult> ListAsync(
+    public Task<DropBoxSyncResult> SyncStructureFrom(
         string startPath,
         string? namespaceId = null,
         IProgress<DropBoxSyncProgress>? progress = null,
+        int maxDepth = 0,
         CancellationToken ct = default) =>
         sync.SyncAsync(
             startPath,
             namespaceId,
             progress,
             batchSize: BatchSize,
-            maxDepth: 0,
+            maxDepth: maxDepth,
             enrichFileMetadata: false,
             ct);
 
-    public Task<DropBoxSyncResult> ContinueListAsync(
+    public Task<DropBoxSyncResult> ContinueSyncStructureFrom(
         IProgress<DropBoxSyncProgress>? progress = null,
         CancellationToken ct = default) =>
         sync.ContinueAsync(
@@ -264,7 +265,7 @@ public sealed class DropBoxSyncTwoPhaseService(
 
     // ------------------------------------------------------------------ both
 
-    public async Task<DropBoxTwoPhaseResult> RunAsync(
+    public async Task<DropBoxTwoPhaseResult> SyncFrom(
         string startPath,
         string? namespaceId = null,
         IProgress<DropBoxSyncProgress>? listProgress = null,
@@ -273,7 +274,7 @@ public sealed class DropBoxSyncTwoPhaseService(
     {
         var sw = Stopwatch.StartNew();
 
-        var list = await ListAsync(startPath, namespaceId, listProgress, ct).ConfigureAwait(false);
+        var list = await SyncStructureFrom(startPath, namespaceId, listProgress, ct: ct).ConfigureAwait(false);
 
         if (!list.Completed)
         {

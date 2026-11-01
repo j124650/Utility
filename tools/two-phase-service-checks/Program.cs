@@ -29,11 +29,25 @@ namespace TwoPhaseServiceChecks;
 /// </summary>
 internal static class Program
 {
-    private const string Subtree = "/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/Umbro/F26";
+    private const string DefaultPath = "/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/Umbro/F26";
     private const string Namespace = "15193064371";
 
-    private static async Task<int> Main()
+    private static async Task<int> Main(string[] args)
     {
+        // --full runs the whole catalogue, from the team's catalogue root.
+        var full = args.Contains("--full");
+        var subtree = args.FirstOrDefault(a => a.StartsWith("--path="))?.Split('=', 2)[1]
+            ?? (full ? "/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog" : DefaultPath);
+
+        // How many levels to walk. Zero means all of them.
+        var depth = args.FirstOrDefault(a => a.StartsWith("--depth="))?.Split('=', 2)[1] is { } d
+            && int.TryParse(d, out var parsed)
+                ? parsed
+                : 0;
+
+        // --full runs the catalogue and reports; it does not simulate a change, because
+        // that would mean walking the whole catalogue twice.
+
         var failures = 0;
         var checks = 0;
 
@@ -66,12 +80,17 @@ internal static class Program
         await using var db = new SqlConnection(options.Value.ConnectionString);
         await db.OpenAsync();
 
-        Console.WriteLine($"subtree: {Subtree}");
+        if (full)
+        {
+            return await RunFullAsync(service, db, subtree, Namespace, depth);
+        }
+
+        Console.WriteLine($"path: {subtree}");
         Console.WriteLine($"namespace: {Namespace}");
         Console.WriteLine();
 
         // ---------------- the snapshot ----------------
-        var before = await ReadRowsAsync(db, Subtree);
+        var before = await ReadRowsAsync(db, subtree);
         var beforeWithDims = before.Count(r => r.WidthPixels is not null);
 
         Console.WriteLine($"=== BEFORE ({before.Count:N0} row(s)) ===");
@@ -84,14 +103,14 @@ internal static class Program
         // ---------------- PHASE 1: LIST ----------------
         Console.WriteLine("=== PHASE 1: LIST (nothing changed) ===");
 
-        var list = await service.ListAsync(Subtree, Namespace);
+        var list = await service.SyncStructureFrom(subtree, Namespace, null, depth);
         Console.WriteLine($"  completed: {list.Completed}, folders: {list.FoldersWritten:N0}, files: {list.FilesWritten:N0}, {list.Duration.TotalSeconds:N1}s");
         Console.WriteLine();
 
         Check("the listing completes", list.Completed, list.Error ?? string.Empty);
         Check("the listing writes the folder's files", list.FilesWritten > 0, $"{list.FilesWritten} files");
 
-        var afterList = await ReadRowsAsync(db, Subtree);
+        var afterList = await ReadRowsAsync(db, subtree);
         var pendingAfterList = afterList.Count(r => r.MediaInfoTag == "pending");
         var dimsAfterList = afterList.Count(r => r.WidthPixels is not null);
 
@@ -111,10 +130,10 @@ internal static class Program
         Console.WriteLine($"  simulated a change in {changed.PathDisplay}");
         Console.WriteLine();
 
-        var list2 = await service.ListAsync(Subtree, Namespace);
+        var list2 = await service.SyncStructureFrom(subtree, Namespace, null, depth);
         Check("the second listing completes", list2.Completed, list2.Error ?? string.Empty);
 
-        var afterChange = await ReadRowsAsync(db, Subtree);
+        var afterChange = await ReadRowsAsync(db, subtree);
         var marked = afterChange.First(r => r.Id == changed.Id);
 
         Check("the changed file is marked 'pending'", marked.MediaInfoTag == "pending", marked.MediaInfoTag ?? "(null)");
@@ -128,7 +147,7 @@ internal static class Program
         // ---------------- PHASE 2: ENRICH ----------------
         Console.WriteLine("=== PHASE 2: ENRICH ===");
 
-        var enrich = await service.EnrichAsync(Namespace, Subtree);
+        var enrich = await service.EnrichAsync(Namespace, subtree);
         Console.WriteLine($"  completed: {enrich.Completed}, pending: {enrich.Pending}, enriched: {enrich.Enriched}, failed: {enrich.Failed}, still pending: {enrich.StillPending}, {enrich.Duration.TotalSeconds:N1}s");
         Console.WriteLine();
 
@@ -140,7 +159,7 @@ internal static class Program
         // ---------------- VERIFY ----------------
         Console.WriteLine("=== VERIFY ===");
 
-        var after = await ReadRowsAsync(db, Subtree);
+        var after = await ReadRowsAsync(db, subtree);
         var differences = Compare(before, after);
 
         if (differences.Count == 0)
@@ -183,6 +202,73 @@ internal static class Program
         Console.WriteLine($"{checks - failures}/{checks} checks passed.");
 
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Runs the whole catalogue from the given path, and reports what it cost.
+    /// </summary>
+    private static async Task<int> RunFullAsync(
+        IDropBoxSyncTwoPhaseService service,
+        SqlConnection db,
+        string path,
+        string ns,
+        int depth)
+    {
+        Console.WriteLine($"=== THE WHOLE CATALOGUE, FROM {path} ===");
+        Console.WriteLine($"depth: {(depth == 0 ? "all" : depth.ToString())}");
+        Console.WriteLine();
+
+        var before = await FiguresAsync(db);
+
+        Console.WriteLine("--- before ---");
+        Console.WriteLine($"  rows        : {before.Rows:N0}");
+        Console.WriteLine($"  with dims   : {before.WithDims:N0}");
+        Console.WriteLine($"  pending     : {before.Pending:N0}");
+        Console.WriteLine();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = await service.SyncFrom(path, ns);
+        sw.Stop();
+
+        Console.WriteLine("--- SyncFrom ---");
+        Console.WriteLine($"  completed   : {result.Completed}");
+        Console.WriteLine($"  list        : {result.List.FoldersWritten:N0} folders, {result.List.FilesWritten:N0} files, {result.List.Duration.TotalSeconds:N1}s");
+        Console.WriteLine($"  enrich      : {result.Enrich.Pending:N0} pending, {result.Enrich.Enriched:N0} enriched, {result.Enrich.Failed:N0} failed, {result.Enrich.StillPending:N0} still pending, {result.Enrich.Duration.TotalSeconds:N1}s");
+        Console.WriteLine($"  total       : {sw.Elapsed.TotalSeconds:N1}s");
+        Console.WriteLine();
+
+        var after = await FiguresAsync(db);
+
+        Console.WriteLine("--- after ---");
+        Console.WriteLine($"  rows        : {after.Rows:N0}  ({(after.Rows - before.Rows):+N0;-N0;0})");
+        Console.WriteLine($"  with dims   : {after.WithDims:N0}  ({(after.WithDims - before.WithDims):+N0;-N0;0})");
+        Console.WriteLine($"  pending     : {after.Pending:N0}  ({(after.Pending - before.Pending):+N0;-N0;0})");
+        Console.WriteLine();
+
+        Console.WriteLine("--- the cost, against what the one-phase walk would have done ---");
+
+        var perFile = result.List.FilesWritten;
+        var onePhaseCalls = result.List.FoldersWritten + perFile;
+        var twoPhaseCalls = result.List.FoldersWritten + result.Enrich.Enriched + result.Enrich.Failed;
+
+        Console.WriteLine($"  one-phase walk : {result.List.FoldersWritten:N0} listings + {perFile:N0} get_metadata = {onePhaseCalls:N0} calls");
+        Console.WriteLine($"  two-phase      : {result.List.FoldersWritten:N0} listings + {result.Enrich.Enriched:N0} get_metadata = {twoPhaseCalls:N0} calls");
+        Console.WriteLine($"  saved          : {onePhaseCalls - twoPhaseCalls:N0} calls ({100.0 * (onePhaseCalls - twoPhaseCalls) / Math.Max(1, onePhaseCalls):N1}%)");
+        Console.WriteLine();
+
+        return 0;
+    }
+
+    private sealed record Figures(long Rows, long WithDims, long Pending);
+
+    private static async Task<Figures> FiguresAsync(SqlConnection db)
+    {
+        var rows = await ScalarAsync(db, "SELECT COUNT(*) FROM ml.DropBoxNode");
+        var dims = await ScalarAsync(db, "SELECT COUNT(*) FROM ml.DropBoxNode WHERE WidthPixels IS NOT NULL");
+        var pending = await ScalarAsync(db, "SELECT COUNT(*) FROM ml.DropBoxNode WHERE MediaInfoTag = 'pending'");
+
+        return new Figures(rows, dims, pending);
     }
 
     // ------------------------------------------------------------------ the rows

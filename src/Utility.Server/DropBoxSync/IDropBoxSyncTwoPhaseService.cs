@@ -40,23 +40,42 @@ namespace Utility.Server.DropBoxSync;
 public interface IDropBoxSyncTwoPhaseService
 {
     /// <summary>
-    /// PHASE 1 — walks the tree and writes every row, with no per-file metadata call.
+    /// THE WHOLE THING, from a path: the structure is synced, and then whatever the sync
+    /// marked is enriched.
+    /// </summary>
+    /// <param name="startPath">Where the sync starts.</param>
+    /// <param name="namespaceId">The team namespace, or null for the personal space.</param>
+    /// <param name="listProgress">The listing phase's progress.</param>
+    /// <param name="enrichProgress">The enrichment phase's progress.</param>
+    /// <param name="ct">Cancelling ends the sync.</param>
+    Task<DropBoxTwoPhaseResult> SyncFrom(
+        string startPath,
+        string? namespaceId = null,
+        IProgress<DropBoxSyncProgress>? listProgress = null,
+        IProgress<DropBoxTwoPhaseEnrichProgress>? enrichProgress = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// PHASE 1 — walks the tree from a path and writes every row, with no per-file
+    /// metadata call.
     /// </summary>
     /// <param name="startPath">Where the walk starts.</param>
     /// <param name="namespaceId">The team namespace, or null for the personal space.</param>
     /// <param name="progress">The walk's progress.</param>
+    /// <param name="maxDepth">How many levels to walk. Zero means all of them.</param>
     /// <param name="ct">Cancelling ends the walk.</param>
-    Task<DropBoxSyncResult> ListAsync(
+    Task<DropBoxSyncResult> SyncStructureFrom(
         string startPath,
         string? namespaceId = null,
         IProgress<DropBoxSyncProgress>? progress = null,
+        int maxDepth = 0,
         CancellationToken ct = default);
 
     /// <summary>
     /// PHASE 1, continued — carries on from the frontier, so a walk that did not finish
     /// picks up where it stopped.
     /// </summary>
-    Task<DropBoxSyncResult> ContinueListAsync(
+    Task<DropBoxSyncResult> ContinueSyncStructureFrom(
         IProgress<DropBoxSyncProgress>? progress = null,
         CancellationToken ct = default);
 
@@ -75,15 +94,6 @@ public interface IDropBoxSyncTwoPhaseService
         IProgress<DropBoxTwoPhaseEnrichProgress>? progress = null,
         CancellationToken ct = default);
 
-    /// <summary>
-    /// BOTH PHASES, in order: the listing, then the enrichment of what it marked.
-    /// </summary>
-    Task<DropBoxTwoPhaseResult> RunAsync(
-        string startPath,
-        string? namespaceId = null,
-        IProgress<DropBoxSyncProgress>? listProgress = null,
-        IProgress<DropBoxTwoPhaseEnrichProgress>? enrichProgress = null,
-        CancellationToken ct = default);
 }
 
 /// <summary>Progress of the enrichment pass.</summary>

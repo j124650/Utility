@@ -337,10 +337,10 @@ The speed-up must not cost any of these, because they are what makes the sync *c
 
 | method | what it does |
 |---|---|
-| `ListAsync` | phase 1 — the walk with `enrichFileMetadata: false` |
-| `ContinueListAsync` | phase 1, continued from the frontier |
+| `SyncFrom` | **the whole thing** from a path: phase 1, then phase 2 |
+| `SyncStructureFrom` | phase 1 — the walk with `enrichFileMetadata: false`, with a depth limit |
+| `ContinueSyncStructureFrom` | phase 1, continued from the frontier |
 | `EnrichAsync` | phase 2 — the rows marked `'pending'`, and only those |
-| `RunAsync` | both phases, in order |
 
 **It REUSES the walk rather than duplicating it.** One width (`WalkWidth = 24`, now
 `internal`, so both layers read the same number), the same `AdaptiveConcurrencyGate`, the
