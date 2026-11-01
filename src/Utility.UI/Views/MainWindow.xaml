@@ -334,114 +334,123 @@
               Background="#B31E2023"
               Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
 
-            <!--
-              The panel is 90% of the window, not a fixed width: the level table grows
-              with the catalogue's depth, and a capped panel would clip it.
-            -->
-            <Border Background="#26FFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1" CornerRadius="10"
-                    Padding="28,24" Width="90%" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="0.5*" />
+                    <ColumnDefinition Width="9*" />
+                    <ColumnDefinition Width="0.5*" />
+                </Grid.ColumnDefinitions>
+        
+                <!--
+                  The panel is 90% of the window, not a fixed width: the level table grows
+                  with the catalogue's depth, and a capped panel would clip it.
+                -->
+                <Border Grid.Column="1"
+                        Background="#26FFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1" CornerRadius="10"
+                        Padding="28,24" HorizontalAlignment="Stretch" VerticalAlignment="Center">
 
-                <StackPanel>
+                    <StackPanel>
 
-                    <TextBlock Text="Syncing Dropbox" FontSize="18" FontWeight="SemiBold"
-                               Foreground="#F3F4F6" HorizontalAlignment="Center" />
+                        <TextBlock Text="Syncing Dropbox" FontSize="18" FontWeight="SemiBold"
+                                   Foreground="#F3F4F6" HorizontalAlignment="Center" />
 
-                    <TextBlock Text="{Binding CurrentPath, Mode=OneWay}" FontFamily="Consolas" FontSize="11"
-                               Foreground="#A8ADB2" HorizontalAlignment="Center" Margin="0,6,0,0"
-                               TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding CurrentPath, Mode=OneWay}" FontFamily="Consolas" FontSize="11"
+                                   Foreground="#A8ADB2" HorizontalAlignment="Center" Margin="0,6,0,0"
+                                   TextTrimming="CharacterEllipsis" />
 
-                    <!--
-                      Which of the two phases. This is the one thing the rest of the
-                      screen does not make obvious: everything else looks the same in
-                      both.
-                    -->
-                    <TextBlock HorizontalAlignment="Center" Margin="0,12,0,0">
-                        <Run Text="PHASE: " FontSize="13" FontWeight="SemiBold" Foreground="#7DB4F8" />
-                        <Run Text="{Binding Phase, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#7DB4F8" />
-                    </TextBlock>
+                        <!--
+                          Which of the two phases. This is the one thing the rest of the
+                          screen does not make obvious: everything else looks the same in
+                          both.
+                        -->
+                        <TextBlock HorizontalAlignment="Center" Margin="0,12,0,0">
+                            <Run Text="PHASE: " FontSize="13" FontWeight="SemiBold" Foreground="#7DB4F8" />
+                            <Run Text="{Binding Phase, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#7DB4F8" />
+                        </TextBlock>
 
-                    <!--
-                      How many Dropbox requests are in flight, and how many may be at
-                      once. Without the limit the first number reads as a stall; with
-                      it, it reads as "this is the gate's width, and the run is using
-                      it". The width is ADAPTIVE - it starts at four and the controller
-                      widens or narrows it from what the walk measures.
-                    -->
-                    <TextBlock FontSize="11" Foreground="#A8ADB2" HorizontalAlignment="Center"
-                               Margin="0,8,0,0">
-                        <Run Text="Dropbox requests in flight: " /><Run Text="{Binding ActiveDownloaders, Mode=OneWay}" /><Run Text=" of " /><Run Text="{Binding MaxConcurrency, Mode=OneWay}" /><Run Text=" at a time" />
-                    </TextBlock>
+                        <!--
+                          How many Dropbox requests are in flight, and how many may be at
+                          once. Without the limit the first number reads as a stall; with
+                          it, it reads as "this is the gate's width, and the run is using
+                          it". The width is ADAPTIVE - it starts at four and the controller
+                          widens or narrows it from what the walk measures.
+                        -->
+                        <TextBlock FontSize="11" Foreground="#A8ADB2" HorizontalAlignment="Center"
+                                   Margin="0,8,0,0">
+                            <Run Text="Dropbox requests in flight: " /><Run Text="{Binding ActiveDownloaders, Mode=OneWay}" /><Run Text=" of " /><Run Text="{Binding MaxConcurrency, Mode=OneWay}" /><Run Text=" at a time" />
+                        </TextBlock>
 
-                    <!--
-                      The walk's own traffic, measured: how fast it is going, how much of
-                      it is being refused, and how long each call takes. The latency is
-                      the early warning - it rises before the first 429 arrives.
-                    -->
-                    <TextBlock FontSize="11" Foreground="#A8ADB2" HorizontalAlignment="Center"
-                               Margin="0,2,0,0">
-                        <Run Text="Measured: " /><Run Text="{Binding Traffic, Mode=OneWay}" />
-                    </TextBlock>
+                        <!--
+                          The walk's own traffic, measured: how fast it is going, how much of
+                          it is being refused, and how long each call takes. The latency is
+                          the early warning - it rises before the first 429 arrives.
+                        -->
+                        <TextBlock FontSize="11" Foreground="#A8ADB2" HorizontalAlignment="Center"
+                                   Margin="0,2,0,0">
+                            <Run Text="Measured: " /><Run Text="{Binding Traffic, Mode=OneWay}" />
+                        </TextBlock>
 
-                    <!-- Level table: one column per level of the walk. -->
-                    <ItemsControl ItemsSource="{Binding Levels, Mode=OneWay}" Margin="0,20,0,0"
-                                  Visibility="{Binding ShowLevels, Converter={StaticResource BoolToVis}}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Width="150" Margin="0,0,16,0">
-                                    <TextBlock Text="{Binding DepthDisplay}" FontSize="12"
-                                               FontWeight="SemiBold" Foreground="#D4D7DA" />
-                                    <Border Height="1" Background="#40FFFFFF" Margin="0,4,0,6" />
-                                    <TextBlock Text="{Binding Fraction}" FontSize="15"
-                                               Foreground="#FFFFFF" />
-                                    <TextBlock Text="{Binding RecordsDisplay}" FontSize="11"
-                                               Foreground="#9BA1A6" Margin="0,2,0,0" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        <!-- Level table: one column per level of the walk. -->
+                        <ItemsControl ItemsSource="{Binding Levels, Mode=OneWay}" Margin="0,20,0,0"
+                                      Visibility="{Binding ShowLevels, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Width="150" Margin="0,0,16,0">
+                                        <TextBlock Text="{Binding DepthDisplay}" FontSize="12"
+                                                   FontWeight="SemiBold" Foreground="#D4D7DA" />
+                                        <Border Height="1" Background="#40FFFFFF" Margin="0,4,0,6" />
+                                        <TextBlock Text="{Binding Fraction}" FontSize="15"
+                                                   Foreground="#FFFFFF" />
+                                        <TextBlock Text="{Binding RecordsDisplay}" FontSize="11"
+                                                   Foreground="#9BA1A6" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
 
-                    <!--
-                      The bar is INDETERMINATE while the structure is being listed:
-                      there is no total to divide by, because a level's folder count is
-                      only known once the level above it has finished. It is
-                      DETERMINATE while the files are being enriched, because the work
-                      list's size is known before the pass starts.
-                    -->
-                    <ProgressBar IsIndeterminate="True" Height="4" Margin="0,20,0,0"
-                                 Foreground="#5B9CF8" Background="#33FFFFFF"
-                                 Visibility="{Binding IsEnriching, Converter={StaticResource InverseBoolToVis}}" />
+                        <!--
+                          The bar is INDETERMINATE while the structure is being listed:
+                          there is no total to divide by, because a level's folder count is
+                          only known once the level above it has finished. It is
+                          DETERMINATE while the files are being enriched, because the work
+                          list's size is known before the pass starts.
+                        -->
+                        <ProgressBar IsIndeterminate="True" Height="4" Margin="0,20,0,0"
+                                     Foreground="#5B9CF8" Background="#33FFFFFF"
+                                     Visibility="{Binding IsEnriching, Converter={StaticResource InverseBoolToVis}}" />
 
-                    <ProgressBar Height="4" Margin="0,20,0,0" Maximum="1"
-                                 Value="{Binding EnrichFraction, Mode=OneWay}"
-                                 Foreground="#5B9CF8" Background="#33FFFFFF"
-                                 Visibility="{Binding IsEnriching, Converter={StaticResource BoolToVis}}" />
+                        <ProgressBar Height="4" Margin="0,20,0,0" Maximum="1"
+                                     Value="{Binding EnrichFraction, Mode=OneWay}"
+                                     Foreground="#5B9CF8" Background="#33FFFFFF"
+                                     Visibility="{Binding IsEnriching, Converter={StaticResource BoolToVis}}" />
 
-                    <!-- The enrichment's own figures. -->
-                    <TextBlock HorizontalAlignment="Center" Margin="0,14,0,0"
-                               Visibility="{Binding IsEnriching, Converter={StaticResource BoolToVis}}">
-                        <Run Text="Enriched: " FontSize="12" Foreground="#A8ADB2" />
-                        <Run Text="{Binding EnrichDisplay, Mode=OneWay}" FontSize="12" Foreground="#FFFFFF" />
-                    </TextBlock>
+                        <!-- The enrichment's own figures. -->
+                        <TextBlock HorizontalAlignment="Center" Margin="0,14,0,0"
+                                   Visibility="{Binding IsEnriching, Converter={StaticResource BoolToVis}}">
+                            <Run Text="Enriched: " FontSize="12" Foreground="#A8ADB2" />
+                            <Run Text="{Binding EnrichDisplay, Mode=OneWay}" FontSize="12" Foreground="#FFFFFF" />
+                        </TextBlock>
 
-                    <TextBlock Text="{Binding Outcome, Mode=OneWay}" FontSize="13" Foreground="#5DD98A"
-                               HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        <TextBlock Text="{Binding Outcome, Mode=OneWay}" FontSize="13" Foreground="#5DD98A"
+                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
 
-                    <TextBlock Text="{Binding Error, Mode=OneWay}" FontSize="11" Foreground="#F28B82"
-                               HorizontalAlignment="Center" Margin="0,6,0,0"
-                               TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Error, Mode=OneWay}" FontSize="11" Foreground="#F28B82"
+                                   HorizontalAlignment="Center" Margin="0,6,0,0"
+                                   TextWrapping="Wrap" />
 
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
-                        <Button Content="Stop" Command="{Binding StopCommand}" Padding="20,7" MinWidth="100"
-                                Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
-                                ToolTip="Cancels the run. The rows already written are kept." />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
+                            <Button Content="Stop" Command="{Binding StopCommand}" Padding="20,7" MinWidth="100"
+                                    Background="#33FFFFFF" Foreground="#F3F4F6" BorderBrush="#66FFFFFF"
+                                    ToolTip="Cancels the run. The rows already written are kept." />
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
-            </Border>
+                </Border>
+            </Grid>
         </Grid>
 
         <!--
