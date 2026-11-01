@@ -232,12 +232,18 @@ public sealed class DropBoxSyncService(
     /// <para>
     /// The walk starts at <see cref="WalkWidth"/> and climbs from there, a step at a
     /// time, for as long as nothing refuses it - so the width it runs at is something
-    /// it earned rather than something it was told. Twenty-four is the width the walk
-    /// used before the account's allowance was measured, and it is inside what the
-    /// listing ramp carried without a refusal.
+    /// it earned rather than something it was told.
+    /// </para>
+    /// <para>
+    /// Seven is what the account's allowance works out to, and it was measured rather
+    /// than guessed: a walk that climbed until the account refused it was refused at
+    /// 4,870 listing calls, and the windows that followed spent 4,295 and 4,330 - so
+    /// the allowance is about 4,500 calls per five-minute window. That is 15 requests a
+    /// second, and a listing takes about half a second, so the width the account
+    /// carries is 7.5.
     /// </para>
     /// </summary>
-    internal const int WalkMaxWidth = 24;
+    internal const int WalkMaxWidth = 7;
 
     /// <summary>
     /// The wait used when Dropbox did not say how long to wait.
