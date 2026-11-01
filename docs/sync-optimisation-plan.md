@@ -297,7 +297,11 @@ the number that decides the walk's width.
    one. The controller was written to do this; only the ceiling stopped it.
 4. **The floor is a fraction of the start**, not one. A refusal means slow down, not stop:
    at a width of one the walk takes thirty times longer than it needs to.
-5. **The width carries between runs.** The next walk starts where the last one finished.
+5. **The walk starts at the measured width every run, and climbs from there.** The
+   width it runs at is something it earns, not something it was told. The next run does
+   NOT start where the last one finished: a width lost to one moment's refusal is a
+   fact about that moment, not a lesson about the account - and starting lower every
+   run made a lost width permanent. The ceiling the walk climbs toward is 24.
 
 **THE LIMIT IS A COUNT PER WINDOW, NOT A RATE.** The shipped width ramp, pointed at
 `list_folder` instead of `get_metadata`, measured:
@@ -332,10 +336,20 @@ keeping:** it enriched each file as it listed, so its listings were paced by the
 enrichment and it spent each window a fraction at a time. A two-phase walk lists
 everything first, so **it has to pace itself** - the width is what paces it.
 
-**THE WIDTH IS 4.** About eight listings a second, roughly two thousand calls in a
-five-minute window: under the allowance the ramp proved by spending one without a
-refusal. The ceiling comes back after 30 minutes rather than five, so it cannot climb
-back into a width the account has already refused for the window it is in.
+**THE WIDTH IS 4, AND IT CLIMBS TO 24.** Four is about eight listings a second,
+roughly two thousand calls in a five-minute window: under the allowance the ramp proved
+by spending one without a refusal. Twenty-four is where the walk climbs to while it
+stays healthy - the width the walk used before the allowance was measured, and inside
+what the listing ramp carried without a refusal.
+
+The ceiling comes back after 30 minutes rather than five, so it cannot climb back into
+a width the account has already refused for the window it is in. Its cap is a separate
+number from the ceiling itself, because a ceiling that has been lowered must still
+have somewhere to climb back to.
+
+**MEASURED, RUNNING FROM THE CATALOGUE ROOT AT WIDTH 4**: a steady 8.2 folders a
+second (490-500 a minute after a slower first minute), **no refusals**, and no writes
+beyond the folders' status.
 
 ## 9. Open questions
 
