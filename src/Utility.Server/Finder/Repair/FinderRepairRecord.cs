@@ -66,8 +66,31 @@ public sealed record FinderRepairRecord
     /// <summary>Whether the pair was recovered.</summary>
     public required bool Recovered { get; init; }
 
-    /// <summary>The moment the record was written.</summary>
-    public DateTimeOffset When { get; init; } = DateTimeOffset.Now;
+    /// <summary>
+    /// The operation's number within the run - the first is 1.
+    /// </summary>
+    /// <remarks>
+    /// It is what ties an operation's events together in the log (§10.5.3). The log is
+    /// written as the work happens, so an operation's events are separate lines, and the
+    /// number is what says which operation a line belongs to.
+    /// </remarks>
+    public int Number { get; init; }
+
+    /// <summary>
+    /// What the run set out to do to this pair - "restore the parent", "regenerate the
+    /// child", or both.
+    /// </summary>
+    /// <remarks>
+    /// It is the PLAN, and it is known before any work happens. The outcome is a
+    /// different thing, and it is written when the operation ends.
+    /// </remarks>
+    public string Plan { get; init; } = string.Empty;
+
+    /// <summary>When the operation started.</summary>
+    public DateTimeOffset StartedAt { get; init; } = DateTimeOffset.Now;
+
+    /// <summary>When the operation ended, or null while it is still running.</summary>
+    public DateTimeOffset? EndedAt { get; init; }
 }
 
 /// <summary>

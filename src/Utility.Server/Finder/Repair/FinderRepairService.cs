@@ -228,7 +228,12 @@ public sealed class FinderRepairService(
 
         var done = 0;
 
-        // The width is how many records are recovered at the same time (§10.6). It is 1 -
+        // The operation's number within the run - what ties an operation's events together
+        // in the log (§10.5.3). It is the pair's ordinal, so it says the same thing on
+        // every line of the operation.
+        var operation = 0;
+
+        // The width is how many records are recovered at the same time (§10.6).
         // the sequential recoverer - and it does not change WHAT is written, only how long
         // it takes.
         var width = Math.Max(1, options.Value.RecoverWidth);
@@ -263,14 +268,10 @@ public sealed class FinderRepairService(
 
                     var record = await RepairOneAsync(
                         row, libraryRoot, quality, thumbnailQuality, vcatWidth, thumbnailWidth,
-                        progress, nameTheFile, summary.Recovered, subject.Count, remaining, ct);
+                        progress, nameTheFile, summary.Recovered, subject.Count, remaining,
+                        log, operation++, ct);
 
                     lastPair = DateTimeOffset.Now - started;
-
-                    if (log is not null)
-                    {
-                        await log.WriteAsync(record, ct);
-                    }
 
                     summary = Accumulate(summary, record);
                     done++;
@@ -302,16 +303,11 @@ public sealed class FinderRepairService(
                         var record = await RepairOneAsync(
                             row, libraryRoot, quality, thumbnailQuality, vcatWidth, thumbnailWidth,
                             progress, nameTheFile, Volatile.Read(ref recovered), subject.Count,
-                            null, ct);
+                            null, log, Interlocked.Increment(ref operation) - 1, ct);
 
                         if (record.Recovered)
                         {
                             Interlocked.Increment(ref recovered);
-                        }
-
-                        if (log is not null)
-                        {
-                            await log.WriteAsync(record, ct);
                         }
 
                         var n = Interlocked.Increment(ref done);
@@ -368,6 +364,8 @@ public sealed class FinderRepairService(
         int recovered,
         int recoveredTotal,
         TimeSpan? remaining,
+        IFinderRepairLog? log,
+        int operationNumber,
         CancellationToken ct)
     {
         var candidate = row.BestCandidate;
@@ -384,7 +382,19 @@ public sealed class FinderRepairService(
             ContentHash = candidate?.ContentHash,
             Source = candidate?.Path,
             Recovered = false,
+            Number = operationNumber,
+            Plan = PlanOf(row.Verdict.Id),
+            StartedAt = DateTimeOffset.Now,
         };
+
+        // The operation opens HERE, before any work: the log says what the run set out to
+        // do to this pair, and if the run dies before the pair is done, the opening line
+        // with no closing one is the evidence it was attempted (§10.5.3).
+        if (log is not null)
+        {
+            await log.BeginAsync(record, ct);
+            await log.CandidateAsync(record, ct);
+        }
 
         var parentPath = Path.Combine(libraryRoot, row.ParentFolder, row.ParentId.ToString().ToUpperInvariant());
 
@@ -442,6 +452,11 @@ public sealed class FinderRepairService(
                     CopiedTo = parentPath,
                     CopiedBytes = new FileInfo(parentPath).Length,
                 };
+
+                if (log is not null)
+                {
+                    await log.ParentRestoredAsync(record, ct);
+                }
             }
 
             // ---- the child ----
@@ -493,14 +508,26 @@ public sealed class FinderRepairService(
                     Target = target,
                     Result = Describe(childPath),
                 };
+
+                if (log is not null)
+                {
+                    await log.ChildRegeneratedAsync(record, ct);
+                }
             }
 
-            return record with { Recovered = true };
+            record = record with { Recovered = true, EndedAt = DateTimeOffset.Now };
+
+            if (log is not null)
+            {
+                await log.EndAsync(record, ct);
+            }
+
+            return record;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // The path is named here, because "path/not_found/" on its own says nothing
-            // about WHICH file was missing. The recovery log carries it on the source=
+            // about WHICH file was missing. The recovery log carries it on the candidate
             // line, but this line is what reaches the app's own log and the Windows
             // event log, and a reader chasing the failure needs a path to search on.
             logger.LogWarning(
@@ -511,10 +538,16 @@ public sealed class FinderRepairService(
                 record.Source ?? "(no source)",
                 ex.Message);
 
-            // The reason stays the message as it is. It sits mid-line in the log's
-            // token format, where a value carrying spaces would break the parsing - and
-            // the path is already on the record's own source= line, in the same log.
-            return record with { Reason = ex.Message };
+            var failed = record with { Reason = ex.Message, EndedAt = DateTimeOffset.Now };
+
+            // The operation closes here too: a pair that failed is still an operation,
+            // and the log says how it turned out.
+            if (log is not null)
+            {
+                await log.EndAsync(failed, ct);
+            }
+
+            return failed;
         }
     }
 
@@ -655,6 +688,21 @@ public sealed class FinderRepairService(
             // A temporary file that cannot be deleted is not worth failing the pair over.
         }
     }
+
+    /// <summary>
+    /// What the run sets out to do to a pair, from its verdict (§10.5.3).
+    /// </summary>
+    /// <remarks>
+    /// It is the PLAN, and it is known before any work happens. The outcome is a different
+    /// thing, and it is written when the operation ends.
+    /// </remarks>
+    private static string PlanOf(int verdictId) => verdictId switch
+    {
+        1 => "restore the parent",
+        2 => "regenerate the child",
+        3 => "restore the parent, then regenerate the child",
+        _ => "nothing to do",
+    };
 
     /// <summary>
     /// How long the run is expected to take still: the last pair's time, multiplied by

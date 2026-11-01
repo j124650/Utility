@@ -786,16 +786,16 @@ happened when the run was stopped".
 
 **It is written through a provider, so the log's home can change without the recovery
 knowing.** The recovery writes log records; where they go is the provider's business.
-Today the provider writes a text file; later it can write a table, and the recovery does
+Today the provider writes JSON Lines; later it can write a table, and the recovery does
 not change.
 
 | | |
 |---|---|
-| The provider | writes the records — a text file now, a table later |
+| The provider | writes the records — JSON Lines now, a table later |
 | The record | one per pair, saying what was done to it |
 | The reader | the user, for their own post-analysis |
 
-**A text file is enough** for a log that is only ever read by the user. The database is
+**A file is enough** for a log that is only ever read by the user. The database is
 read-only to this app, so a table would have to be created by the system that owns `ml`
 — the provider is what makes that a later decision rather than a blocker.
 
@@ -875,7 +875,10 @@ which id, and what the file became.
 | `target` | 4 | the size the resize aimed at — the child's recorded dimensions, or the settings' width (§10.8) |
 | `result` | 5 | what the file is now — its length, and its dimensions |
 | `reason` | 6 | for a pair that was not recovered, why |
-| `when` | — | the moment the record was written |
+| `plan` | — | what the run set out to do to the pair |
+| `outcome` | — | how it turned out |
+| `ts` | — | the moment the line was written |
+| `n` | — | the operation's number within the run — what ties an operation's lines together |
 
 **Every id is the one the step actually used.** The `parent=` and `child=` are the media
 row's own GUIDs; the `node=` and `dropbox_id=` are the index row's own ids and Dropbox's
@@ -899,16 +902,18 @@ where the target came from.
 and the child's dimensions. A record that says only what was *attempted* cannot be
 checked against the library; one that says what was *written* can.
 
-**A FAILED DOWNLOAD NAMES THE FILE IT COULD NOT FETCH.** A download that comes back
+**A FAILED DOWNLOAD NAMES THE FILE IT COULD NOT FETCH.**
 `path/not_found/` has to leave a path behind, or the reader has nothing to search on:
-the error names a condition, not a file. **The path is on the record's own `source=`
+the error names a condition, not a file. **The path is on the record's own `candidate`
 line**, beside the namespace and the content hash, and **it is on the app's own log
 line** for the failure — the one that reaches the Windows event log.
 
-**The `reason=` token stays the bare message.** It sits mid-line in the token format,
-where a value carrying spaces would break the parsing — and the path is a separate token
-on the same record, so putting it in the reason would repeat it and break the format at
-the same time.
+**The reason is a FIELD of its own, not part of the outcome's text.** In the format this
+log used to have — `key=value` pairs on a line — the reason sat mid-line, and a reason
+carrying spaces (and several do: *"the parent is not there to regenerate the child
+from"*) could not be told from the tokens after it. **JSON Lines is what settles it**:
+every value is a JSON value, so a reason is a string of any shape, and a path with spaces
+in it is a path with spaces in it.
 
 **A record is written for every pair the run touched, including the ones that failed.**
 A log that only holds the successes cannot answer "what happened to the ones that did
@@ -924,47 +929,79 @@ candidate is the query that read them.
 the size and the scope to fetch in, and the index row's own fields come with them. Every
 field in the record is a field the workflow already had in its hands.
 
-### 10.5.3 The format, for post-mortem parsing
+### 10.5.3 The format: JSON Lines, for post-mortem parsing
 
-**The log is a line-oriented text file, one record per line, and it is meant to be
-parsed.** It is not prose and not a table for a human to read — it is a record that a
-question can be asked of afterwards.
+**The log is JSON Lines — one JSON object per line — and it is meant to be parsed.** Each
+line stands on its own and can be read with any JSON reader; a reader asks a question of
+the file afterwards.
 
-**Every line carries a timestamp, a level and a message, in the same shape as the app's
-own log** — so the two files read the same way and a tool that reads one reads the other:
+**An operation is a GROUP of lines, and the `n` field says which operation a line belongs
+to.** The log is written as the work happens, so an operation's lines are written as its
+values become known:
 
 ```
-2026-10-26 18:24:07.412 [Information] Recovery: parent restored. parent=F4D13B32-FAB2-451F-83F9-0961C38B6286 child=8FDD66C2-C1C5-4FBE-B64B-35302C7F96A4 parent_name=CA05434001-Featured-Bottom.jpg folder=ca05434001
-2026-10-26 18:24:07.412 [Information] Recovery:   node=123984 dropbox_id=id:sMa5MD0C7uMAAAAAAAfj2Q namespace=15193064371 content_hash=3eeb5f91c234eb6bb3fe0a5f469b42fc5a24a82f5a76bf3a7c0458f9623b11b6
-2026-10-26 18:24:07.412 [Information] Recovery:   source=/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/Champion/F26_Champion_Final/CA05434001/CA05434001-Featured-Bottom.jpg
-2026-10-26 18:24:07.414 [Information] Recovery:   copied_to=C:\_Recover\media\ca05434001\F4D13B32-FAB2-451F-83F9-0961C38B6286 copied_bytes=2578475
-2026-10-26 18:24:07.418 [Information] Recovery:   result=size 2578475
-2026-10-26 18:24:09.880 [Error] Recovery: parent failed. parent=8B9E53C2-C151-4771-B998-000001414B child=1EEC33E8-479F-424F-974E-199B9DCBF1D7 parent_name=HE05682681-02.jpg folder=ca100419p reason=download failed: path/not_found
+{"type":"header","format":1,"started":"2026-10-26T18:24:07.412+04:00","shown":1500,"recoverable":1234,"folders":14950}
+{"type":"begin","n":1,"ts":"2026-10-26T18:24:07.412+04:00","parent":"f4d13b32-fab2-451f-83f9-0961c38b6286","child":"8fdd66c2-c1c5-4fbe-b64b-35302c7f96a4","parent_name":"CA05434001-Featured-Bottom.jpg","folder":"ca05434001","plan":"restore the parent, then regenerate the child"}
+{"type":"candidate","n":1,"ts":"2026-10-26T18:24:07.412+04:00","node":123984,"dropbox_id":"id:sMa5MD0C7uMAAAAAAAfj2Q","namespace":"15193064371","content_hash":"3eeb5f91c234eb6bb3fe0a5f469b42fc5a24a82f5a76bf3a7c0458f9623b11b6","source":"/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/Champion/F26_Champion_Final/CA05434001/CA05434001-Featured-Bottom.jpg"}
+{"type":"parent_restored","n":1,"ts":"2026-10-26T18:24:12.006+04:00","copied_to":"C:\\_Recover\\media\\ca05434001\\F4D13B32-FAB2-451F-83F9-0961C38B6286","copied_bytes":2578475}
+{"type":"child_regenerated","n":1,"ts":"2026-10-26T18:24:12.418+04:00","resized_from":"C:\\_Recover\\media\\ca05434001\\F4D13B32-FAB2-451F-83F9-0961C38B6286","resized_for":"8fdd66c2-c1c5-4fbe-b64b-35302c7f96a4","resized_to":"C:\\_Recover\\media\\ca05434001\\8FDD66C2-C1C5-4FBE-B64B-35302C7F96A4","target":1500,"result":"size 2578475, 1500 × 1500"}
+{"type":"end","n":1,"ts":"2026-10-26T18:24:12.420+04:00","outcome":"recovered"}
 ```
 
-**One pair's record is a group of lines, and the first line names the pair.** The lines
-that follow carry the detail, in the order of the workflow (§10.5.2). So a parser reads a
-record by its first line, and the tokens are what a question is asked of:
+**The types are the CONTRACT, and the header names their version.** `format` in the
+header is the version of the format the file is written in. A parser reads it and knows
+which contract it is reading — and when the format changes, the version changes with it,
+so a parser written against version 1 still reads every version 1 file.
 
-| Token | What it identifies |
-|---|---|
-| `parent` | the parent's `ml.media.Id` — the GUID, and the file's name on disk |
-| `child` | the child's `ml.media.Id` |
-| `parent_name` | `ml.media.FileName` — the name the candidate was matched on |
-| `folder` | `ml.media.Path` |
-| `node` | the candidate's `ml.DropBoxNode.Id` |
-| `dropbox_id` | the candidate's `ml.DropBoxNode.DropboxId` |
-| `namespace` | the candidate's `ml.DropBoxNode.NamespaceId` |
-| `content_hash` | the candidate's `ml.DropBoxNode.ContentHash` |
-| `source` | the candidate's full Dropbox path |
-| `copied_to` | where the parent's bytes were written |
-| `copied_bytes` | how many |
-| `resized_from` | the file the resize read |
-| `resized_for` | the child's id the resize was done on behalf of |
-| `resized_to` | where the result was written |
-| `target` | the size the resize aimed at |
-| `result` | what the file is now |
-| `reason` | why a pair was not recovered |
+| `type` | When it is written | What it carries |
+|---|---|---|
+| `header` | once, when the log opens | the format's version and the run's figures |
+| `begin` | when the operation starts | the pair's ids and the **plan** |
+| `candidate` | when the operation starts | the Dropbox file the bytes come from |
+| `parent_restored` | after the download | where the bytes went, and how many |
+| `child_regenerated` | after the resize | what was read, what was written, and what it became |
+| `end` | when the operation ends | the **outcome**, and the **reason** when it failed |
+| `summary` | once, when the run ends | the run's outcome |
+
+**The plan is at the start and the outcome is at the end, because only one of them is
+known when the line is written.** The plan comes from the verdict, so it is known before
+any work happens. The outcome is not known until the pair is done.
+
+**A pair that failed is an operation too, and it ends like any other** — with the reason
+in a field of its own, not inside the outcome's text:
+
+```
+{"type":"end","n":2,"ts":"2026-10-26T18:24:09.880+04:00","outcome":"not recovered","reason":"path/not_found/"}
+```
+
+**An operation interrupted by a crash leaves its `begin` and no `end`** — and that is the
+evidence it was attempted and did not finish. This is why the log is written as the work
+happens.
+
+**The fields are the workflow's own steps** (§10.5.2), and the names are the same ones
+the table above already used — so the vocabulary carries over and nothing is renamed:
+
+| Field | The step | What it identifies |
+|---|---|---|
+| `parent` | 1 | the parent's `ml.media.Id` — the GUID, and the file's name on disk |
+| `child` | 1 | the child's `ml.media.Id` |
+| `parent_name` | 1 | `ml.media.FileName` — the name the candidate was matched on |
+| `folder` | 1 | `ml.media.Path` |
+| `node` | 2 | the candidate's `ml.DropBoxNode.Id` |
+| `dropbox_id` | 2 | the candidate's `ml.DropBoxNode.DropboxId` |
+| `namespace` | 2 | the candidate's `ml.DropBoxNode.NamespaceId` |
+| `content_hash` | 2 | the candidate's `ml.DropBoxNode.ContentHash` |
+| `source` | 2, 3 | the candidate's full Dropbox path |
+| `copied_to` | 3 | where the parent's bytes were written |
+| `copied_bytes` | 3 | how many |
+| `resized_from` | 4 | the file the resize read |
+| `resized_for` | 4 | the child's id the resize was done on behalf of |
+| `resized_to` | 4 | where the result was written |
+| `target` | 4 | the size the resize aimed at |
+| `result` | 5 | what the file is now |
+| `reason` | 6 | why a pair was not recovered |
+| `plan` | — | what the run set out to do to the pair |
+| `outcome` | — | how it turned out |
 
 **Every record names every object involved**, so a post-mortem can say exactly what
 happened and where — and none of it is inferred:
@@ -977,8 +1014,8 @@ happened and where — and none of it is inferred:
 | **What was resized, for whom** | the parent's path in, the child's id, the child's path out, and the target size |
 | **What the file became** | its length and its dimensions, measured after the write |
 
-**The `parent=` is the anchor.** It is the GUID, so the record and the file on disk are
-the same thing — a reader can take the `parent=` from a log line and find the file, and
+**The `parent` is the anchor.** It is the GUID, so the record and the file on disk are
+the same thing — a reader can take the `parent` from a log line and find the file, and
 take a file and find its log line. Nothing in the record depends on a path that could
 have changed.
 
@@ -988,29 +1025,25 @@ compared, not merely the lengths. A length match says the copy was the right len
 hash says it was the right file.
 
 **The file is UTF-8 without a byte order mark, and the lines are flushed as they are
-written** — the same as the app's own log. A run worth reading is the one that ended
-badly, and it ends without a clean shutdown, so a buffer would lose exactly the lines
-that explain why.
+written.** A run worth reading is the one that ended badly, and it ends without a clean
+shutdown, so a buffer would lose exactly the lines that explain why.
+
+**A WRITE THAT FAILS IS LOGGED AND SWALLOWED.** A log that cannot be written must never
+stop the recovery — the same rule the open already follows. The log is written while the
+work happens, so this is where a full disk would otherwise end the run.
 
 ### 10.5.4 The run's summary
 
-**The log opens with a summary of the run** — the same figures the confirmation window
-showed, so the two agree:
+**The log opens with the run's figures** — the same ones the confirmation window showed,
+so the two agree — as the `header` line, and it closes with the run's outcome as a
+`summary` line:
 
 ```
-Recovery run - 2026-10-26 18:24
-  Filtered set      1,500 pair(s)
-  Recovered           1,234
-    parent restored     412
-    child regenerated   611
-    both                211
-  Not recovered         266
-  Failed                  0
-  Downloaded         494 GB
-  Replaced               27 existing file(s)
+{"type":"header","format":1,"started":"2026-10-26T18:24:07.412+04:00","shown":1500,"recoverable":1234,"folders":14950}
+{"type":"summary","phase":"end","shown":1500,"recovered":1234,"parent_restored":412,"child_regenerated":611,"both":211,"not_recovered":266,"failed":0,"downloaded_bytes":530000000000,"replaced":27,"log":"C:\Users\…\Recover 2026-10-26_18-24-07.log"}
 ```
 
-and then one record per pair.
+and between them, one operation per pair the run touched.
 
 **The run's outcome is also in the status line** (§8) — the summary is what the reader
 sees without opening anything, and the log is what they open when they want the detail.
@@ -1316,7 +1349,9 @@ field is a change to the provider, not to the recovery.
 | 40 | The recovery works through the pairs closest to now first | filter to a set, recover, check the order | **built — `tools/recovery-order-checks` passes 16/16** |
 | 41 | The busy screen says how many pairs are recovered, out of how many will be | run a recovery at width 1 and watch | **built** |
 | 42 | The busy screen says how long the run will take still, from the last pair's time | run a recovery at width 1 and watch | **built** |
-| 43 | A failed download names the file it could not fetch, in the log and in the app's log | fail a download, read both | **built — `tools/repair-log-checks` passes 15/15** |
+| 43 | A failed download names the file it could not fetch, in the log and in the app's log | fail a download, read both | **built — `tools/repair-log-checks` passes 25/25** |
+| 44 | The log is JSON Lines — every line one JSON object, and the header names the format's version | open a log, parse every line | **built — `tools/repair-log-checks` passes 25/25** |
+| 45 | An operation's lines are tied together by its number, and an interrupted one leaves a start with no end | interrupt a run, read the log | **built** |
 
-Nothing in this list has been checked, except rows 36, 37, 38, 39, 40, 41, 42 and 43 —
-the spec is written; the button is not.
+Nothing in this list has been checked, except rows 36, 37, 38, 39, 40, 41, 42, 43, 44 and
+45 — the spec is written; the button is not.

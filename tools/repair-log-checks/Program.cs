@@ -141,11 +141,17 @@ internal static class Program
             Source = "/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/New Balance/F27/PROCESSED/Y42408OD/Y42408OD-Featured-Bottom.jpg",
             Reason = "path/not_found/",
             Recovered = false,
+            Number = 1,
+            Plan = "restore the parent",
+            StartedAt = new DateTimeOffset(2026, 10, 29, 8, 30, 15, TimeSpan.FromHours(4)),
+            EndedAt = new DateTimeOffset(2026, 10, 29, 8, 30, 16, TimeSpan.FromHours(4)),
         };
 
         await using (var log = await provider.OpenAsync(summary, openedAt))
         {
-            await log!.WriteAsync(failed, CancellationToken.None);
+            await log!.BeginAsync(failed, CancellationToken.None);
+            await log.CandidateAsync(failed, CancellationToken.None);
+            await log.EndAsync(failed, CancellationToken.None);
         }
 
         var failedText = File.ReadAllText(landed);
@@ -157,11 +163,134 @@ internal static class Program
 
         Check(
             "a failed record's log says why it failed",
-            failedText.Contains("reason=path/not_found/", StringComparison.Ordinal));
+            failedText.Contains("\"reason\":\"path/not_found/\"", StringComparison.Ordinal));
 
         Check(
             "a failed record's log carries the namespace",
-            failedText.Contains("namespace=15193064371", StringComparison.Ordinal));
+            failedText.Contains("15193064371", StringComparison.Ordinal));
+
+        // ---- the format is JSON LINES: every line is one JSON object ----
+        var jsonLines = File.ReadAllLines(landed)
+            .Where(l => l.Trim().Length > 0)
+            .ToList();
+
+        var allValid = true;
+        var types = new List<string>();
+
+        foreach (var line in jsonLines)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(line);
+
+                if (doc.RootElement.TryGetProperty("type", out var t))
+                {
+                    types.Add(t.GetString() ?? "");
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                allValid = false;
+            }
+        }
+
+        Check("every line is a valid JSON object", allValid);
+
+        Check(
+            "the log opens with a header that names the format's version",
+            types.Count > 0 && types[0] == "header" && failedText.Contains("\"format\":1", StringComparison.Ordinal),
+            string.Join(", ", types));
+
+        Check(
+            "an operation opens with a begin and closes with an end",
+            types.Contains("begin") && types.Contains("end"),
+            string.Join(", ", types));
+
+        Check(
+            "the operation's number ties its events together",
+            failedText.Contains("\"n\":1", StringComparison.Ordinal));
+
+        Check(
+            "the outcome carries the reason",
+            failedText.Contains("path/not_found/", StringComparison.Ordinal));
+
+        Check(
+            "the plan says what the run set out to do",
+            failedText.Contains("restore the parent", StringComparison.Ordinal));
+
+        Check(
+            "the source path survives the JSON encoding whole",
+            failedText.Contains(failed.Source!, StringComparison.Ordinal));
+
+        // ---- a SUCCESSFUL operation writes every kind of event ----
+        var good = new FinderRepairRecord
+        {
+            ParentId = Guid.NewGuid(),
+            ChildId = Guid.NewGuid(),
+            ParentName = "M80608F0-Featured-Top.jpg",
+            Folder = "m80608f0",
+            NodeId = 77383,
+            DropboxId = "id:sMa5MD0C7uMAAAAAAA7PqA",
+            NamespaceId = "15193064371",
+            ContentHash = "76d8ba4722f00e160fe0fb0026c38c766c58564eac517c441f06d792e97dd606",
+            Source = "/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/New Balance/F27/M80608F0/M80608F0-Featured-Top.jpg",
+            CopiedTo = @"C:\_Recover\media\m80608f0\33540F62-0C09-4746-AB7B-52A2F0CB1114",
+            CopiedBytes = 2_023_419,
+            ResizedFor = Guid.NewGuid(),
+            ResizedFrom = @"C:\_Recover\media\m80608f0\33540F62-0C09-4746-AB7B-52A2F0CB1114",
+            ResizedTo = @"C:\_Recover\media\m80608f0\F751FBA6-E60D-4FED-B960-C01262FEA250",
+            Target = 1500,
+            Result = "size 52,324, 1500 × 1500",
+            Recovered = true,
+            Number = 2,
+            Plan = "restore the parent, then regenerate the child",
+            StartedAt = new DateTimeOffset(2026, 10, 29, 8, 31, 0, TimeSpan.FromHours(4)),
+            EndedAt = new DateTimeOffset(2026, 10, 29, 8, 31, 6, TimeSpan.FromHours(4)),
+        };
+
+        await using (var log = await provider.OpenAsync(summary, openedAt))
+        {
+            await log!.BeginAsync(good, CancellationToken.None);
+            await log.CandidateAsync(good, CancellationToken.None);
+            await log.ParentRestoredAsync(good, CancellationToken.None);
+            await log.ChildRegeneratedAsync(good, CancellationToken.None);
+            await log.EndAsync(good, CancellationToken.None);
+        }
+
+        var goodLines = File.ReadAllLines(landed)
+            .Where(l => l.Trim().Length > 0)
+            .ToList();
+
+        var goodTypes = goodLines
+            .Select(l => System.Text.Json.JsonDocument.Parse(l).RootElement
+                .GetProperty("type").GetString() ?? "")
+            .ToList();
+
+        Check(
+            "a successful operation writes every kind of event",
+            goodTypes.Contains("begin") && goodTypes.Contains("candidate")
+                && goodTypes.Contains("parent_restored") && goodTypes.Contains("child_regenerated")
+                && goodTypes.Contains("end"),
+            string.Join(", ", goodTypes));
+
+        var goodText = File.ReadAllText(landed);
+
+        Check(
+            "the bytes written are recorded",
+            goodText.Contains("\"copied_bytes\":2023419", StringComparison.Ordinal),
+            "copied_bytes");
+
+        Check(
+            "the result survives the JSON encoding whole",
+            goodText.Contains(good.Result!, StringComparison.Ordinal),
+            good.Result!);
+
+        Console.WriteLine();
+        Console.WriteLine("--- the log as it was written ---");
+        foreach (var l in goodLines) Console.WriteLine("  " + l);
+
+        Console.WriteLine();
+        Console.WriteLine($"--- size: a successful operation is {goodText.Length} bytes over {goodLines.Count} lines ---");
 
         // ---- 6. each recovery gets its own dated folder ----
         //
