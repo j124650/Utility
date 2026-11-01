@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -71,6 +72,14 @@ internal static class Program
 
         // The app's own composition.
         var builder = Host.CreateApplicationBuilder();
+
+        // EF logs every command it executes at Information level, and the walk issues
+        // tens of thousands of them - a full catalogue run produced 24 MB of SQL text.
+        // The app does not do this (it runs in Production, where EF's command logging
+        // is not emitted); the harness does, because it runs in Development. The
+        // app's own messages are kept.
+        builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+
         builder.Services.AddUtilityServer(builder.Configuration);
         builder.Services.AddUtilityDropBox(builder.Configuration);
 
@@ -324,6 +333,7 @@ internal static class Program
         Console.WriteLine($"  SQL per second  : {sqlCalls / Math.Max(1, sw.Elapsed.TotalSeconds):N1}");
         Console.WriteLine($"  Dropbox per sec : {dropboxCalls / Math.Max(1, sw.Elapsed.TotalSeconds):N1}");
         Console.WriteLine($"  gate wait       : {result.List.GateWaitMs:N0} ms");
+        Console.WriteLine($"  the walk's width: {sync.MaxConcurrency}");
         Console.WriteLine();
 
         Console.WriteLine("--- after ---");

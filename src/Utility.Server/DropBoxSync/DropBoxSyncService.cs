@@ -177,6 +177,16 @@ public sealed class DropBoxSyncService(
     private DropboxConcurrencyController? _controller;
 
     /// <summary>
+    /// The width the walk starts at, and the one it settled on.
+    /// <para>
+    /// A width that is refused is not retried at the next run: the walk begins where
+    /// it finished, which is the width the API last accepted. The controller gives a
+    /// width back during a run, and this carries that lesson to the next one.
+    /// </para>
+    /// </summary>
+    private int _learnedWidth = WalkWidth;
+
+    /// <summary>
     /// How many times a single request may be retried after a rate limit before the
     /// folder is given up on.
     /// <para>
@@ -608,9 +618,12 @@ public sealed class DropBoxSyncService(
             var controller = new DropboxConcurrencyController(
                 requestGate,
                 _rateMeter,
-                startWidth: WalkWidth,
-                maxWidth: WalkWidth,
-                minWidth: 1,
+                startWidth: _learnedWidth,
+                maxWidth: _learnedWidth,
+                // The floor is a FRACTION of the start, not one. A refusal means slow
+                // down, not stop: at a width of one a walk takes thirty times longer
+                // than it needs to.
+                minWidth: Math.Max(1, WalkWidth / 4),
                 settleTime: TimeSpan.FromSeconds(30),
                 folderGate: folderGate);
 
@@ -725,6 +738,9 @@ public sealed class DropBoxSyncService(
 
             sw.Stop();
 
+            // The width the walk settled on is the width the next one starts at.
+            _learnedWidth = controller.CurrentWidth;
+
             var result = new DropBoxSyncResult(
                 Completed: true,
                 FoldersWritten: counts.Folders,
@@ -740,14 +756,16 @@ public sealed class DropBoxSyncService(
                 "({Enriched} with dimensions, {PendingMedia} pending, {EnrichFailed} enrichment failure(s)), " +
                 "{Skipped} folder(s) not fully listed, {Bounded} bounded by depth. " +
                 "The database cost {RoundTrips}, and {RowsUpdated} row(s) changed while {RowsUnchanged} did not. " +
-                "Dropbox took {DropboxRequests} request(s), and the writes waited {GateWaitMs} ms for the gate.",
+                "Dropbox took {DropboxRequests} request(s), the writes waited {GateWaitMs} ms for the gate, " +
+                "and the walk finished at a width of {Width}.",
                 rootPath ?? "the unfinished folders", sw.ElapsedMilliseconds, counts.Folders, counts.Files,
                 counts.Enriched, counts.PendingMedia, counts.EnrichFailed,
                 counts.NotOk, counts.BoundedFolders,
                 SqlRoundTripSnapshot.Since(sqlBefore, _sqlCounter.Snapshot()).Describe(),
                 counts.RowsUpdated, counts.RowsUnchanged,
                 _rateMeter.Snapshot().TotalRequests - dropboxBefore.TotalRequests,
-                (long)(_writeGate.WaitStats.Ticks - gateBefore.Ticks) / TimeSpan.TicksPerMillisecond);
+                (long)(_writeGate.WaitStats.Ticks - gateBefore.Ticks) / TimeSpan.TicksPerMillisecond,
+                controller.CurrentWidth);
 
             _pendingRunning = false;
             _pendingHasResult = true;
@@ -1152,6 +1170,11 @@ public sealed class DropBoxSyncService(
                     : RateLimitBackoffSeconds(attempt);
 
                 _rateLimitBrake.Hold(wait);
+
+                // The refusal is reported ONCE, here - where it happened. The meter
+                // reports it again for the rest of the minute, and a controller that
+                // acted on the meter would halve the width once per report.
+                _controller?.OnRateLimited();
 
                 logger.LogWarning(
                     "Dropbox rate limited while listing {Path} (attempt {Attempt}/{Max}); holding the walk for {Wait}s.",
@@ -1779,6 +1802,8 @@ public sealed class DropBoxSyncService(
                     : RateLimitBackoffSeconds(attempt);
 
                 _rateLimitBrake.Hold(wait);
+
+                _controller?.OnRateLimited();
 
                 logger.LogWarning(
                     "Dropbox rate limited while reading metadata for {Path} (attempt {Attempt}/{Max}); holding the walk for {Wait}s.",

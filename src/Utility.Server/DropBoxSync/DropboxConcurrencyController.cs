@@ -58,8 +58,13 @@ public sealed class DropboxConcurrencyController
     /// <summary>The width the walk starts at.</summary>
     private readonly int _startWidth;
 
-    /// <summary>The width the walk may grow to.</summary>
-    private readonly int _maxWidth;
+    /// <summary>
+    /// The width the walk may grow to. It starts where the walk starts and it is
+    /// LOWERED when a width is refused - so the walk does not climb back into a width
+    /// the API has already said no to. It is given back a step at a time after a long
+    /// quiet period, because a refusal may have been another consumer's doing.
+    /// </summary>
+    private int _maxWidth;
 
     /// <summary>The width the walk may shrink to.</summary>
     private readonly int _minWidth;
@@ -103,7 +108,10 @@ public sealed class DropboxConcurrencyController
         _meter = meter;
         _folderGate = folderGate;
         _startWidth = Math.Max(minWidth, startWidth);
-        _maxWidth = Math.Max(_startWidth, maxWidth);
+
+        // The ceiling may be BELOW the start: a width that has been refused must not
+        // be climbed back into, and the walk still begins where it always began.
+        _maxWidth = Math.Max(minWidth, maxWidth);
         _minWidth = Math.Max(1, minWidth);
         _settleTime = settleTime;
     }
@@ -124,31 +132,20 @@ public sealed class DropboxConcurrencyController
 
         var now = DateTimeOffset.UtcNow;
 
-        // A 429 is the API saying the width is too wide. It halves it, at once.
-        if (snapshot.RateLimitedPerMinute > 0)
-        {
-            _lastRateLimit = now;
-            _narrowCount++;
-
-            var halved = _gate.Limit / 2;
-            var target = Math.Max(_minWidth, halved);
-
-            if (target < _gate.Limit)
-            {
-                _gate.SetLimit(target);
-                _folderGate?.SetLimit(target);
-                _lastChange = now;
-                _healthyLatencyMs = 0;
-                _baselineWidth = 0;
-            }
-
-            return;
-        }
-
-        // Too soon after a narrowing: give the API room before trying again.
+        // Too soon after a change: give the API room before trying again.
         if (now - _lastChange < _settleTime)
         {
             return;
+        }
+
+        // The ceiling is given back a step after a long quiet period. A refusal is a
+        // property of the MOMENT - it may have been another consumer of the same
+        // authorization - and a lesson that never fades is a permanent penalty for a
+        // moment's problem.
+        if (_maxWidth < _startWidth && now - _lastRateLimit > _settleTime * QuietWindowsForCeiling)
+        {
+            _maxWidth = Math.Min(_startWidth, _maxWidth + 1);
+            _lastRateLimit = now;
         }
 
         // The early signal: the API is getting slower. That means the width is at the
@@ -193,9 +190,25 @@ public sealed class DropboxConcurrencyController
             return;
         }
 
-        // Healthy: nothing to do. The walk's width is fixed, so there is no wider width
-        // to move to. The latency is still tracked, because it is the early signal that
-        // the fixed width is too wide - and the check above uses it to trim the width.
+        // Healthy: the width goes back UP toward the ceiling, one step at a time and
+        // only after a settled period, because a wrong step up is paid for with rate
+        // limits. This is how the walk gives back the width a refusal took away.
+        if (_gate.Limit < _maxWidth)
+        {
+            var target = _gate.Limit + 1;
+
+            _gate.SetLimit(target);
+            _folderGate?.SetLimit(target);
+            _lastChange = now;
+            _healthyLatencyMs = 0;
+            _baselineWidth = 0;
+
+            return;
+        }
+
+        // Healthy, and already at the ceiling: nothing to widen to. The latency is
+        // still tracked, because it is the early signal that the width is too wide -
+        // and the check above uses it to trim the width.
         if (_healthyLatencyMs == 0)
         {
             _healthyLatencyMs = snapshot.MeanLatencyMs;
@@ -206,6 +219,46 @@ public sealed class DropboxConcurrencyController
             // window does not redefine "normal", and the baseline still follows a real
             // change in the API's behaviour.
             _healthyLatencyMs = (_healthyLatencyMs * 0.7) + (snapshot.MeanLatencyMs * 0.3);
+        }
+    }
+
+    /// <summary>
+    /// How many settled windows must pass with no refusal before the ceiling is given
+    /// back a step.
+    /// </summary>
+    private const int QuietWindowsForCeiling = 10;
+
+    /// <summary>
+    /// A refusal happened: narrow the width, and remember the width that was refused.
+    /// <para>
+    /// This is called ONCE per refusal, by the code that caught it - not by
+    /// <see cref="Adapt"/>. The meter reports a refusal for the whole minute it
+    /// happened in, so a controller that acted on the meter's per-minute count would
+    /// halve the width again and again for that minute: one burst of two refusals took
+    /// a walk from 24 to 1, and it stayed there for the rest of the run.
+    /// </para>
+    /// </summary>
+    public void OnRateLimited()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var refused = _gate.Limit;
+
+        _lastRateLimit = now;
+        _narrowCount++;
+
+        // The width that was refused is REMEMBERED: the ceiling drops below it, so
+        // the walk does not climb back into a width the API has already said no to.
+        _maxWidth = Math.Min(_maxWidth, Math.Max(_minWidth, refused - 1));
+
+        var target = Math.Max(_minWidth, refused / 2);
+
+        if (target < _gate.Limit)
+        {
+            _gate.SetLimit(target);
+            _folderGate?.SetLimit(target);
+            _lastChange = now;
+            _healthyLatencyMs = 0;
+            _baselineWidth = 0;
         }
     }
 
@@ -224,6 +277,9 @@ public sealed class DropboxConcurrencyController
 
     /// <summary>The width the walk may grow to.</summary>
     public int MaxWidth => _maxWidth;
+
+    /// <summary>The width the walk is at now.</summary>
+    public int CurrentWidth => _gate.Limit;
 
     /// <summary>The width the walk may shrink to.</summary>
     public int MinWidth => _minWidth;

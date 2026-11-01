@@ -277,11 +277,51 @@ the number that decides the walk's width.
 | 11 | the app counts its own round trips, by kind, and says so in its log | the sync's completion log line | **measured** — "The database cost 22 round trip(s) (11 select, 10 update, 0 insert, 0 delete, 1 other), and 0 row(s) changed while 108 did not" |
 | 12 | the catalogue walk, after the changes | one catalogue run with the counters | **measured** — ~35 folders/s, 4,252 folders re-listed in about two minutes, nothing written but the folders' status; then two rate-limit holds of 300 s each |
 | 13 | the whole catalogue walk, after the changes | one catalogue run with the counters | not measured — the run stopped at the rate limit |
-| 14 | the listing endpoint's rate limit | the width ramp, run against `list_folder` rather than `get_metadata` | not measured |
+| 14 | the listing endpoint's rate limit | the width ramp, run against `list_folder` rather than `get_metadata` | **measured** — 96.2 req/s at width 64, latency flat at ~500 ms, no refusal at any width |
 
 ---
 
-## 8. Open questions
+## 8. The width rule
+
+**THE RULE, AS AGREED.** The width is a number the walk earns, and the API gives it back.
+
+1. **A refusal narrows ONCE.** The controller is told about a refusal by the code that
+   caught it, not by the meter. The meter reports a refusal for the whole minute it
+   happened in, and a controller that acted on it halved the width again and again for
+   that minute: **one burst of two refusals took the walk from 24 to 1**, and it stayed
+   there for the rest of the run - 1.9 folders a second against the 35 it had been
+   doing.
+2. **A refused width is remembered.** The ceiling drops below the width that was
+   refused, so the walk does not climb back into a width the API has already said no to.
+3. **The width is given back.** After a settled period with no refusal, it steps up by
+   one. The controller was written to do this; only the ceiling stopped it.
+4. **The floor is a fraction of the start**, not one. A refusal means slow down, not stop:
+   at a width of one the walk takes thirty times longer than it needs to.
+5. **The width carries between runs.** The next walk starts where the last one finished.
+
+**THE MEASUREMENT THE RULE NEEDS, TAKEN.** The shipped width ramp, pointed at
+`list_folder` instead of `get_metadata` - because the walk makes listing calls, and the
+two endpoints do not have to share a limit:
+
+| width | calls | req/s | avg ms | 429s |
+|---|---|---|---|---|
+| 1 | 200 | 2.1 | 487 | 0 |
+| 6 | 200 | 11.8 | 502 | 0 |
+| 12 | 200 | 23.5 | 499 | 0 |
+| 24 | 200 | **46.0** | 506 | 0 |
+| 32 | 200 | 52.3 | 500 | 0 |
+| 48 | 200 | 81.4 | 531 | 0 |
+| 64 | 200 | **96.2** | 538 | 0 |
+
+**The endpoint carries at least 96 calls a second, the latency is flat, and the walk's
+width of 24 sits at 46 of them.** So the walk's refusals were NOT its own rate: the
+account's authorization was shared with something else at the time - which is what the
+user said might be true.
+
+**What this changes.** The width is no longer a guess: the endpoint carries 64. The
+walk's width is the one decision the user deferred, and the measurement is now in hand.
+
+## 9. Open questions
 
 1. **May the write gate become a gate per folder?** The deadlock it prevents was
    between the flush and the status write of the same folder, so a per-folder gate may
@@ -292,8 +332,8 @@ the number that decides the walk's width.
    look before the next walk changes what it says.
 3. **Is the media library's read cost worth measuring now?** O3 cannot be decided
    without it, and it is the only item on the list whose answer might be "do nothing".
-4. **What is the LISTING endpoint's limit?** The ramp probe measured `get_metadata` at
-   436 requests a second with no refusal; the walk's `list_folder` was refused at ~35
-   folders a second, and the 300-second hold that followed was Dropbox's own
-   `Retry-After`. Until the listing endpoint is ramped, the walk's width is a guess for
-   the endpoint that actually does the work.
+4. **What was sharing the account's authorization?** The walk was refused twice at ~35
+   listings a second, and the ramp carried 96 a second with no refusal at all — so the
+   refusals came from traffic that was not the walk's. The limit is per authorization,
+   so anything else using this team's token shares it. That is now the open question,
+   and it is not the width's.
