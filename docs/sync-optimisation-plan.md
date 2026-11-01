@@ -21,6 +21,8 @@ because every write to `ml.DropBoxNode` is serialised behind one gate.
 | the round trips, full catalogue | ~100,000 — one chunk of four round trips per folder, plus one for the folder's status |
 | the API | 19,851 folder listings (~5.7 min); the per-file call, 399,357 of them, was ~97% of the old walk's traffic |
 | **after the three changes in §2** | the 109-row Umbro/F26 subtree: **1 row written** (was 109), **23 SQL round trips** |
+| **the catalogue walk, after the changes** | **~35 folders a second** — 4,252 folders re-listed in about two minutes, with nothing written but the folders' status. The same walk before the changes managed ~29 rows a second and had not finished in 85 minutes. |
+| **what the API did about it** | **two rate-limit holds** — the walk listed faster than the account's limit, and each hold stopped the whole walk for **300 seconds** |
 
 ---
 
@@ -196,6 +198,20 @@ round trip saved at the cost of rows written twice is not a saving.
 6. **O4**, the cursor — the largest build, and the one that changes what a sync
    *means* rather than how long it takes.
 
+**O4 MOVES UP.** The write path stopped being the bottleneck, and the API became it: the
+walk now lists at ~35 folders a second and the account rate-limited it. The cursor is
+what cuts the LISTING calls, and the listing is what is now slow — so O4 is worth more
+than O1 and O2 together. O1 and O2 still stand, but they are now worth less than they
+were, because the round trips they save are not what the walk is waiting for.
+
+**THE RATE LIMIT IS THE NEXT THING TO LOOK AT.** One 429 holds the whole walk for 300
+seconds. The limit is per authorization, so a shared hold is right — but the hold's
+LENGTH is what turns one refused call into five lost minutes, and the walk refused the
+call at only ~35 requests a second, which the account's own ramp probe once carried at
+436 a second without a single refusal. Either another consumer shares this
+authorization, or the endpoint's limit is lower than the probe's. That is an open
+question, and it decides whether the answer is a shorter hold or a narrower walk.
+
 ---
 
 ## 6. Not in scope
@@ -223,6 +239,8 @@ round trip saved at the cost of rows written twice is not a saving.
 | 9 | the gate may be per folder | the deadlock reproduced and the fix measured — the shipped harness in the sync skill | not measured |
 | 10 | an unchanged walk's listing floor is the delta, not 19,851 calls | the cursor delta against the live account | not measured |
 | 11 | the app counts its own round trips, by kind, and says so in its log | the sync's completion log line | **measured** — "The database cost 22 round trip(s) (11 select, 10 update, 0 insert, 0 delete, 1 other), and 0 row(s) changed while 108 did not" |
+| 12 | the catalogue walk, after the changes | one catalogue run with the counters | **measured** — ~35 folders/s, 4,252 folders re-listed in about two minutes, nothing written but the folders' status; then two rate-limit holds of 300 s each |
+| 13 | the whole catalogue walk, after the changes | one catalogue run with the counters | not measured — the run stopped at the rate limit |
 
 ---
 
@@ -237,3 +255,7 @@ round trip saved at the cost of rows written twice is not a saving.
    look before the next walk changes what it says.
 3. **Is the media library's read cost worth measuring now?** O3 cannot be decided
    without it, and it is the only item on the list whose answer might be "do nothing".
+4. **Is something else using this team's Dropbox authorization?** The walk was refused
+   at ~35 requests a second, and the account once carried 436 a second without a
+   refusal. If another consumer shares the token, the walk's width has to be set for
+   both of them; if not, the endpoint's limit is the one that counts.
