@@ -1884,11 +1884,20 @@ public sealed class DropBoxSyncService(
         {
             await using var db = CreateContext();
 
+            // SyncedUtc goes on here too. This statement runs for every folder the walk
+            // visits, so it is where the walk's freshness is recorded - and it costs
+            // nothing, because the statement was going to be sent anyway. Without it, a
+            // walk that changed nothing would leave MAX(SyncedUtc) pointing at the last
+            // row that actually changed, and the dashboard's "last synced" would be
+            // stale.
+            var now = DateTimeOffset.UtcNow;
+
             await db.Nodes
                 .Where(n => n.NamespaceId == ns && n.PathHash == hash)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(n => n.SyncStatus, status)
-                    .SetProperty(n => n.SyncStatusReason, reason), ct)
+                    .SetProperty(n => n.SyncStatusReason, reason)
+                    .SetProperty(n => n.SyncedUtc, now), ct)
                 .ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
     }

@@ -361,14 +361,17 @@ what decides that.
 What this means, plainly:
 
 - `SyncedUtc` on a FILE row now means "when this file last changed", not "when the walk
-  last saw it".
+  last saw it". A FOLDER's row keeps the old meaning.
 - A walk that found nothing writes nothing. Measured on the 109-row Umbro/F26 subtree
   after the change: **1 row written** (the walk's own start folder, which carries the
   run id) against **109 before**, and **23 SQL round trips** for the whole subtree.
 - The FRONTIER does not depend on it. The frontier is the FOLDERS' statuses, and a
   folder is always written - the folder that starts the walk is written by the upsert,
   and every other folder's row is written when its status or its content changes.
-- `MAX(SyncedUtc)` still reports the last walk, because the folders carry it.
+- `MAX(SyncedUtc)` still reports the last walk. The statement that writes a folder's
+  status - which runs for every folder the walk visits - carries `SyncedUtc` too, so
+  every folder's timestamp moves on every walk, and the folder's row keeps the meaning
+  it always had.
 
 **EF'S BATCH SIZE IS 500, NOT ITS DEFAULT OF 42.** The walk's chunk is five hundred
 rows, and the common update - the two columns that say the walk saw the row - costs
