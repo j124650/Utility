@@ -312,8 +312,51 @@ internal static class Program
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
+        // A line every half minute, so a run that takes half an hour can be watched
+        // while it happens: the width it has earned, the folders it has done, and the
+        // requests it has made.
+        using var watching = new CancellationTokenSource();
+
+        var watcher = Task.Run(async () =>
+        {
+            while (!watching.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), watching.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                // The service's own counters - not a query. A scan of the table would
+                // take shared locks the walk's own updates need, and slow the run down
+                // while trying to measure it.
+                var rate = sync.RateSnapshot;
+
+                Console.WriteLine(
+                    $"  [{sw.Elapsed.TotalMinutes,5:F1} min] width {sync.MaxConcurrency,2}  " +
+                    $"requests {rate.TotalRequests,7:N0}  rate {rate.RequestsPerSecond,6:F1}/s  " +
+                    $"latency {rate.MeanLatencyMs,4}ms  refused {rate.TotalRateLimited,3}");
+
+                Console.Out.Flush();
+            }
+        });
+
         var result = await service.SyncFrom(path, ns);
         sw.Stop();
+
+        watching.Cancel();
+
+        try
+        {
+            await watcher;
+        }
+        catch (OperationCanceledException)
+        {
+            // the watcher's own cancellation, not a failure
+        }
 
         Console.WriteLine("--- SyncFrom ---");
         Console.WriteLine($"  completed   : {result.Completed}");
