@@ -46,9 +46,12 @@ public sealed class DashboardViewModel : ViewModelBase
     private readonly IDropBoxSyncService _sync;
     private readonly IDropBoxSyncStatsService _stats;
     private readonly ILogSink _log;
+    private readonly SyncNewViewModel _syncNew;
 
     private AsyncRelayCommand? _readTree;
     private AsyncRelayCommand? _runSync;
+    private AsyncRelayCommand? _runSyncNew;
+    private AsyncRelayCommand? _runEnrichOnly;
     private AsyncRelayCommand? _continueSync;
     private AsyncRelayCommand? _refreshStats;
 
@@ -56,12 +59,14 @@ public sealed class DashboardViewModel : ViewModelBase
         IDropBoxTreeState state,
         IDropBoxSyncService sync,
         IDropBoxSyncStatsService stats,
-        ILogSink log)
+        ILogSink log,
+        SyncNewViewModel syncNew)
     {
         _state = state;
         _sync = sync;
         _stats = stats;
         _log = log;
+        _syncNew = syncNew;
 
         // The figures are read at startup, which happens BEFORE this view model exists.
         // Subscribe so the page reflects whatever the warm-up already produced, and pull
@@ -72,8 +77,22 @@ public sealed class DashboardViewModel : ViewModelBase
         // The button's enabled state depends on whether a walk is running, and the run
         // state lives in the sync service. The service raises PropertyChanged for it, so
         // the button's state follows the run without anyone copying the flag around.
-        _sync.PropertyChanged += (_, _) => OnPropertyChanged(nameof(CanContinueSync));
+        _sync.PropertyChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(CanContinueSync));
+            OnPropertyChanged(nameof(CanRunSync));
+        };
+
+        // The two-phase run lives in its own view model, which is a singleton so the
+        // busy screen outlives this page. Its state decides whether the button is live.
+        _syncNew.PropertyChanged += (_, _) => OnPropertyChanged(nameof(CanRunSync));
     }
+
+    /// <summary>
+    /// The two-phase sync's busy screen and its run. A singleton, so the run's state
+    /// survives the page being navigated away from.
+    /// </summary>
+    public SyncNewViewModel SyncNew => _syncNew;
 
     /// <summary>Bound directly: the collection instance never changes, only its contents.</summary>
     public ObservableCollection<DropBoxTreeNode> Nodes => _state.Nodes;
@@ -142,7 +161,32 @@ public sealed class DashboardViewModel : ViewModelBase
     /// True when there is something to continue: folders whose contents were never
     /// listed. This is the same set the button acts on.
     /// </summary>
-    public bool CanContinueSync => Stats.HasNotSynced && !Sync.IsRunning;
+    public bool CanContinueSync => Stats.HasNotSynced && !Sync.IsRunning && !_syncNew.IsBusy;
+
+    /// <summary>
+    /// Runs the two-phase sync: the structure, then whatever it marked for enrichment.
+    /// <para>
+    /// It reads the SAME path box as the one-phase sync above it, so both buttons act
+    /// on the folder the user typed.
+    /// </para>
+    /// </summary>
+    public AsyncRelayCommand RunSyncNewCommand => _runSyncNew ??= new AsyncRelayCommand(RunSyncNewAsync);
+
+    /// <summary>
+    /// Runs the enrichment pass on its own: the files a previous sync marked as
+    /// changed, and nothing else.
+    /// <para>
+    /// It needs no path - the work list is the set of rows tagged 'pending' - so the
+    /// path box does not apply to it.
+    /// </para>
+    /// </summary>
+    public AsyncRelayCommand RunEnrichOnlyCommand => _runEnrichOnly ??= new AsyncRelayCommand(RunEnrichOnlyAsync);
+
+    /// <summary>
+    /// True when a sync may be started: neither the one-phase sync nor the two-phase
+    /// one is running. Two walks over the same table would fight each other.
+    /// </summary>
+    public bool CanRunSync => !Sync.IsRunning && !_syncNew.IsBusy;
 
     private string _syncPath = DefaultSyncPath;
 
@@ -231,6 +275,55 @@ public sealed class DashboardViewModel : ViewModelBase
         // The figures are read here too, not only when the busy screen is dismissed:
         // the user may dismiss it, and the button's own state depends on the count.
         await _stats.LoadAsync();
+    }
+
+    /// <summary>
+    /// Runs the enrichment pass on its own, and reads the figures again when it ends.
+    /// </summary>
+    private async Task RunEnrichOnlyAsync()
+    {
+        await _syncNew.EnrichOnlyAsync();
+
+        // The figures are read here: the run wrote dimensions the page counts.
+        await _stats.LoadAsync();
+        OnPropertyChanged(nameof(CanContinueSync));
+
+        var message = _syncNew.Error ?? _syncNew.Outcome;
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            StatusMessage = message;
+            _log.Info(message);
+        }
+    }
+
+    /// <summary>
+    /// Runs the two-phase sync and reads the figures again when it ends.
+    /// </summary>
+    private async Task RunSyncNewAsync()
+    {
+        var path = SyncPath?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            StatusMessage = "A sync needs a folder path.";
+            return;
+        }
+
+        await _syncNew.StartAsync(path);
+
+        // The figures are read here, not only when the busy screen is dismissed: the
+        // run wrote rows the page counts, and the button's own state depends on them.
+        await _stats.LoadAsync();
+        OnPropertyChanged(nameof(CanContinueSync));
+
+        var message = _syncNew.Error ?? _syncNew.Outcome;
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            StatusMessage = message;
+            _log.Info(message);
+        }
     }
 
     private async Task RunSyncAsync()

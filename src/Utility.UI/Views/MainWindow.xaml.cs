@@ -57,11 +57,18 @@ public partial class MainWindow : Window
         // The busy screen binds to the SYNC SERVICE itself, not to a copy of its state.
         // The service is a singleton, so the overlay shows the run's progress even if the
         // page that started it has been navigated away from.
-        SyncOverlay.DataContext = sync;
+        //
+        // The old one-phase sync's screen is commented out in the markup, so its name
+        // does not exist and there is nothing to bind. The two-phase sync has its own
+        // screen, bound below.
 
         // The FINDER's busy screen binds to the Finder's view model, which is also a
         // singleton (§14.1) - the same pattern as the sync overlay above.
         FinderOverlay.DataContext = _finder;
+
+        // The TWO-PHASE sync's busy screen binds to its own view model, which is a
+        // singleton for the same reason: the run outlives the page that started it.
+        SyncNewOverlay.DataContext = services.GetRequiredService<SyncNewViewModel>();
 
         // The app opens on the DropBox DB page: it is the index the app is built around,
         // and it reads its figures from the database at startup - no Dropbox call, no

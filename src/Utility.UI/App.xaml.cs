@@ -149,6 +149,10 @@ private static async Task WarmUpAsync(IServiceProvider services)
         // opened would lose the reader's place.
         builder.Services.AddSingleton<LogsViewModel>();
 
+        // The two-phase sync's busy screen and its run. A singleton, because the run
+        // outlives the page that started it.
+        builder.Services.AddSingleton<SyncNewViewModel>();
+
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddTransient<DashboardView>();
         builder.Services.AddTransient<DropBoxView>();

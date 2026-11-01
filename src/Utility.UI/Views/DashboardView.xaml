@@ -159,9 +159,39 @@
                                  VerticalContentAlignment="Center"
                                  ToolTip="Dropbox folder to sync, relative to the team namespace root. The whole tree below it is walked." />
 
-                        <Button Grid.Column="2" Content="Sync" Command="{Binding RunSyncCommand}"
-                                Padding="14,5" MinWidth="72"
-                                IsEnabled="{Binding Sync.IsRunning, Converter={StaticResource InverseBool}}" />
+                        <!--
+                          Two sync buttons, one path box.
+
+                          "Sync" is the one-phase walk: it fetches every file's metadata
+                          as it goes, which is ~97% of its traffic and buys the
+                          dimensions.
+
+                          "Sync New" is the two-phase walk: it lists the structure first
+                          and then fetches the metadata of the files whose CONTENT
+                          changed - so an unchanged file costs no per-file call at all.
+                          Both read the same box, so both act on the folder the user
+                          typed.
+                        -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            <Button Content="Sync" Command="{Binding RunSyncCommand}"
+                                    Padding="14,5" MinWidth="72" Margin="0,0,6,0"
+                                    IsEnabled="{Binding CanRunSync}" />
+                            <Button Content="Sync New" Command="{Binding RunSyncNewCommand}"
+                                    Padding="14,5" MinWidth="86" Margin="0,0,6,0"
+                                    IsEnabled="{Binding CanRunSync}"
+                                    ToolTip="Two-phase sync: lists the structure, then fetches the metadata of the files whose content changed. An unchanged file costs no call." />
+
+                            <!--
+                              Enrich Only runs the SECOND phase on its own: the files a
+                              previous sync marked as changed. It needs no path - the work
+                              list is the set of rows tagged 'pending' - so the path box
+                              does not apply to it.
+                            -->
+                            <Button Content="Enrich Only" Command="{Binding RunEnrichOnlyCommand}"
+                                    Padding="14,5" MinWidth="86"
+                                    IsEnabled="{Binding CanRunSync}"
+                                    ToolTip="Fetches the metadata of the files the last sync marked as changed, and nothing else. Needs no path." />
+                        </StackPanel>
                     </Grid>
                 </Border>
             </Grid>
