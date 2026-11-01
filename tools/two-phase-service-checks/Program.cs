@@ -48,8 +48,8 @@ internal static class Program
                 ? parsed
                 : 0;
 
-        // --full runs the catalogue and reports; it does not simulate a change, because
-        // that would mean walking the whole catalogue twice.
+        // --enrich-only runs phase 2 alone: the rows marked 'pending', and nothing else.
+        var enrichOnly = args.Contains("--enrich-only");
 
         var failures = 0;
         var checks = 0;
@@ -98,6 +98,11 @@ internal static class Program
         await db.OpenAsync();
 
         var sync = host.Services.GetRequiredService<IDropBoxSyncService>();
+
+        if (enrichOnly)
+        {
+            return await RunEnrichOnlyAsync(service, sync, db, sqlCounter, Namespace);
+        }
 
         if (full)
         {
@@ -221,6 +226,58 @@ internal static class Program
         Console.WriteLine($"{checks - failures}/{checks} checks passed.");
 
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Runs phase 2 alone, and reports what it cost.
+    /// </summary>
+    private static async Task<int> RunEnrichOnlyAsync(
+        IDropBoxSyncTwoPhaseService service,
+        IDropBoxSyncService sync,
+        SqlConnection db,
+        SqlCounter sqlCounter,
+        string ns)
+    {
+        Console.WriteLine("=== PHASE 2 ALONE: the rows marked 'pending', and only those ===");
+        Console.WriteLine();
+
+        var before = await FiguresAsync(db);
+
+        var sqlBefore = sqlCounter.Commands;
+        var dropboxBefore = sync.RateSnapshot.TotalRequests;
+
+        Console.WriteLine("--- before ---");
+        Console.WriteLine($"  pending      : {before.Pending:N0}");
+        Console.WriteLine($"  with dims    : {before.WithDims:N0}");
+        Console.WriteLine();
+
+        var result = await service.EnrichAsync(ns, null);
+
+        var sqlCalls = sqlCounter.Commands - sqlBefore;
+        var dropboxCalls = sync.RateSnapshot.TotalRequests - dropboxBefore;
+
+        Console.WriteLine("--- the enrichment ---");
+        Console.WriteLine($"  completed    : {result.Completed}");
+        Console.WriteLine($"  pending      : {result.Pending:N0}");
+        Console.WriteLine($"  enriched     : {result.Enriched:N0}");
+        Console.WriteLine($"  failed       : {result.Failed:N0}");
+        Console.WriteLine($"  still pending: {result.StillPending:N0}");
+        Console.WriteLine($"  duration     : {result.Duration.TotalSeconds:N1}s");
+        Console.WriteLine();
+
+        Console.WriteLine("--- the two sides, counted the same way ---");
+        Console.WriteLine($"  SQL round trips : {sqlCalls:N0}");
+        Console.WriteLine($"  Dropbox requests: {dropboxCalls:N0}");
+        Console.WriteLine();
+
+        var after = await FiguresAsync(db);
+
+        Console.WriteLine("--- after ---");
+        Console.WriteLine($"  pending      : {after.Pending:N0}");
+        Console.WriteLine($"  with dims    : {after.WithDims:N0}  ({(after.WithDims - before.WithDims):+N0;-N0;0})");
+        Console.WriteLine();
+
+        return 0;
     }
 
     /// <summary>

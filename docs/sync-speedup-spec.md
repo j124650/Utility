@@ -254,6 +254,13 @@ right now, because nothing has changed. So a stored cursor per folder is enough 
 Dropbox "what changed since?" without re-listing, and the delta also reports
 **DELETIONS**, which the current walk never learns.
 
+**PHASE 2, ALONE, ON A CHANGED CATALOGUE.** A run of phase 1 over the catalogue root
+found 882 files whose content had changed. Enriching those 882 rows and nothing else took
+**19.0 seconds** — 882 Dropbox metadata calls at the width of 24, **1,766 SQL round
+trips**, 0 failed, 0 left pending, and the table's dimensions back to exactly the count
+it started with (359,280). The one-phase walk would have made 399,357 metadata calls for
+the same table; phase 2 made 882.
+
 **THE ACCOUNT IS EDITED WHILE THE APP IS NOT LOOKING, and the walk is built for that.**
 A full run from the catalogue root found ~1,460 rows that had never been synced, and
 882 files whose content hash no longer matched — spread over six brands, mostly in new
