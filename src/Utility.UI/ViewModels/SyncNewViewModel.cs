@@ -32,6 +32,8 @@ public sealed class SyncNewViewModel : ObservableObject
     private int _enrichDone;
     private int _enrichTotal;
     private int _enrichFailed;
+    private int _enrichInFlight;
+    private int _enrichWidth;
     private string _outcome = string.Empty;
     private string? _error;
 
@@ -85,11 +87,21 @@ public sealed class SyncNewViewModel : ObservableObject
     /// <summary>The walk's levels. The sync service's own list, replaced as it updates.</summary>
     public IReadOnlyList<DropBoxSyncLevel> Levels => _sync.Levels;
 
-    /// <summary>How many Dropbox requests are in flight right now.</summary>
-    public int ActiveDownloaders => _sync.ActiveDownloaders;
+    /// <summary>
+    /// How many Dropbox requests are in flight right now.
+    /// <para>
+    /// Whichever phase is running. The enrichment has its OWN gate and does not share
+    /// the walk's, so the walk's counters stand still while it works - and an
+    /// enrichment-only run has no walk at all.
+    /// </para>
+    /// </summary>
+    public int ActiveDownloaders => IsEnriching ? _enrichInFlight : _sync.ActiveDownloaders;
 
-    /// <summary>How many Dropbox requests may be in flight at once - the walk's width.</summary>
-    public int MaxConcurrency => _sync.MaxConcurrency;
+    /// <summary>
+    /// How many Dropbox requests may be in flight at once - the width of whichever
+    /// phase is running.
+    /// </summary>
+    public int MaxConcurrency => IsEnriching ? _enrichWidth : _sync.MaxConcurrency;
 
     /// <summary>The walk's own traffic, measured: the rate, the refusals and the latency.</summary>
     public string Traffic => _sync.RateSnapshot.Display;
@@ -329,6 +341,14 @@ public sealed class SyncNewViewModel : ObservableObject
         EnrichDone = progress.Done;
         EnrichTotal = progress.Total;
         CurrentPath = progress.CurrentPath;
+
+        // The enrichment's own traffic: it does not share the walk's gate, so the
+        // walk's counters would show a stalled screen over a working pass.
+        _enrichInFlight = progress.InFlight;
+        _enrichWidth = progress.Width;
+
+        OnPropertyChanged(nameof(ActiveDownloaders));
+        OnPropertyChanged(nameof(MaxConcurrency));
     }
 
     /// <summary>

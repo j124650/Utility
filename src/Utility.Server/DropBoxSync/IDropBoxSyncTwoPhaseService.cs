@@ -100,7 +100,21 @@ public interface IDropBoxSyncTwoPhaseService
 /// <param name="Done">Files enriched so far.</param>
 /// <param name="Total">Files the work list held when the pass started.</param>
 /// <param name="CurrentPath">The file being read.</param>
-public readonly record struct DropBoxTwoPhaseEnrichProgress(int Done, int Total, string CurrentPath);
+/// <param name="InFlight">
+/// How many Dropbox calls this pass has in flight right now.
+/// <para>
+/// The enrichment has its OWN gate - it does not share the walk's - so the walk's
+/// counters say nothing while this pass runs. Without these the busy screen would
+/// report the walk's idle numbers over an enrichment that is working.
+/// </para>
+/// </param>
+/// <param name="Width">How many Dropbox calls this pass may have in flight at once.</param>
+public readonly record struct DropBoxTwoPhaseEnrichProgress(
+    int Done,
+    int Total,
+    string CurrentPath,
+    int InFlight,
+    int Width);
 
 /// <summary>Outcome of the enrichment pass.</summary>
 /// <param name="Completed">False when the pass was cancelled or threw.</param>

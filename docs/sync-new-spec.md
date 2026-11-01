@@ -113,6 +113,11 @@ obvious from the rest of the screen — everything else looks the same in both p
 **The traffic line.** The requests in flight against the width they may reach, and the
 measured traffic beside them. These are the service's own live properties, not copies.
 
+**They belong to whichever phase is running.** The enrichment has its own request gate
+and does not share the walk's, so the walk's counters stand still while it works — and
+an enrichment-only run has no walk at all. The enrichment reports its own in-flight
+count and width, and the line shows those during the enrichment.
+
 **The level table.** One column per level of the walk, carrying how many of that
 level's folders have been listed and how many records it has written. It belongs to
 phase 1 only; during phase 2 it stays as it was, so the operator can see what phase 1

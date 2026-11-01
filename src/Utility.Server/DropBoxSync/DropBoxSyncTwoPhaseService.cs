@@ -38,6 +38,16 @@ public sealed class DropBoxSyncTwoPhaseService(
     private const int Width = DropBoxSyncService.WalkWidth;
 
     /// <summary>
+    /// How many Dropbox calls this pass has in flight right now.
+    /// <para>
+    /// The enrichment has its OWN gate and does not share the walk's, so the walk's
+    /// counters stand still while this pass works. The busy screen reports whichever
+    /// phase is running, so it needs this one.
+    /// </para>
+    /// </summary>
+    private int _activeEnrichments;
+
+    /// <summary>
     /// The batch size. The interface's default is 50 and the concrete walk's is 500; a
     /// call through the interface gets 50, which is what the app does today, so this
     /// asks for it explicitly rather than depending on which overload is picked.
@@ -130,6 +140,10 @@ public sealed class DropBoxSyncTwoPhaseService(
         var enriched = 0;
         var failed = 0;
 
+        // The pass's own in-flight count. The enrichment does not share the walk's
+        // request gate, so the walk's counters stand still while this pass works.
+        Volatile.Write(ref _activeEnrichments, 0);
+
         await WorkerPool.RunAsync(
             pending,
             Width,
@@ -155,7 +169,9 @@ public sealed class DropBoxSyncTwoPhaseService(
                 progress?.Report(new DropBoxTwoPhaseEnrichProgress(
                     Volatile.Read(ref enriched) + Volatile.Read(ref failed),
                     pending.Count,
-                    row.PathDisplay));
+                    row.PathDisplay,
+                    Volatile.Read(ref _activeEnrichments),
+                    Width));
             },
             ct).ConfigureAwait(false);
 
@@ -213,7 +229,18 @@ public sealed class DropBoxSyncTwoPhaseService(
                 // includeMediaInfo: TRUE. Without it the API returns no media info at
                 // all, and the dimensions read as NULL - which would silently clear
                 // every dimension the pass touched.
-                var info = await dropBox.GetFileInfoAsync(row.PathDisplay, ns, true, ct).ConfigureAwait(false);
+                Interlocked.Increment(ref _activeEnrichments);
+
+                FileEntry info;
+
+                try
+                {
+                    info = await dropBox.GetFileInfoAsync(row.PathDisplay, ns, true, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref _activeEnrichments);
+                }
 
                 // The dimensions are QUEUED, not written. A write per file is two round
                 // trips - the row's load and its update - and eight hundred files make
