@@ -77,6 +77,9 @@ as long as the run lasts, exactly as the existing sync's busy screen does. The a
 behind it is not clickable, so a long run cannot be interrupted by a stray click on a
 page that is about to be re-read anyway.
 
+**Its panel is 90% of the window's width**, not a fixed one: the level table grows
+with the catalogue's depth, and a capped panel would clip it.
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                       Syncing Dropbox                            │

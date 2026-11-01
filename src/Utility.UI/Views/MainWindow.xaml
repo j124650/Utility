@@ -334,8 +334,12 @@
               Background="#B31E2023"
               Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
 
+            <!--
+              The panel is 90% of the window, not a fixed width: the level table grows
+              with the catalogue's depth, and a capped panel would clip it.
+            -->
             <Border Background="#26FFFFFF" BorderBrush="#4DFFFFFF" BorderThickness="1" CornerRadius="10"
-                    Padding="28,24" MaxWidth="1000" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    Padding="28,24" Width="90%" HorizontalAlignment="Center" VerticalAlignment="Center">
 
                 <StackPanel>
 
@@ -344,7 +348,7 @@
 
                     <TextBlock Text="{Binding CurrentPath, Mode=OneWay}" FontFamily="Consolas" FontSize="11"
                                Foreground="#A8ADB2" HorizontalAlignment="Center" Margin="0,6,0,0"
-                               MaxWidth="900" TextTrimming="CharacterEllipsis" />
+                               TextTrimming="CharacterEllipsis" />
 
                     <!--
                       Which of the two phases. This is the one thing the rest of the
@@ -428,7 +432,7 @@
                                HorizontalAlignment="Center" Margin="0,16,0,0" />
 
                     <TextBlock Text="{Binding Error, Mode=OneWay}" FontSize="11" Foreground="#F28B82"
-                               HorizontalAlignment="Center" Margin="0,6,0,0" MaxWidth="900"
+                               HorizontalAlignment="Center" Margin="0,6,0,0"
                                TextWrapping="Wrap" />
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
