@@ -127,13 +127,27 @@
                                        FontFamily="Consolas" FontSize="11" Foreground="#334155"
                                        TextWrapping="Wrap" />
 
-                            <!-- The filter: it narrows the VIEW, never the set. -->
-                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,8">
-                                <CheckBox Content="Failures only"
+                            <!-- The filter, and the export. -->
+                            <Grid Grid.Row="1" Margin="0,12,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <CheckBox Grid.Column="0" Content="Failures only"
                                           IsChecked="{Binding ShowFailuresOnly}"
                                           VerticalAlignment="Center"
                                           Visibility="{Binding HasRecoveryLog, Converter={StaticResource BoolToVis}}" />
-                            </StackPanel>
+
+                                <!--
+                                  Export the run's failures as a CSV. It is OFF when the
+                                  run had none: there is nothing to export, and a button
+                                  that would write an empty file is a lie.
+                                -->
+                                <Button Grid.Column="1" Content="Export Failed"
+                                        Command="{Binding ExportFailedCommand}"
+                                        Visibility="{Binding HasRecoveryLog, Converter={StaticResource BoolToVis}}" />
+                            </Grid>
 
                             <!-- Every operation, in the log's order. -->
                             <ListBox Grid.Row="2" ItemsSource="{Binding Operations}"
@@ -188,7 +202,7 @@
                                                     <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Outcome}" Style="{StaticResource FieldValue}" />
 
                                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="reason" Style="{StaticResource FieldLabel}" />
-                                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Reason}" Style="{StaticResource FieldValue}"
+                                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ShortReason}" Style="{StaticResource FieldValue}"
                                                                ToolTip="{Binding Reason}" />
 
                                                     <TextBlock Grid.Row="3" Grid.Column="0" Text="from" Style="{StaticResource FieldLabel}" />

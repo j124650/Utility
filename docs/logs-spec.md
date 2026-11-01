@@ -18,7 +18,8 @@ log, and the tab has one sub-tab for each:
 **Both are MASTER-DETAIL forms.** The master is a list; the detail is what the list's
 selected entry shows.
 
-**The tab READS and it writes nothing.** It opens no log, deletes none, and starts no
+**The tab READS, and it writes ONE thing: the CSV the reader asks for** (§ "Export
+Failed"). It opens no log, deletes none, and starts no
 recovery. A reader who opens a log is reading what already happened.
 
 ## 2. Where the logs are
@@ -211,6 +212,70 @@ to find by eye:
 **A malformed line is never dropped silently.** A log that cannot be trusted is worse
 than a log that says it is damaged.
 
+### The reason, in high-signal words
+
+**THE RAW REASON IS NOT SHOWN. A SHORT PHRASE IS.** The raw reason is what an exception
+or an API said — `path/not_found/`, or "the parent is not there to regenerate the child
+from" — and neither is a thing a reader scans, nor groups well in a spreadsheet.
+
+| The raw reason | What the reader sees |
+|---|---|
+| `path/not_found/` | Path not found in Dropbox |
+| `path/conflict/` | Path conflict in Dropbox |
+| `path/malformed_path/` | Malformed path in Dropbox |
+| `path/restricted_content/` | Restricted content in Dropbox |
+| `path/disallowed_name/` | Disallowed name in Dropbox |
+| `path/too_long/` | Path too long in Dropbox |
+| `from_lookup/not_found/` | File not found in Dropbox |
+| `from_lookup/not_file/` | Source is not a file in Dropbox |
+| `from_lookup/folder/` | Source is a folder in Dropbox |
+| `from_lookup/malformed_path/` | Malformed source path in Dropbox |
+| `insufficient_space/` | Not enough space |
+| `too_many_write_operations/` | Too many write operations |
+| `too_many_concurrent_write_operations/` | Too many concurrent write operations |
+| `internal_error/` | Dropbox internal error |
+| `other/` | Dropbox error |
+| no candidate to restore the parent from | No candidate to restore from |
+| the candidate carries no namespace | Candidate carries no namespace |
+| the parent is not there to regenerate the child from | Parent not there to regenerate from |
+
+**THE RAW REASON IS NEVER LOST.** The log keeps it verbatim, and the reader's tooltip on
+the short phrase shows it.
+
+**A REASON THAT IS NOT IN THE TABLE KEEPS ITS OWN WORDS.** The table is the app's and
+Dropbox's own vocabulary; an unknown reason is not shortened by guesswork. A Dropbox code
+nobody has seen yet is named — "Dropbox: some new code" — so it is still short and still
+recognisable as Dropbox's.
+
+### Export Failed
+
+**THE DETAILS PANE HAS AN "Export Failed" BUTTON, and it writes the run's failures as a
+CSV.** A reader who wants to triage in a spreadsheet gets one.
+
+**THE BUTTON IS OFF when the log has no failures.** There is nothing to export, and a
+button that would write an empty file is a lie.
+
+**THE READER CHOOSES WHERE THE FILE GOES: a Save File dialog opens**, with the file name
+already filled in — "Recover 2026-10-31_20-48-59 failures.csv" — the logs folder as the
+starting folder, and an overwrite prompt. The browser does not choose a folder and does
+not write a file nobody asked for.
+
+**THE CSV IS ONE ROW PER FAILED OPERATION**, with the columns:
+
+```
+Number, Pair, Folder, Plan, Outcome, Reason, Source, Into, Started, Ended, Duration (s)
+```
+
+**The reason in the CSV is the SHORT reason** — the high-signal phrase above, not the
+raw exception message. The raw reason stays in the log, which the reader can always open.
+
+**THE CSV IS WRITTEN THE WAY A SPREADSHEET READS IT**: every field is quoted, an embedded
+quote is doubled, a line ends with CRLF, and the file is UTF-8 **with** a BOM, because
+Excel needs the BOM to read a UTF-8 file's paths correctly.
+
+**THE CSV IS STREAMED TO THE FILE, not built in memory.** A run with 292,400 failures
+writes 292,400 rows without holding them.
+
 ### The older format
 
 **A recovery log in the OLD text format — `key=value` pairs on a line — is shown as its
@@ -281,7 +346,11 @@ not a view concern, and it is worth being able to check on its own.
 | 11 | A malformed line is counted and shown, never dropped silently | damage a log, open it | **built** (`tools/logs-checks`) |
 | 12 | The figures are the log's own, not recomputed | compare with the log file | **built** |
 | 13 | The render holds the log's text in memory at no point | open a full run's log | **built** |
-| 14 | The browser writes nothing | check the folder before and after | **built** |
+| 14 | The browser writes nothing except the CSV the reader asks for | check the folder before and after | **built** |
+| 15 | The reason is shown in high-signal words, and the raw reason is in the tooltip | open a log with failures | **built** (`tools/logs-checks`) |
+| 16 | "Export Failed" is off when the log has no failures | open a log with no failures | **built** |
+| 17 | "Export Failed" writes a CSV of the failures, where the reader chooses | click it | **built** |
+| 18 | The CSV's fields are quoted the way a spreadsheet reads them | export a failure with a comma in its path | **built** (`tools/logs-checks`) |
 
 ### A log in the OLDER format
 

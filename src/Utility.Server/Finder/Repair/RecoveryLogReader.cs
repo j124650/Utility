@@ -61,6 +61,12 @@ public sealed record RecoveryLogOperation
     /// <summary>How long the operation took, or null when it never ended.</summary>
     public TimeSpan? Duration => EndedAt is { } end ? end - StartedAt : null;
 
+    /// <summary>
+    /// The reason in high-signal words — "Path not found in Dropbox" rather than
+    /// "path/not_found/". The raw reason stays in <see cref="Reason"/>.
+    /// </summary>
+    public string ShortReason => RecoveryReasonPhrase.Shorten(Reason);
+
     /// <summary>True when the operation did not recover its pair.</summary>
     public bool Failed =>
         IsInterrupted || IsMalformed

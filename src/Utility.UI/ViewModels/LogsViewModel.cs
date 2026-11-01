@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text;
+using Microsoft.Win32;
 using Utility.Server.Finder.Repair;
 using Utility.UI.Mvvm;
 using Utility.UI.Services;
@@ -210,6 +212,34 @@ public sealed class LogsViewModel : ViewModelBase
     private RelayCommand? _refresh;
 
     /// <summary>
+    /// Writes the run's failures as a CSV, where the reader chooses to put it.
+    /// </summary>
+    public RelayCommand ExportFailedCommand =>
+        _exportFailed ??= new RelayCommand(_ => ExportFailed(), _ => CanExportFailed);
+
+    private RelayCommand? _exportFailed;
+
+    /// <summary>
+    /// Whether there is anything to export — the log has at least one failure.
+    /// </summary>
+    public bool CanExportFailed
+    {
+        get => _canExportFailed;
+        private set
+        {
+            if (SetProperty(ref _canExportFailed, value))
+            {
+                ExportFailedCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    private bool _canExportFailed;
+
+    /// <summary>The log being read, for the export's file name.</summary>
+    private string _currentLogName = string.Empty;
+
+    /// <summary>
     /// Reads the lists again — the logs folder, which changes while the app runs.
     /// </summary>
     public void Refresh()
@@ -329,6 +359,9 @@ public sealed class LogsViewModel : ViewModelBase
         HasRecoveryLog = false;
         RecoveryIsLegacy = false;
 
+        _currentLogName = Path.GetFileNameWithoutExtension(path);
+        CanExportFailed = false;
+
         try
         {
             if (!RecoveryLogReader.IsJsonLines(path))
@@ -347,6 +380,9 @@ public sealed class LogsViewModel : ViewModelBase
             RecoveryFigures = Describe(read);
             HasRecoveryLog = true;
             ApplyFilter();
+
+            // There is something to export when the run had a failure.
+            CanExportFailed = _allOperations.Any(o => o.Failed);
         }
         catch (Exception ex)
         {
@@ -419,6 +455,52 @@ public sealed class LogsViewModel : ViewModelBase
             }
 
             Operations.Add(operation);
+        }
+    }
+
+    /// <summary>
+    /// Writes the run's failures as a CSV — and the reader chooses where it goes.
+    /// </summary>
+    /// <remarks>
+    /// The Save File dialog is the reader's: the browser does not choose a folder and
+    /// does not write a file nobody asked for.
+    /// </remarks>
+    private void ExportFailed()
+    {
+        var failures = _allOperations?.Where(o => o.Failed).ToList() ?? [];
+
+        if (failures.Count == 0)
+        {
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export the failed operations",
+            Filter = "CSV file (*.csv)|*.csv|All files (*.*)|*.*",
+            FileName = $"{_currentLogName} failures.csv",
+            InitialDirectory = Directory.Exists(LogDirectory) ? LogDirectory : null,
+            OverwritePrompt = true,
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            // UTF-8 WITH a BOM: Excel needs it to read a UTF-8 file's paths correctly.
+            using var writer = new StreamWriter(dialog.FileName, false, new UTF8Encoding(true));
+
+            var written = RecoveryFailureCsv.Write(writer, failures);
+
+            Status = $"{written:N0} failure(s) written to {dialog.FileName}.";
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"The failures could not be exported: {ex.Message}");
+            Status = $"The failures could not be exported: {ex.Message}";
         }
     }
 

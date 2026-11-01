@@ -1,3 +1,4 @@
+using System.Text;
 using Utility.Server.Finder.Repair;
 
 namespace LogsChecks;
@@ -20,6 +21,49 @@ namespace LogsChecks;
 /// </remarks>
 internal static class Program
 {
+    /// <summary>
+    /// The fields of one CSV row, counted the way a spreadsheet counts them: a quote
+    /// opens a field that runs to the next quote, and a doubled quote inside it is one
+    /// quote.
+    /// </summary>
+    private static List<string> CsvFields(string row)
+    {
+        var fields = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+
+        for (var i = 0; i < row.Length; i++)
+        {
+            var character = row[i];
+
+            if (character == '"')
+            {
+                if (inQuotes && i + 1 < row.Length && row[i + 1] == '"')
+                {
+                    current.Append('"');
+                    i++;
+                    continue;
+                }
+
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (character == ',' && !inQuotes)
+            {
+                fields.Add(current.ToString());
+                current.Clear();
+                continue;
+            }
+
+            current.Append(character);
+        }
+
+        fields.Add(current.ToString());
+
+        return fields;
+    }
+
     private static int Main()
     {
         var failures = 0;
@@ -139,6 +183,75 @@ internal static class Program
         var twice = read.Operations[4];
         Check("two ends for one operation is detected", twice.IsMalformed);
         Check("two ends for one operation is not interrupted", !twice.IsInterrupted);
+
+        // --- the reason, in high-signal words ---
+        Check("a Dropbox code becomes a phrase",
+            RecoveryReasonPhrase.Shorten("path/not_found/") == "Path not found in Dropbox",
+            RecoveryReasonPhrase.Shorten("path/not_found/"));
+        Check("a from_lookup code becomes a phrase",
+            RecoveryReasonPhrase.Shorten("from_lookup/not_found/") == "File not found in Dropbox",
+            RecoveryReasonPhrase.Shorten("from_lookup/not_found/"));
+        Check("a space code becomes a phrase",
+            RecoveryReasonPhrase.Shorten("insufficient_space/") == "Not enough space",
+            RecoveryReasonPhrase.Shorten("insufficient_space/"));
+        Check("the recovery's own reason becomes a phrase",
+            RecoveryReasonPhrase.Shorten("the parent is not there to regenerate the child from")
+                == "Parent not there to regenerate from",
+            RecoveryReasonPhrase.Shorten("the parent is not there to regenerate the child from"));
+        Check("an unknown reason keeps its own words",
+            RecoveryReasonPhrase.Shorten("something nobody has seen") == "something nobody has seen",
+            RecoveryReasonPhrase.Shorten("something nobody has seen"));
+        Check("an unknown Dropbox code is named, and stays short",
+            RecoveryReasonPhrase.Shorten("path/some_new_code/") == "Dropbox: path some new code",
+            RecoveryReasonPhrase.Shorten("path/some_new_code/"));
+        Check("an empty reason gives an empty phrase",
+            RecoveryReasonPhrase.Shorten(null) == string.Empty && RecoveryReasonPhrase.Shorten("  ") == string.Empty);
+        Check("the operation carries the short reason",
+            read.Operations[1].ShortReason == "Path not found in Dropbox", read.Operations[1].ShortReason);
+
+        // --- the CSV ---
+        var csv = new StringWriter();
+        var rows = RecoveryFailureCsv.Write(csv, read.Operations);
+        var csvText = csv.ToString();
+
+        // The failures are the not-recovered one, the interrupted one, and the two
+        // malformed ones - four. The successful one is not written.
+        Check("the CSV writes only the failures", rows == 4, $"rows={rows}");
+        Check("the CSV has a header", csvText.StartsWith("\"Number\",\"Pair\"", StringComparison.Ordinal), csvText[..40]);
+        Check("every field is quoted", csvText.Split('\n')[1].StartsWith("\"", StringComparison.Ordinal), csvText.Split('\n')[1]);
+        Check("the CSV carries the SHORT reason",
+            csvText.Contains("\"Path not found in Dropbox\"", StringComparison.Ordinal)
+            && !csvText.Contains("path/not_found/", StringComparison.Ordinal),
+            csvText.Contains("\"Path not found in Dropbox\"", StringComparison.Ordinal) ? "short" : "MISSING");
+        Check("the CSV does not carry the successful operations",
+            !csvText.Contains("M80608F0-Featured-Top.jpg", StringComparison.Ordinal));
+
+        // A path with a comma and a quote in it must survive the round trip.
+        var awkward = new RecoveryLogOperation
+        {
+            Number = 99,
+            ParentName = "a, b\"c.jpg",
+            Folder = "f",
+            Outcome = "not recovered",
+            Reason = "path/not_found/",
+            Source = "C:/a, b\"c.jpg",
+            StartedAt = DateTimeOffset.Now,
+            IsInterrupted = true,
+        };
+
+        var awkwardCsv = new StringWriter();
+        RecoveryFailureCsv.Write(awkwardCsv, new[] { awkward });
+        var awkwardText = awkwardCsv.ToString();
+
+        var awkwardFields = CsvFields(awkwardText.Split('\n')[1]);
+        Check("a comma in a field does not break the row",
+            awkwardFields.Count == 11, $"fields={awkwardFields.Count}");
+        Check("the field with the comma keeps it whole",
+            awkwardFields.Count > 1 && awkwardFields[1] == "a, b\"c.jpg", awkwardFields.Count > 1 ? awkwardFields[1] : "MISSING");
+        Check("the field with the quote keeps it whole",
+            awkwardFields.Count > 6 && awkwardFields[6] == "C:/a, b\"c.jpg", awkwardFields.Count > 6 ? awkwardFields[6] : "MISSING");
+        Check("an embedded quote is doubled",
+            awkwardText.Contains("\"a, b\"\"c.jpg\"", StringComparison.Ordinal), awkwardText.Split('\n')[1]);
 
         // --- the older format ---
         var oldPath = Path.Combine(scratch, "Recover 2026-10-28_15-22-07.log");
