@@ -217,7 +217,8 @@ public sealed class DropBoxSyncService(
     /// <para>
     /// Four folders at a time is about eight listings a second, which is roughly two
     /// thousand calls in a five-minute window - under the allowance the ramp proved by
-    /// spending an hour of it without a refusal. The walk that synced the whole
+    /// spending an hour of it without a refusal, and well under the allowance the
+    /// climbing walk measured at about 4,900 calls a window. The walk that synced the whole
     /// catalogue before this one never came near the limit, and the reason is worth
     /// keeping: it enriched each file as it listed, so its listings were paced by the
     /// enrichment and it spent the window a fraction at a time. The two-phase walk

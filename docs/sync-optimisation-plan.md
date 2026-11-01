@@ -277,7 +277,7 @@ the number that decides the walk's width.
 | 11 | the app counts its own round trips, by kind, and says so in its log | the sync's completion log line | **measured** — "The database cost 22 round trip(s) (11 select, 10 update, 0 insert, 0 delete, 1 other), and 0 row(s) changed while 108 did not" |
 | 12 | the catalogue walk, after the changes | one catalogue run with the counters | **measured** — ~35 folders/s, 4,252 folders re-listed in about two minutes, nothing written but the folders' status; then two rate-limit holds of 300 s each |
 | 13 | the whole catalogue walk, after the changes | one catalogue run with the counters | not measured — the run stopped at the rate limit |
-| 14 | the listing endpoint's allowance | the width ramp held for a whole window, against `list_folder` | **measured** — a COUNT per five-minute window, between 1,400 and 4,000 calls; the burst limit is at least 96 a second, and it is not what binds |
+| 14 | the listing endpoint's allowance | a walk that climbed until the account refused it | **measured** - a COUNT per five-minute window: the walk made 4,870 listing calls and was refused, so the allowance is about 4,900 calls a window; the burst limit is at least 96 a second, and it is not what binds |
 
 ---
 
@@ -326,10 +326,17 @@ never spends the allowance. The walks did:
 | the walk at width 24 | 3,827 | **50/s sustained** | spent the window in 77 s - refused |
 | the walk at width 12 | 336 | 21/s | got what was left - refused |
 | a nine-call probe | 9 | - | fine |
+| **the walk that climbed** | **4,870** | 23/s sustained, width 13-14 | **refused - and the request count froze there for the hold** |
 
 Dropbox's own `Retry-After: 300` says the window is **five minutes**. So the allowance
-is a COUNT of listing calls per window, between 1,400 and 4,000 - and a burst ramp
-cannot find it. The probe now holds each width for a whole window.
+is a COUNT of listing calls per window - and a burst ramp cannot find it. The walk that
+climbed found it: **4,870 calls, then a refusal, then no more calls at all until the
+hold expired.** The allowance is about 4,900 calls a window. The earlier walks were
+refused earlier because they were burst-shaped, and a burst is what spends a window
+fastest.
+
+At that allowance the width the account carries is about **eight**: 4,900 calls in five
+minutes is 16.3 calls a second, and a listing takes about half a second.
 
 **The walk that synced this catalogue before never hit the limit, for a reason worth
 keeping:** it enriched each file as it listed, so its listings were paced by the
@@ -338,7 +345,8 @@ everything first, so **it has to pace itself** - the width is what paces it.
 
 **THE WIDTH IS 4, AND IT CLIMBS TO 24.** Four is about eight listings a second,
 roughly two thousand calls in a five-minute window: under the allowance the ramp proved
-by spending one without a refusal. Twenty-four is where the walk climbs to while it
+by spending one without a refusal. The walk that climbed found the allowance at about
+4,900 calls a window, so a width of four spends well under half of it. Twenty-four is where the walk climbs to while it
 stays healthy - the width the walk used before the allowance was measured, and inside
 what the listing ramp carried without a refusal.
 
@@ -351,6 +359,16 @@ have somewhere to climb back to.
 second (490-500 a minute after a slower first minute), **no refusals**, and no writes
 beyond the folders' status.
 
+**MEASURED, THE SAME RUN WITH THE POOL SIZED TO THE CEILING**: the width climbed 4 to
+14 over five minutes, and the rate followed it - 9.4 requests a second at width five,
+19.5 at width ten, 23.5 at width thirteen - until the account refused at 4,870 calls.
+The latency had already risen first (474ms to 534ms), which is the early signal doing
+its job.
+
+**THE POOL HAS TO BE AS WIDE AS THE CEILING.** Sized to the starting width, the walk had
+four workers for ever: the gate was told to allow more, and there was nobody to use it.
+The width the walk earns was a number on a screen until the pool was sized to match.
+
 ## 9. Open questions
 
 1. **May the write gate become a gate per folder?** The deadlock it prevents was
@@ -362,7 +380,8 @@ beyond the folders' status.
    look before the next walk changes what it says.
 3. **Is the media library's read cost worth measuring now?** O3 cannot be decided
    without it, and it is the only item on the list whose answer might be "do nothing".
-4. **How big is the allowance exactly?** It is between 1,400 and 4,000 listing calls
-   per five-minute window, measured by what the walks could and could not spend. The
-   width of four assumes about two thousand. If the allowance is smaller, the width
-   comes down again - which the rule now handles one narrowing at a time.
+4. **~~How big is the allowance exactly?~~ ANSWERED.** The walk that climbed was
+   refused at **4,870 listing calls** and its request count froze there for the hold,
+   so the allowance is **about 4,900 calls per five-minute window**. At that allowance
+   the width the account carries is about **eight** - 16.3 calls a second at half a
+   second a call. The width of four spends well under half of it.
