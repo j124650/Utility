@@ -699,7 +699,7 @@ public sealed class DropBoxSyncService(
                 // cap the walk there and the wider width could never be reached.
                 await WorkerPool.RunAsync(
                     seeds,
-                    WalkWidth,
+                    WalkMaxWidth,
                     (seed, ct) => ExpandFolderAsync(
                         ns, runId, seed.Path, seed.Id, depth: 1,
                         unlimited, maxDepth, enrichFileMetadata, requestGate, folderGate,
@@ -736,9 +736,14 @@ public sealed class DropBoxSyncService(
                 // The pool is sized to the widest the walk may go; the request gate and
                 // the folder gate - which follow it - are what limit how much of it is
                 // used at once.
+                //
+                // Sizing the pool to the STARTING width instead would cap the walk at
+                // that many workers for ever: the gate would be told to allow more, and
+                // there would be nobody to use it. The width the walk climbs to would
+                // be a number on a screen and nothing else.
                 await WorkerPool.RunAsync(
                     toExpand,
-                    WalkWidth,
+                    WalkMaxWidth,
                     (child, ct) => ExpandFolderAsync(
                         ns, runId, child.Path, child.Id, level,
                         unlimited, maxDepth, enrichFileMetadata,
