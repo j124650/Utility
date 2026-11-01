@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Utility.DropBox;
@@ -119,6 +120,9 @@ public sealed class DropBoxSyncTwoPhaseService(
         using var gate = new AdaptiveConcurrencyGate(Width);
         var brake = new DropboxRateLimitBrake();
 
+        // The dimensions the workers have fetched, waiting to be written in batches.
+        var queued = new ConcurrentQueue<(long Id, FileEntry Info)>();
+
         var enriched = 0;
         var failed = 0;
 
@@ -127,11 +131,17 @@ public sealed class DropBoxSyncTwoPhaseService(
             Width,
             async (row, ct2) =>
             {
-                var ok = await EnrichOneAsync(row, ns, gate, brake, ct2);
+                var ok = await EnrichOneAsync(row, ns, gate, brake, queued, ct2);
 
                 if (ok)
                 {
                     Interlocked.Increment(ref enriched);
+
+                    // Write what has piled up, rather than waiting for the pass to end.
+                    if (queued.Count >= BatchSize)
+                    {
+                        await FlushAsync(queued, all: false, ct2).ConfigureAwait(false);
+                    }
                 }
                 else
                 {
@@ -144,6 +154,10 @@ public sealed class DropBoxSyncTwoPhaseService(
                     row.PathDisplay));
             },
             ct).ConfigureAwait(false);
+
+        // Whatever is left in the queue is written now, so the count below sees the
+        // pass's own work.
+        await FlushAsync(queued, all: true, ct).ConfigureAwait(false);
 
         var stillPending = await CountPendingAsync(ns, pathPrefix, ct);
 
@@ -172,6 +186,7 @@ public sealed class DropBoxSyncTwoPhaseService(
         string ns,
         AdaptiveConcurrencyGate gate,
         DropboxRateLimitBrake brake,
+        ConcurrentQueue<(long Id, FileEntry Info)> queued,
         CancellationToken ct)
     {
         for (var attempt = 1; ; attempt++)
@@ -196,7 +211,12 @@ public sealed class DropBoxSyncTwoPhaseService(
                 // every dimension the pass touched.
                 var info = await dropBox.GetFileInfoAsync(row.PathDisplay, ns, true, ct).ConfigureAwait(false);
 
-                await WriteDimensionsAsync(row.Id, info, ct).ConfigureAwait(false);
+                // The dimensions are QUEUED, not written. A write per file is two round
+                // trips - the row's load and its update - and eight hundred files make
+                // sixteen hundred round trips for a pass whose real work is eight
+                // hundred API calls. The queue is drained in batches instead, so the
+                // whole pass costs a handful of round trips.
+                queued.Enqueue((row.Id, info));
 
                 return true;
             }
@@ -229,41 +249,94 @@ public sealed class DropBoxSyncTwoPhaseService(
     /// Writes one file's dimensions — through the SHARED write gate, so this pass and
     /// the walk can never be writing at the same time.
     /// </summary>
-    private async Task WriteDimensionsAsync(long id, FileEntry info, CancellationToken ct)
+    private async Task WriteDimensionsAsync(
+        List<(long Id, FileEntry Info)> batch,
+        CancellationToken ct)
     {
+        if (batch.Count == 0)
+        {
+            return;
+        }
+
         await writeGate.WriteAsync(async () =>
         {
             await using var db = await contextFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
 
-            var row = await db.Nodes.FirstOrDefaultAsync(n => n.Id == id, ct).ConfigureAwait(false);
+            // ONE load for the whole batch, and ONE update for the whole batch: two
+            // round trips for five hundred files, where it used to be two for each.
+            var ids = batch.Select(b => b.Id).ToList();
 
-            if (row is null)
-            {
-                return;
-            }
+            var rows = await db.Nodes
+                .Where(n => ids.Contains(n.Id))
+                .ToDictionaryAsync(n => n.Id, ct)
+                .ConfigureAwait(false);
 
-            // The dimensions are FILLED, never cleared: a read that carried no media
-            // info must not wipe what is already known.
-            if (info.WidthPixels is not null)
+            foreach (var (id, info) in batch)
             {
-                row.WidthPixels = (int)info.WidthPixels.Value;
-            }
+                if (!rows.TryGetValue(id, out var row))
+                {
+                    continue;
+                }
 
-            if (info.HeightPixels is not null)
-            {
-                row.HeightPixels = (int)info.HeightPixels.Value;
-            }
+                // The dimensions are FILLED, never cleared: a read that carried no media
+                // info must not wipe what is already known.
+                if (info.WidthPixels is not null)
+                {
+                    row.WidthPixels = (int)info.WidthPixels.Value;
+                }
 
-            // The media kind is the schema's own vocabulary: 'photo', 'video', 'pending'
-            // - and null for a file that is neither. A read that said 'pending' means
-            // Dropbox deferred it, so the row keeps asking.
-            if (info.MediaKind is not null)
-            {
-                row.MediaInfoTag = info.MediaKind;
+                if (info.HeightPixels is not null)
+                {
+                    row.HeightPixels = (int)info.HeightPixels.Value;
+                }
+
+                // The media kind is the schema's own vocabulary: 'photo', 'video',
+                // 'pending' - and null for a file that is neither. A read that said
+                // 'pending' means Dropbox deferred it, so the row keeps asking.
+                if (info.MediaKind is not null)
+                {
+                    row.MediaInfoTag = info.MediaKind;
+                }
             }
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Takes what has been queued and writes it, up to a batch at a time.
+    /// <para>
+    /// The queue is drained by whoever gets there first - the workers as they fill it,
+    /// and the pass itself at the end - so the rows are written while the pass is still
+    /// running, not only when it is over.
+    /// </para>
+    /// </summary>
+    private async Task FlushAsync(
+        ConcurrentQueue<(long Id, FileEntry Info)> queued,
+        bool all,
+        CancellationToken ct)
+    {
+        while (true)
+        {
+            var batch = new List<(long Id, FileEntry Info)>();
+
+            while (batch.Count < BatchSize && queued.TryDequeue(out var item))
+            {
+                batch.Add(item);
+            }
+
+            if (batch.Count == 0)
+            {
+                return;
+            }
+
+            await WriteDimensionsAsync(batch, ct).ConfigureAwait(false);
+
+            if (!all)
+            {
+                return;
+            }
+        }
     }
 
     // ------------------------------------------------------------------ both

@@ -76,16 +76,25 @@ Two things follow:
 there is no transaction to remove — and it exists so that a chunk too large for one
 command does not buy a transaction it does not need.
 
-### O2 — the enrichment writes one row per round trip
+### O2 — the enrichment's writes: DONE
 
 Phase 2 fetched the metadata for 882 changed files in 19.0 seconds and made **1,766
-SQL round trips** — two per file, because each enriched row is saved on its own.
+SQL round trips** — two per file, because each enriched row was saved on its own.
 
-- **Change:** collect the enriched rows and write them the way the flush writes them,
-  in chunks of 500, under the same write gate.
-- **Expected:** 1,766 → ~25 round trips for the same 882 rows.
-- **Risk:** a batch that fails leaves its rows `pending`, which is the schema's own
-  word for "ask again later" — the next enrichment picks them up. Nothing is lost.
+The workers now **queue** what they fetch, and the queue is **drained in batches**:
+one load and one update for a batch, through the same write gate, the same rule about
+filling dimensions and never clearing them, and the same self-healing — a batch that
+fails leaves its rows `pending`, which is the schema's own word for "ask again later".
+
+**Measured on 50 rows marked `pending`: 4 SQL round trips**, against two per file
+before. The 882-row pass would cost about eight.
+
+- **The rows are written while the pass runs**, not only at its end: the workers flush
+  what has piled up as they go, and the pass flushes what is left before it counts
+  what is still pending.
+- **Nothing is lost** — the 50 rows the measurement touched came back with their
+  dimensions and their media kind, and the table finished on 423,698 rows with
+  359,280 dimensions and nothing pending, exactly as it started.
 
 ### O3 — three covering indexes carry `PathDisplay`
 
@@ -113,17 +122,21 @@ because the walk cannot tell "unchanged" from "changed" without looking.
   `list_folder/get_latest_cursor` route — the delta comes from the cursor a listing
   already returned.
 
-### O5 — the write gate's scope
+### O5 — the write gate's scope: DECIDED, the gate stays as it is
 
 Every write to `ml.DropBoxNode` goes through one writer at a time. That is what
 stops the deadlock, and it is also what bounds the walk's rate: the walk goes as fast
 as one write-batch at a time.
 
-- **Change:** a gate per folder rather than one for the table.
-- **This one changes a rule, not a parameter.** The deadlock came from the flush and
-  the status write of the SAME folder overlapping, so a per-folder gate may be enough
-  — but "one writer at a time" is the rule the table is written under, and changing
-  it is the user's decision, not a tuning matter.
+**The decision is to leave it.** The case for changing it was that the global gate was
+throttling the walk, and that case is gone: a chunk is two round trips, so the gate's
+ceiling is roughly 160 writes a second against a listing rate of ~35 folders a second,
+and the gate is not what the walk waits for. The deadlock it was built for is no longer
+reachable either — EF opens a transaction around a `SaveChanges` only when it needs
+more than one command, a chunk is one command, and the app's writes now open none.
+
+It also stays because it is the rule the table is written under, and it still protects
+the one interleaving that remains: the enrichment pass writing while the walk writes.
 
 ---
 
@@ -149,7 +162,7 @@ first: an optimisation that cannot be measured is not an optimisation, it is a h
 | **SQL round trips** | an EF `DbCommandInterceptor` on the app's own context factory — one command is one round trip, because EF batches a `SaveChanges` into one command | the run's summary — **built**: `SqlRoundTripCounter`, and the sync's completion log line carries it |
 | **round trips by kind** | the same interceptor, tagged by the statement's shape: the tracked query, the flush's update, the folder's status write, the enrichment's write | the run's summary, and one line per write at Debug |
 | **rows written / skipped / inserted** | the flush, which already knows: it counts the chunk, the rows EF marked as modified, and the rows it added | the run's summary — **built**: the completion log line says how many rows changed and how many did not |
-| **Dropbox requests** | `DropBoxSyncService.RateSnapshot.TotalRequests` | the run's summary |
+| **Dropbox requests** | `DropBoxSyncService.RateSnapshot.TotalRequests` | the run's summary — the run's own figure comes from the result, because the meter is reset when a run ends |
 | **Dropbox requests by kind** | **a gap today**: the enrichment's calls are not metered, so a phase-2 run reports zero requests | the run's summary — to be counted |
 | **gate wait** | the write gate's acquisition time, per write | one line per write at Debug; the total in the summary |
 | **the level and the frontier** | the walk's own progress | already reported |
@@ -246,9 +259,9 @@ the number that decides the walk's width.
 | 4 | phase 2 enriches 882 changed rows in one pass | 882 enriched, 0 failed, 0 left pending, 19.0 s | **measured** |
 | 5 | the run's cost is reported on both sides | the harness prints SQL round trips and Dropbox requests | **measured** (the enrichment's requests are not counted — see §4.2) |
 | 6 | the flush's chunk costs two round trips, not four | the round-trip count by kind, on S1 | **measured** — 22 round trips for the 109-row subtree, of which 0 were transactions; a chunk is a tracked query and one batched update |
-| 7 | the enrichment's writes are batched | the round-trip count by kind, on S4 | not measured |
+| 7 | the enrichment's writes are batched | the round-trip count by kind, on S4 | **measured** — 4 round trips for 50 rows, against two per row before |
 | 8 | the library's name queries survive without the `PathDisplay` include | the library's read patterns measured, then the plan compared | not measured |
-| 9 | the gate may be per folder | the deadlock reproduced and the fix measured — the shipped harness in the sync skill | not measured |
+| 9 | the gate may be per folder | the deadlock reproduced and the fix measured — the shipped harness in the sync skill | **closed** — the decision is to leave the gate as it is; the deadlock it prevented is no longer reachable, and the gate is no longer the bottleneck |
 | 10 | an unchanged walk's listing floor is the delta, not 19,851 calls | the cursor delta against the live account | not measured |
 | 11 | the app counts its own round trips, by kind, and says so in its log | the sync's completion log line | **measured** — "The database cost 22 round trip(s) (11 select, 10 update, 0 insert, 0 delete, 1 other), and 0 row(s) changed while 108 did not" |
 | 12 | the catalogue walk, after the changes | one catalogue run with the counters | **measured** — ~35 folders/s, 4,252 folders re-listed in about two minutes, nothing written but the folders' status; then two rate-limit holds of 300 s each |
