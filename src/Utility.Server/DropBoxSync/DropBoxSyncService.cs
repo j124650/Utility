@@ -2089,7 +2089,7 @@ public sealed class DropBoxSyncService(
     /// pinned in this source file.
     /// </para>
     /// </summary>
-    private async Task<string> ResolveNamespaceAsync(string? namespaceId, CancellationToken ct)
+    public async Task<string> ResolveNamespaceAsync(string? namespaceId, CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(namespaceId))
         {

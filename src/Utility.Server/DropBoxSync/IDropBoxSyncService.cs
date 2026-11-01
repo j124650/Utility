@@ -159,6 +159,16 @@ public interface IDropBoxSyncService : INotifyPropertyChanged
     /// </summary>
     string OutcomeLine { get; }
 
+    /// <summary>
+    /// The namespace a sync of this path runs against: the one given, or the account's
+    /// team namespace when none was given.
+    /// <para>
+    /// The team root's id belongs to the account, so it is resolved at runtime and
+    /// never pinned in source.
+    /// </para>
+    /// </summary>
+    Task<string> ResolveNamespaceAsync(string? namespaceId, CancellationToken ct);
+
     /// <summary>Requests cancellation of the running walk.</summary>
     void Cancel();
 

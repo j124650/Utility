@@ -95,7 +95,11 @@ public sealed class DropBoxSyncTwoPhaseService(
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        var ns = namespaceId ?? "personal";
+        // The namespace is resolved the same way the walk resolves it: a null means the
+        // account's team namespace. It used to be the literal string "personal", and
+        // no row carries that - so the work list matched nothing and the pass did
+        // nothing, whatever the button was pressed.
+        var ns = await sync.ResolveNamespaceAsync(namespaceId, ct).ConfigureAwait(false);
 
         // THE WORK LIST: the rows marked 'pending'. The schema already defines what
         // 'pending' means - the dimensions may be available on a re-read - so this set
