@@ -277,7 +277,7 @@ the number that decides the walk's width.
 | 11 | the app counts its own round trips, by kind, and says so in its log | the sync's completion log line | **measured** — "The database cost 22 round trip(s) (11 select, 10 update, 0 insert, 0 delete, 1 other), and 0 row(s) changed while 108 did not" |
 | 12 | the catalogue walk, after the changes | one catalogue run with the counters | **measured** — ~35 folders/s, 4,252 folders re-listed in about two minutes, nothing written but the folders' status; then two rate-limit holds of 300 s each |
 | 13 | the whole catalogue walk, after the changes | one catalogue run with the counters | not measured — the run stopped at the rate limit |
-| 14 | the listing endpoint's rate limit | the width ramp, run against `list_folder` rather than `get_metadata` | **measured** — 96.2 req/s at width 64, latency flat at ~500 ms, no refusal at any width |
+| 14 | the listing endpoint's allowance | the width ramp held for a whole window, against `list_folder` | **measured** — a COUNT per five-minute window, between 1,400 and 4,000 calls; the burst limit is at least 96 a second, and it is not what binds |
 
 ---
 
@@ -299,9 +299,8 @@ the number that decides the walk's width.
    at a width of one the walk takes thirty times longer than it needs to.
 5. **The width carries between runs.** The next walk starts where the last one finished.
 
-**THE MEASUREMENT THE RULE NEEDS, TAKEN.** The shipped width ramp, pointed at
-`list_folder` instead of `get_metadata` - because the walk makes listing calls, and the
-two endpoints do not have to share a limit:
+**THE LIMIT IS A COUNT PER WINDOW, NOT A RATE.** The shipped width ramp, pointed at
+`list_folder` instead of `get_metadata`, measured:
 
 | width | calls | req/s | avg ms | 429s |
 |---|---|---|---|---|
@@ -313,13 +312,30 @@ two endpoints do not have to share a limit:
 | 48 | 200 | 81.4 | 531 | 0 |
 | 64 | 200 | **96.2** | 538 | 0 |
 
-**The endpoint carries at least 96 calls a second, the latency is flat, and the walk's
-width of 24 sits at 46 of them.** So the walk's refusals were NOT its own rate: the
-account's authorization was shared with something else at the time - which is what the
-user said might be true.
+**That ramp is MISLEADING, and finding out why took three walks.** It carried 96
+requests a second with no refusal - but it makes 200 calls per width and pauses, so it
+never spends the allowance. The walks did:
 
-**What this changes.** The width is no longer a guess: the endpoint carries 64. The
-walk's width is the one decision the user deferred, and the measurement is now in hand.
+| what | calls | rate | outcome |
+|---|---|---|---|
+| the ramp | 1,400 | 96/s in bursts | no refusal |
+| the walk at width 24 | 3,827 | **50/s sustained** | spent the window in 77 s - refused |
+| the walk at width 12 | 336 | 21/s | got what was left - refused |
+| a nine-call probe | 9 | - | fine |
+
+Dropbox's own `Retry-After: 300` says the window is **five minutes**. So the allowance
+is a COUNT of listing calls per window, between 1,400 and 4,000 - and a burst ramp
+cannot find it. The probe now holds each width for a whole window.
+
+**The walk that synced this catalogue before never hit the limit, for a reason worth
+keeping:** it enriched each file as it listed, so its listings were paced by the
+enrichment and it spent each window a fraction at a time. A two-phase walk lists
+everything first, so **it has to pace itself** - the width is what paces it.
+
+**THE WIDTH IS 4.** About eight listings a second, roughly two thousand calls in a
+five-minute window: under the allowance the ramp proved by spending one without a
+refusal. The ceiling comes back after 30 minutes rather than five, so it cannot climb
+back into a width the account has already refused for the window it is in.
 
 ## 9. Open questions
 
@@ -332,8 +348,7 @@ walk's width is the one decision the user deferred, and the measurement is now i
    look before the next walk changes what it says.
 3. **Is the media library's read cost worth measuring now?** O3 cannot be decided
    without it, and it is the only item on the list whose answer might be "do nothing".
-4. **What was sharing the account's authorization?** The walk was refused twice at ~35
-   listings a second, and the ramp carried 96 a second with no refusal at all — so the
-   refusals came from traffic that was not the walk's. The limit is per authorization,
-   so anything else using this team's token shares it. That is now the open question,
-   and it is not the width's.
+4. **How big is the allowance exactly?** It is between 1,400 and 4,000 listing calls
+   per five-minute window, measured by what the walks could and could not spend. The
+   width of four assumes about two thousand. If the allowance is smaller, the width
+   comes down again - which the rule now handles one narrowing at a time.
