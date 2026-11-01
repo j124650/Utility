@@ -41,7 +41,10 @@ public sealed class DropBoxSyncTwoPhaseService(
     /// call through the interface gets 50, which is what the app does today, so this
     /// asks for it explicitly rather than depending on which overload is picked.
     /// </summary>
-    private const int BatchSize = 50;
+    /// <summary>
+    /// How many rows one flush carries. The same size the app's own walk uses.
+    /// </summary>
+    private const int BatchSize = 500;
 
     /// <summary>
     /// How many times a rate-limited call is retried. The SDK does NOT retry a 429 — its

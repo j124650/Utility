@@ -1449,6 +1449,10 @@ public sealed class DropBoxSyncService(
                 ct.ThrowIfCancellationRequested();
 
                 await using var db = CreateContext();
+
+                // The chunk's tracked rows, each with the row it came from, so the
+                // timestamps can go on the ones that changed - and only those.
+                var trackedRows = new List<(DropBoxNodeEntity Entity, DropBoxNodeEntity Row)>(chunk.Count);
                 var keys = chunk.Select(p => p.PathLower).ToList();
 
                 // The rows are found by their PATH HASH, not by their path: PathLower is
@@ -1536,12 +1540,34 @@ public sealed class DropBoxSyncService(
                         tracked.SyncStatusReason = null;
                     }
 
-                    tracked.SyncRunId = row.SyncRunId;
-                    tracked.SyncedUtc = row.SyncedUtc;
+                    trackedRows.Add((tracked, row));
                 }
                 else
                 {
                     db.Nodes.Add(row);
+                }
+            }
+
+            // WHAT CHANGED. EF compares every property with the value the row had, so
+            // it knows whether anything moved - and a row that did not change is not
+            // marked as modified, so no UPDATE is issued for it at all. The timestamps
+            // go on only when something did change.
+            //
+            // Without this, every walk rewrites every row in the table to say it had
+            // seen it: one write per row, for a run whose real work is the handful of
+            // files that actually changed. A walk of a catalogue where nothing moved
+            // then writes nothing at all.
+            //
+            // The frontier does not depend on this. The frontier is the FOLDERS'
+            // statuses, and a folder is always written.
+            db.ChangeTracker.DetectChanges();
+
+            foreach (var (entity, source) in trackedRows)
+            {
+                if (db.Entry(entity).State == EntityState.Modified)
+                {
+                    entity.SyncRunId = source.SyncRunId;
+                    entity.SyncedUtc = source.SyncedUtc;
                 }
             }
 

@@ -349,6 +349,33 @@ The speed-up must not cost any of these, because they are what makes the sync *c
 
 ---
 
+## 7. What a walk writes
+
+**A ROW THAT DID NOT CHANGE IS NOT WRITTEN.** The flush used to set `SyncedUtc` and
+`SyncRunId` on every row it touched, so every walk rewrote every row in the table to
+say it had seen it: one write per row, for a run whose real work is the handful of
+files that actually changed. The timestamps now go on only when something about the row
+moved, and EF - which already compares every property with the value the row had - is
+what decides that.
+
+What this means, plainly:
+
+- `SyncedUtc` on a FILE row now means "when this file last changed", not "when the walk
+  last saw it".
+- A walk that found nothing writes nothing. Measured on the 109-row Umbro/F26 subtree
+  after the change: **1 row written** (the walk's own start folder, which carries the
+  run id) against **109 before**, and **23 SQL round trips** for the whole subtree.
+- The FRONTIER does not depend on it. The frontier is the FOLDERS' statuses, and a
+  folder is always written - the folder that starts the walk is written by the upsert,
+  and every other folder's row is written when its status or its content changes.
+- `MAX(SyncedUtc)` still reports the last walk, because the folders carry it.
+
+**EF'S BATCH SIZE IS 500, NOT ITS DEFAULT OF 42.** The walk's chunk is five hundred
+rows, and the common update - the two columns that say the walk saw the row - costs
+three parameters each, so five hundred of them fit inside SQL Server's 2,100-parameter
+limit in one command. EF splits the batch by itself when a wider update needs more
+parameters than that.
+
 ## 8. What is built
 
 **`DropBoxSyncTwoPhaseService`** (`src/Utility.Server/DropBoxSync/`), behind

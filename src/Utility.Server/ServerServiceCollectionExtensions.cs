@@ -18,6 +18,19 @@ namespace Utility.Server;
 public static class ServerServiceCollectionExtensions
 {
     /// <summary>
+    /// EF's batch size: how many statements one command may carry.
+    /// <para>
+    /// EF's own default is 42, which splits a flush of fifty rows into two commands
+    /// and two round trips. The walk's own chunk is five hundred rows, and the common
+    /// update - the two columns that say the walk saw the row - costs three parameters
+    /// each, so five hundred of them fit inside SQL Server's 2,100-parameter limit in a
+    /// single command. EF splits the batch again by itself when a wider update needs
+    /// more parameters than that.
+    /// </para>
+    /// </summary>
+    private const int MaxBatchSize = 500;
+
+    /// <summary>
     /// Registers read-only access to an existing SQL Server database.
     /// <para>
     /// There is no writable context and no migrations: the app reads tables another system
@@ -60,6 +73,7 @@ public static class ServerServiceCollectionExtensions
             db.UseSqlServer(WithConnectTimeout(opts), sql =>
             {
                 sql.CommandTimeout(opts.CommandTimeoutSeconds);
+                sql.MaxBatchSize(MaxBatchSize);
 
                 if (opts.EnableRetryOnFailure)
                 {
@@ -146,6 +160,7 @@ public static class ServerServiceCollectionExtensions
                 // and two timeouts in one app is how the wrong one ends up being the
                 // one that fires.
                 sql.CommandTimeout(opts.CommandTimeoutSeconds);
+                sql.MaxBatchSize(MaxBatchSize);
 
                 if (opts.EnableRetryOnFailure)
                 {
