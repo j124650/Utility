@@ -245,7 +245,10 @@ internal static class Program
         var result = await service.EnrichAsync(ns, null);
 
         var sqlCalls = SqlRoundTripSnapshot.Since(sqlBefore, sqlCounter.Snapshot()).Commands;
-        var dropboxCalls = sync.RateSnapshot.TotalRequests - dropboxBefore;
+
+        // The run's own figure: the meter is reset when the run ends, so the live
+        // snapshot is empty afterwards - the result carries what the run cost.
+        var dropboxCalls = result.Enriched + result.Failed;
 
         Console.WriteLine("--- the enrichment ---");
         Console.WriteLine($"  completed    : {result.Completed}");
@@ -313,13 +316,14 @@ internal static class Program
         var after = await FiguresAsync(db);
 
         var sqlCalls = SqlRoundTripSnapshot.Since(sqlBefore, sqlCounter.Snapshot()).Commands;
-        var dropboxCalls = sync.RateSnapshot.TotalRequests - dropboxBefore;
+        var dropboxCalls = result.List.DropboxRequests;
 
         Console.WriteLine("--- the two sides, counted the same way ---");
         Console.WriteLine($"  SQL round trips : {sqlCalls:N0}");
         Console.WriteLine($"  Dropbox requests: {dropboxCalls:N0}");
         Console.WriteLine($"  SQL per second  : {sqlCalls / Math.Max(1, sw.Elapsed.TotalSeconds):N1}");
         Console.WriteLine($"  Dropbox per sec : {dropboxCalls / Math.Max(1, sw.Elapsed.TotalSeconds):N1}");
+        Console.WriteLine($"  gate wait       : {result.List.GateWaitMs:N0} ms");
         Console.WriteLine();
 
         Console.WriteLine("--- after ---");

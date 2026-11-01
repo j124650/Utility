@@ -509,8 +509,11 @@ public sealed class DropBoxSyncService(
 
         var sw = Stopwatch.StartNew();
 
-        // What this run costs the database, measured from here.
+        // What this run costs, measured from here: the database on one side, Dropbox
+        // and the write gate on the other.
         var sqlBefore = _sqlCounter.Snapshot();
+        var dropboxBefore = _rateMeter.Snapshot();
+        var gateBefore = _writeGate.WaitStats;
         var runId = Guid.NewGuid();
 
         // 0 = unlimited depth; the walk goes from the root folder down to the leaves.
@@ -728,18 +731,23 @@ public sealed class DropBoxSyncService(
                 FilesWritten: counts.Files,
                 DepthReached: level,
                 Duration: sw.Elapsed,
-                Error: null);
+                Error: null,
+                DropboxRequests: _rateMeter.Snapshot().TotalRequests - dropboxBefore.TotalRequests,
+                GateWaitMs: (long)(_writeGate.WaitStats.Ticks - gateBefore.Ticks) / TimeSpan.TicksPerMillisecond);
 
             logger.LogInformation(
                 "Dropbox sync of {Path} completed in {ElapsedMs} ms: {Folders} folder(s), {Files} file(s) " +
                 "({Enriched} with dimensions, {PendingMedia} pending, {EnrichFailed} enrichment failure(s)), " +
                 "{Skipped} folder(s) not fully listed, {Bounded} bounded by depth. " +
-                "The database cost {RoundTrips}, and {RowsUpdated} row(s) changed while {RowsUnchanged} did not.",
+                "The database cost {RoundTrips}, and {RowsUpdated} row(s) changed while {RowsUnchanged} did not. " +
+                "Dropbox took {DropboxRequests} request(s), and the writes waited {GateWaitMs} ms for the gate.",
                 rootPath ?? "the unfinished folders", sw.ElapsedMilliseconds, counts.Folders, counts.Files,
                 counts.Enriched, counts.PendingMedia, counts.EnrichFailed,
                 counts.NotOk, counts.BoundedFolders,
                 SqlRoundTripSnapshot.Since(sqlBefore, _sqlCounter.Snapshot()).Describe(),
-                counts.RowsUpdated, counts.RowsUnchanged);
+                counts.RowsUpdated, counts.RowsUnchanged,
+                _rateMeter.Snapshot().TotalRequests - dropboxBefore.TotalRequests,
+                (long)(_writeGate.WaitStats.Ticks - gateBefore.Ticks) / TimeSpan.TicksPerMillisecond);
 
             _pendingRunning = false;
             _pendingHasResult = true;

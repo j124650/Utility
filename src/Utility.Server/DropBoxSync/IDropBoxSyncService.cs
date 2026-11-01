@@ -49,7 +49,9 @@ public readonly record struct DropBoxSyncResult(
     int FilesWritten,
     int DepthReached,
     TimeSpan Duration,
-    string? Error)
+    string? Error,
+    int DropboxRequests = 0,
+    long GateWaitMs = 0)
 {
     public int TotalWritten => FoldersWritten + FilesWritten;
 }

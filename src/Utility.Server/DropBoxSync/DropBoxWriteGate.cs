@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
@@ -42,12 +43,32 @@ public sealed class DropBoxWriteGate(ILogger<DropBoxWriteGate> logger)
 
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    private long _waitTicks;
+    private int _waits;
+
+    /// <summary>
+    /// How long the writes have waited for the gate, and how many times they have
+    /// waited.
+    /// <para>
+    /// This is the number that says whether the gate is the walk's bottleneck. The
+    /// walk's throughput is one write-batch per gate acquisition, so a run that spends
+    /// its time waiting here is bounded by the gate rather than by Dropbox.
+    /// </para>
+    /// </summary>
+    public (long Ticks, int Waits) WaitStats => (Interlocked.Read(ref _waitTicks), Volatile.Read(ref _waits));
+
     /// <summary>Runs a write against <c>ml.DropBoxNode</c> and returns its result.</summary>
     public async Task<T> WriteAsync<T>(Func<Task<T>> write, CancellationToken ct)
     {
         for (var attempt = 1; ; attempt++)
         {
+            var waited = Stopwatch.StartNew();
+
             await _gate.WaitAsync(ct).ConfigureAwait(false);
+
+            waited.Stop();
+            Interlocked.Add(ref _waitTicks, waited.ElapsedTicks);
+            Interlocked.Increment(ref _waits);
 
             try
             {
@@ -78,7 +99,13 @@ public sealed class DropBoxWriteGate(ILogger<DropBoxWriteGate> logger)
     {
         for (var attempt = 1; ; attempt++)
         {
+            var waited = Stopwatch.StartNew();
+
             await _gate.WaitAsync(ct).ConfigureAwait(false);
+
+            waited.Stop();
+            Interlocked.Add(ref _waitTicks, waited.ElapsedTicks);
+            Interlocked.Increment(ref _waits);
 
             try
             {
