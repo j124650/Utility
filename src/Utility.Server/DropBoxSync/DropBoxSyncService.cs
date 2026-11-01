@@ -1976,7 +1976,26 @@ public sealed class DropBoxSyncService(
     }
 
     /// <summary>Opens a short-lived context; DbContext is not thread-safe, so each worker gets its own.</summary>
-    private DropBoxDbContext CreateContext() => _contextFactory.CreateDbContext();
+    /// <summary>
+    /// A context for one write.
+    /// <para>
+    /// The transaction is switched OFF. EF opens one because the retrying execution
+    /// strategy wants it, and it costs two round trips - BEGIN and COMMIT - on every
+    /// write, which is half of what a flush costs. It buys nothing here: only one
+    /// writer at a time touches this table, so there is no other writer to be
+    /// inconsistent with, and the flush's own writes are idempotent - a batch that
+    /// fails half way is repaired by running it again, because the rows it wrote
+    /// already hold the values it was going to write.
+    /// </para>
+    /// </summary>
+    private DropBoxDbContext CreateContext()
+    {
+        var db = _contextFactory.CreateDbContext();
+
+        db.Database.AutoTransactionsEnabled = false;
+
+        return db;
+    }
 
     /// <summary>Last segment of a path, used as a folder's own name.</summary>
     private static string NameOf(string path)

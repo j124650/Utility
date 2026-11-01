@@ -18,7 +18,7 @@ because every write to `ml.DropBoxNode` is serialised behind one gate.
 | the server | ~3% of the wall clock; 2.0 MB/min to the data file, 340 KB/min to the log; the buffer cache holds everything |
 | the plans | Index Seek on `UQ_DropBoxNode_Path`, Clustered Index Seek/Update on `PK_DropBoxNode`; no scan anywhere |
 | the write amplification | ~1 KB written per row updated — the clustered row plus four nonclustered indexes, three of them carrying `PathDisplay` as an INCLUDE |
-| the round trips, full catalogue | ~100,000 — one chunk of four round trips per folder, plus one for the folder's status |
+| **the round trips, full catalogue** | ~100,000 — one chunk of two round trips per folder, plus one for the folder's status, plus the upsert |
 | the API | 19,851 folder listings (~5.7 min); the per-file call, 399,357 of them, was ~97% of the old walk's traffic |
 | **after the three changes in §2** | the 109-row Umbro/F26 subtree: **1 row written** (was 109), **23 SQL round trips** |
 | **the catalogue walk, after the changes** | **~35 folders a second** — 4,252 folders re-listed in about two minutes, with nothing written but the folders' status. The same walk before the changes managed ~29 rows a second and had not finished in 85 minutes. |
@@ -48,26 +48,33 @@ folders' statuses, and a folder's status is written on every walk.
 Ordered by what the measurements support. "Expected" is an expectation, not a
 measurement — the acceptance table in §7 says which numbers were taken.
 
-### O1 — the flush's per-chunk write costs four round trips
+### O1 — the flush's per-chunk write: DONE, and the floor is two round trips
 
-The flush's chunk is one folder's rows: a tracked query to load them, then EF's
-`SaveChanges`, which under the retrying execution strategy opens a transaction —
-BEGIN, the batched commands, COMMIT. Four round trips per folder, and every folder
-has one chunk.
+**Measured: a chunk costs 2 round trips** — the tracked query that loads the rows, and
+one batched update that writes them. EF opens no transaction around it, and the
+measurement says so: `0 transaction(s)`.
 
-- **Change:** write the chunk's updates as one set-based statement — `ExecuteUpdate`
-  is one command, with no change tracker, no transaction and no `OUTPUT` clause, so
-  two round trips per chunk instead of four.
-- **The obstacle, stated:** the chunk's rows need different values. A file's
-  dimensions depend on whether its content hash changed, and the hash comes from the
-  listing, not from the row — so one statement has to carry the old hash and the new
-  one side by side. That is a join against the chunk's incoming rows, not a constant.
-- **Expected:** ~50,000 round trips saved over the catalogue. The rows written do not
-  change; only the round trips carrying them do.
-- **Risk:** the deadlock handling depends on the transaction. A batch that fails
-  without one leaves its rows partly written — which the flush's own comparison
-  repairs on the next run, because an unchanged row is not written and a changed one
-  is.
+The reason is D1. EF opens a transaction only when a `SaveChanges` needs more than ONE
+command, and a chunk of five hundred rows fits inside a batch of five hundred — so the
+chunk is a single command and there is nothing to wrap. Before D1, the chunk was fifty
+rows against EF's default batch of forty-two, so it needed two commands, and EF wrapped
+those two in a transaction: a query, BEGIN, two batches, COMMIT.
+
+Two things follow:
+
+- **The plan's "four round trips" was wrong** — it counted the transaction without
+  counting one of the batches. The floor is two, and the chunk is at it.
+- **One round trip is still available, and it is not worth taking.** The tracked query
+  has to happen: the flush compares the row's stored hash with the listing's, and that
+  comparison is what decides whether a row is written at all. A single statement that
+  carried the chunk's incoming rows in a table-valued parameter could do both in one
+  round trip, but it trades a two-round-trip chunk for a join, a TVP and a set-based
+  update whose per-row conditional has to be expressed as a CASE — for one round trip per
+  folder.
+
+`AutoTransactionsEnabled` is now off on the app's writes. It changes nothing today —
+there is no transaction to remove — and it exists so that a chunk too large for one
+command does not buy a transaction it does not need.
 
 ### O2 — the enrichment writes one row per round trip
 
@@ -238,7 +245,7 @@ the number that decides the walk's width.
 | 3 | the two phases leave the database as the one-phase walk leaves it | `tools/two-phase-service-checks`, 0 differences | **measured** |
 | 4 | phase 2 enriches 882 changed rows in one pass | 882 enriched, 0 failed, 0 left pending, 19.0 s | **measured** |
 | 5 | the run's cost is reported on both sides | the harness prints SQL round trips and Dropbox requests | **measured** (the enrichment's requests are not counted — see §4.2) |
-| 6 | the flush's chunk costs two round trips, not four | the round-trip count by kind, on S1 | not measured |
+| 6 | the flush's chunk costs two round trips, not four | the round-trip count by kind, on S1 | **measured** — 22 round trips for the 109-row subtree, of which 0 were transactions; a chunk is a tracked query and one batched update |
 | 7 | the enrichment's writes are batched | the round-trip count by kind, on S4 | not measured |
 | 8 | the library's name queries survive without the `PathDisplay` include | the library's read patterns measured, then the plan compared | not measured |
 | 9 | the gate may be per folder | the deadlock reproduced and the fix measured — the shipped harness in the sync skill | not measured |

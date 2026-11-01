@@ -30,6 +30,8 @@ public sealed class SqlRoundTripCounter : DbCommandInterceptor
     private long _inserts;
     private long _deletes;
     private long _others;
+    private long _transactions;
+    private long _commits;
 
     /// <summary>Every command the app has sent.</summary>
     public int Commands => Volatile.Read(ref _commands);
@@ -46,8 +48,28 @@ public sealed class SqlRoundTripCounter : DbCommandInterceptor
     /// <summary>The commands that delete.</summary>
     public long Deletes => Volatile.Read(ref _deletes);
 
-    /// <summary>The commands that are none of the above - a transaction, a batch.</summary>
+    /// <summary>The commands that are none of the above - a table-valued parameter's declaration.</summary>
     public long Others => Volatile.Read(ref _others);
+
+    /// <summary>
+    /// The transactions opened.
+    /// <para>
+    /// EF opens a transaction around every <c>SaveChanges</c> when the retrying
+    /// execution strategy is on, and those commands do not go through the command
+    /// interceptor - they are issued by the connection, not by EF. So they are counted
+    /// here, or the count understates the round trips by two for every write.
+    /// </para>
+    /// </summary>
+    public long Transactions => Volatile.Read(ref _transactions);
+
+    /// <summary>Called by <see cref="SqlTransactionCounter"/> when a transaction opens.</summary>
+    internal void CountTransaction() => Interlocked.Increment(ref _transactions);
+
+    /// <summary>Called by <see cref="SqlTransactionCounter"/> when a transaction commits.</summary>
+    internal void CountCommit() => Interlocked.Increment(ref _commits);
+
+    /// <summary>The transactions committed.</summary>
+    public long Commits => Volatile.Read(ref _commits);
 
     /// <summary>Forgets everything counted so far.</summary>
     public void Reset()
@@ -58,10 +80,12 @@ public sealed class SqlRoundTripCounter : DbCommandInterceptor
         Interlocked.Exchange(ref _inserts, 0);
         Interlocked.Exchange(ref _deletes, 0);
         Interlocked.Exchange(ref _others, 0);
+        Interlocked.Exchange(ref _transactions, 0);
+        Interlocked.Exchange(ref _commits, 0);
     }
 
     /// <summary>The counter's figures as they are right now.</summary>
-    public SqlRoundTripSnapshot Snapshot() => new(Commands, Selects, Updates, Inserts, Deletes, Others);
+    public SqlRoundTripSnapshot Snapshot() => new(Commands, Selects, Updates, Inserts, Deletes, Others, Transactions, Commits);
 
     private void Count(DbCommand command)
     {
@@ -110,6 +134,11 @@ public sealed class SqlRoundTripCounter : DbCommandInterceptor
         return trimmed[..end].ToString().ToUpperInvariant();
     }
 
+    // The transaction's own commands are counted by SqlTransactionCounter - they do
+    // not come through the command interceptor.
+
+
+
     public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
     {
         Count(command);
@@ -154,6 +183,39 @@ public sealed class SqlRoundTripCounter : DbCommandInterceptor
 }
 
 /// <summary>
+/// COUNTS THE TRANSACTIONS, which the command interceptor cannot see.
+/// <para>
+/// EF opens a transaction around every <c>SaveChanges</c> when the retrying execution
+/// strategy is on, and those commands - BEGIN and COMMIT - are issued by the
+/// connection, not by EF, so they never reach the command interceptor. They are
+/// round trips all the same, and they are half of what a write costs.
+/// </para>
+/// </summary>
+public sealed class SqlTransactionCounter(SqlRoundTripCounter counter) : DbTransactionInterceptor
+{
+    public override ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
+        DbConnection connection,
+        Microsoft.EntityFrameworkCore.Diagnostics.TransactionStartingEventData eventData,
+        InterceptionResult<DbTransaction> result,
+        CancellationToken cancellationToken = default)
+    {
+        counter.CountTransaction();
+
+        return new ValueTask<InterceptionResult<DbTransaction>>(result);
+    }
+
+    public override Task TransactionCommittedAsync(
+        DbTransaction transaction,
+        Microsoft.EntityFrameworkCore.Diagnostics.TransactionEndEventData eventData,
+        CancellationToken cancellationToken = default)
+    {
+        counter.CountCommit();
+
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
 /// The round trips counted, at a moment.
 /// <para>
 /// The counter is cumulative, so a run takes a snapshot before it starts and asks for
@@ -166,7 +228,9 @@ public readonly record struct SqlRoundTripSnapshot(
     long Updates,
     long Inserts,
     long Deletes,
-    long Others)
+    long Others,
+    long Transactions = 0,
+    long Commits = 0)
 {
     /// <summary>What happened between two snapshots.</summary>
     public static SqlRoundTripSnapshot Since(SqlRoundTripSnapshot before, SqlRoundTripSnapshot now) => new(
@@ -175,9 +239,20 @@ public readonly record struct SqlRoundTripSnapshot(
         now.Updates - before.Updates,
         now.Inserts - before.Inserts,
         now.Deletes - before.Deletes,
-        now.Others - before.Others);
+        now.Others - before.Others,
+        now.Transactions - before.Transactions,
+        now.Commits - before.Commits);
+
+    /// <summary>
+    /// The round trips, counting a transaction's own commands.
+    /// <para>
+    /// A transaction is BEGIN and COMMIT, and neither goes through the command
+    /// interceptor - so the commands alone understate what the app sent.
+    /// </para>
+    /// </summary>
+    public int RoundTrips => Commands + (int)(Transactions + Commits);
 
     /// <summary>The figures as one line of text, for a log.</summary>
     public string Describe() =>
-        $"{Commands:N0} round trip(s) ({Selects:N0} select, {Updates:N0} update, {Inserts:N0} insert, {Deletes:N0} delete, {Others:N0} other)";
+        $"{RoundTrips:N0} round trip(s) ({Selects:N0} select, {Updates:N0} update, {Inserts:N0} insert, {Deletes:N0} delete, {Others:N0} other, {Transactions:N0} transaction(s))";
 }

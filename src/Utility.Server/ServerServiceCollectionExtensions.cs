@@ -153,6 +153,7 @@ public static class ServerServiceCollectionExtensions
         // SaveChanges into one command - and the walk's throughput is bounded by them,
         // since every write to ml.DropBoxNode is serialised behind one gate.
         services.AddSingleton<SqlRoundTripCounter>();
+        services.AddSingleton<SqlTransactionCounter>(sp => new SqlTransactionCounter(sp.GetRequiredService<SqlRoundTripCounter>()));
 
         services.AddDbContextFactory<DropBoxDbContext>((sp, db) =>
         {
@@ -174,7 +175,9 @@ public static class ServerServiceCollectionExtensions
                                              errorNumbersToAdd: null);
                 }
             })
-            .AddInterceptors(sp.GetRequiredService<SqlRoundTripCounter>());
+            .AddInterceptors(
+                sp.GetRequiredService<SqlRoundTripCounter>(),
+                sp.GetRequiredService<SqlTransactionCounter>());
         }, ServiceLifetime.Singleton);
 
         // ONE writer at a time for ml.DropBoxNode, and it is SHARED: the walk and the
