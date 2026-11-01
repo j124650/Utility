@@ -39,12 +39,22 @@
 --    -I (QUOTED_IDENTIFIER ON) is REQUIRED for the CHECK constraint.
 --    Idempotent: safe to run repeatedly.
 --
---  COST WARNING - MEASURE BEFORE ENABLING
---    Populating these requires include_media_info=true on every ListFolder call, which
---    makes Dropbox do extra per-file work. This has NOT yet been benchmarked on this
---    account: an attempt was made and abandoned as too slow to be useful.
---    IDropBoxSyncService.SyncAsync therefore takes includeMediaInfo and DEFAULTS IT TO
---    FALSE. Do not flip that default until the cost has been measured.
+--  COST WARNING - MEASURED 2026-11-01
+--    Populating these was believed to require include_media_info=true on every
+--    ListFolder call. MEASURED on this account: it does not.
+--
+--      list_folder, include_media_info = false  : 4.27 s, 0 files with dimensions
+--      list_folder, include_media_info = true   : 4.33 s, 0 files with dimensions
+--      list_folder recursive, include_media_info = true : 4.11 s, 0 files
+--      get_metadata, one per file               : 35.53 s, 99 files with dimensions
+--
+--    So the flag is INERT for files/list_folder: it costs nothing AND delivers
+--    nothing. The dimensions come only from a per-file get_metadata.
+--
+--    IDropBoxSyncService therefore still takes includeMediaInfo and defaults it to
+--    FALSE, but the reason is now the second one, not the first: the listing cannot
+--    supply the dimensions however it is called, so the per-file get_metadata is the
+--    only source, and it is where the sync's time goes.
 -- =============================================================================
 
 SET QUOTED_IDENTIFIER ON;
