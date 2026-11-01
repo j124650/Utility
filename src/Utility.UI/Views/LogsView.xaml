@@ -54,20 +54,27 @@
         </Grid.RowDefinitions>
 
         <!-- Toolbar -->
-        <Border Grid.Row="0" Style="{StaticResource CardStyle}" Margin="0,0,0,10">
-            <StackPanel>
-                <Grid>
-                    <StackPanel>
-                        <TextBlock Text="Logs" Style="{StaticResource HeaderText}" />
-                        <TextBlock Text="The logs the app writes — the recovery's, and the app's own. It reads them; it writes nothing."
-                                   Style="{StaticResource SubHeaderText}" />
-                    </StackPanel>
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
-                        <Button Content="Refresh" Command="{Binding RefreshCommand}" MinWidth="90" />
-                    </StackPanel>
-                </Grid>
-            </StackPanel>
+        <Border Grid.Row="0"
+                Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                CornerRadius="8" Padding="14,10" Margin="0,0,0,12">
+            <DockPanel>
+                <ToolBarTray DockPanel.Dock="Top" Background="Transparent">
+                    <ToolBar Style="{StaticResource FlatToolBar}">
+                        <Button Command="{Binding RefreshCommand}"
+                                Style="{StaticResource ToolbarButton}"
+                                ToolTip="Refresh">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE72C;"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="13"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0" />
+                                <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </ToolBar>
+                </ToolBarTray>
+            </DockPanel>
         </Border>
 
         <!-- The two sub-tabs, each a master-detail form of its own. -->
@@ -100,12 +107,7 @@
                             </TreeView.ItemContainerStyle>
                             <TreeView.ItemTemplate>
                                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Label}" FontSize="12" />
-                                        <TextBlock Text="{Binding Count, StringFormat='({0})'}"
-                                                   FontSize="10" Foreground="#94A3B8" Margin="4,0,0,0"
-                                                   Visibility="{Binding IsFolder, Converter={StaticResource BoolToVis}}" />
-                                    </StackPanel>
+                                    <TextBlock Text="{Binding Label}" FontSize="12" />
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
                         </TreeView>

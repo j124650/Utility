@@ -14,9 +14,6 @@ public sealed class LogTreeNode
     /// <summary>The day — "2026-10-31" — or the log file's name.</summary>
     public string Label { get; init; } = string.Empty;
 
-    /// <summary>How many files the day holds, for a day node.</summary>
-    public int Count { get; init; }
-
     /// <summary>The log file, for a file node. Null for a day.</summary>
     public string? Path { get; init; }
 
@@ -275,7 +272,6 @@ public sealed class LogsViewModel : ViewModelBase
             var node = new LogTreeNode
             {
                 Label = day,
-                Count = byDay[day].Count,
             };
 
             foreach (var file in byDay[day].OrderByDescending(FileLastWritten))
