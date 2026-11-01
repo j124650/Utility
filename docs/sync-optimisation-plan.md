@@ -204,13 +204,18 @@ what cuts the LISTING calls, and the listing is what is now slow — so O4 is wo
 than O1 and O2 together. O1 and O2 still stand, but they are now worth less than they
 were, because the round trips they save are not what the walk is waiting for.
 
-**THE RATE LIMIT IS THE NEXT THING TO LOOK AT.** One 429 holds the whole walk for 300
-seconds. The limit is per authorization, so a shared hold is right — but the hold's
-LENGTH is what turns one refused call into five lost minutes, and the walk refused the
-call at only ~35 requests a second, which the account's own ramp probe once carried at
-436 a second without a single refusal. Either another consumer shares this
-authorization, or the endpoint's limit is lower than the probe's. That is an open
-question, and it decides whether the answer is a shorter hold or a narrower walk.
+**THE RATE LIMIT IS THE NEXT THING TO LOOK AT.** One 429 holds the whole walk, because
+the limit is per authorization and a shared hold is what keeps a retry storm from
+becoming the storm. The hold's LENGTH is not the app's: the app's own fallback is 5
+seconds on the first attempt, and the 300 seconds it waited for was **Dropbox's
+`Retry-After`**, honoured as it should be.
+
+So the question is not what to do about the hold — it is why the account refused at all.
+The walk was listing at ~35 folders a second. The account's own ramp probe carried 436
+requests a second without a refusal, **but it measured `get_metadata`, not
+`list_folder`** — and a listing carries a whole folder's metadata while a metadata read
+carries one file's. The listing endpoint's limit has never been measured, and that is
+the number that decides the walk's width.
 
 ---
 
@@ -241,6 +246,7 @@ question, and it decides whether the answer is a shorter hold or a narrower walk
 | 11 | the app counts its own round trips, by kind, and says so in its log | the sync's completion log line | **measured** — "The database cost 22 round trip(s) (11 select, 10 update, 0 insert, 0 delete, 1 other), and 0 row(s) changed while 108 did not" |
 | 12 | the catalogue walk, after the changes | one catalogue run with the counters | **measured** — ~35 folders/s, 4,252 folders re-listed in about two minutes, nothing written but the folders' status; then two rate-limit holds of 300 s each |
 | 13 | the whole catalogue walk, after the changes | one catalogue run with the counters | not measured — the run stopped at the rate limit |
+| 14 | the listing endpoint's rate limit | the width ramp, run against `list_folder` rather than `get_metadata` | not measured |
 
 ---
 
@@ -255,7 +261,8 @@ question, and it decides whether the answer is a shorter hold or a narrower walk
    look before the next walk changes what it says.
 3. **Is the media library's read cost worth measuring now?** O3 cannot be decided
    without it, and it is the only item on the list whose answer might be "do nothing".
-4. **Is something else using this team's Dropbox authorization?** The walk was refused
-   at ~35 requests a second, and the account once carried 436 a second without a
-   refusal. If another consumer shares the token, the walk's width has to be set for
-   both of them; if not, the endpoint's limit is the one that counts.
+4. **What is the LISTING endpoint's limit?** The ramp probe measured `get_metadata` at
+   436 requests a second with no refusal; the walk's `list_folder` was refused at ~35
+   folders a second, and the 300-second hold that followed was Dropbox's own
+   `Retry-After`. Until the listing endpoint is ramped, the walk's width is a guess for
+   the endpoint that actually does the work.
