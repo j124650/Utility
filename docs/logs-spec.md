@@ -128,58 +128,88 @@ reachable.
 
 ### The detail — the log, in human-readable form
 
-**The detail is a REPORT, not the log's raw text.** The log is JSON Lines — one JSON
-object per line (§10.5.3 of the recover spec) — which is for a parser. A reader wants to
-read it.
+The detail is a **list of the operations**, one entry each, virtualized so the count can
+be large. The figures sit above it; a filter narrows it to the failures.
+
+**The detail is every operation, in human-readable form.** The log is JSON Lines — one
+JSON object per line (§10.5.3 of the recover spec) — which is for a parser. A reader wants
+to read it.
+
+**NO RECORD IS LEFT OUT.** A reader who opens a log sees every operation in it, however
+many there are. There is no "showing the first 200" and no "and N more": a log that holds
+49 operations shows 49, and a log that holds 292,400 shows 292,400.
+
+**Because the count can be large, the detail is a LIST of the operations, not one block of
+text.** A single text box holding a full run's report would be over a hundred megabytes
+of text, and no text box survives that. A list does: the list is VIRTUALIZED, so only the
+entries on screen exist at once, and the rest are read as the reader scrolls.
+
+**Each operation is one entry, in the report's shape:**
 
 ```
-RECOVERY RUN  2026-10-31 20:48
-  Filtered set      363,856 pair(s)
-  Recoverable       292,400
-  Recovered             38
-  Failed                11
-  Downloaded         0.1 GB
-  Replaced              76 file(s)
+1  Y42408OD-Featured-Bottom.jpg   (y42408od)
+   reason   path/not_found/
+   from     /Images-Catalogs Team Folder/…/Y42408OD-Featured-Bottom.jpg
+   into     C:\_Recover\media\y42408od\78FDF6AC-…
+   20:49:20 → 20:49:21   (0.6 s)
+```
 
-FAILURES (11 of 292,400)
+**The figures are at the top**, above the list — the log's own `header` and `summary`,
+verbatim. Nothing is recomputed.
+
+```
+RECOVERY RUN   2026-10-31 20:48
+  Filtered set       363,856 pair(s)
+  Recoverable        292,400
+  Recovered                38
+  Failed                   11
+  Downloaded             0.1 GB
+  Replaced                 76 file(s)
+
   1  Y42408OD-Featured-Bottom.jpg   (y42408od)
      reason   path/not_found/
      from     /Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/New Balance/F27/PROCESSED/Y42408OD/Y42408OD-Featured-Bottom.jpg
      into     C:\_Recover\media\y42408od\78FDF6AC-7976-48BA-A3EB-90B956FF6C44
      20:49:20 → 20:49:21   (0.6 s)
 
-RECOVERED (38 of 292,400 — showing the first 200)
-  1  M80608F0-Featured-Top.jpg   (m80608f0)
+  2  M80608F0-Featured-Top.jpg   (m80608f0)
      restored the parent, then regenerated the child
      from     /Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/New Balance/F27/M80608F0/M80608F0-Featured-Top.jpg
      into     C:\_Recover\media\m80608f0\33540F62-0C09-4746-AB7B-52A2F0CB1114
      parent   2,023,419 bytes   ·   child  52,324 bytes, 1500 × 1500
      20:48:59 → 20:49:05   (5.7 s)
+
+  …
 ```
 
-**THE FAILURES COME FIRST, because that is why a reader opens a recovery log.** A run
-that went well is a run nobody needs to read. The failures are the ones worth the reader's
-time, so they are at the top, and the successes follow.
+**THE OPERATIONS ARE IN THE LOG'S ORDER.** The browser does not reorder them: the log is
+the record of what happened, and a reader who scrolls it is reading the run.
 
-**The failures are bounded at 500**, and the bound is stated in the heading — the same
-rule as the successes and as the confirmation window's actions (§10.1.4 of the recover
-spec). A reader with more than 500 failures wants the count more than they want the
-501st entry.
+**A FAILED OPERATION IS MARKED, not moved.** It carries the reason, and it is marked so
+the reader can find it while scrolling.
 
-**Each failure is shown in full**: the pair's name and folder, the reason, the Dropbox
-path the bytes were to come from, the path they were to be written to, and how long the
-attempt took.
+**THE READER CAN NARROW THE LIST TO THE FAILURES.** One filter, above the list: **all**
+or **failures only**. The filter narrows the VIEW, never the set — every operation is in
+the log, and "all" shows every one of them.
 
-**The successes are bounded at 200**, and the bound is stated in the heading — the same
-rule as the confirmation window's actions (§10.1.4 of the recover spec). A run that
-recovered 292,400 pairs has nothing to show the reader beyond the first 200.
+**An operation that was INTERRUPTED — a `begin` with no `end` — is marked, and says so.**
+It is an operation that did not finish, and a reader looking at a run that ended badly
+needs to see it.
 
-**An operation that was INTERRUPTED — a `begin` with no `end` — is shown with the
-failures, and says so.** It is an operation that did not finish, and a reader looking at
-a run that ended badly needs to see it.
+### What the reader can see that the raw log does not say
 
-**The figures at the top are the log's OWN** — the `header` line's and the `summary`
-line's. Nothing is recomputed: the log says what the run did, and the browser shows it.
+**The browser PARSES the log, and it is the first thing that can see a broken one.** Three
+defects are detected and shown, because they are the ones a reader would otherwise have
+to find by eye:
+
+| The defect | What the reader sees |
+|---|---|
+| **An operation that never ended** — a `begin` with no `end` | the operation, marked **interrupted**, in the list and among the failures |
+| **A line that is not valid JSON** | a count of the malformed lines, above the list — never a silent skip |
+| **An operation whose events do not fit** — an `end` with no `begin`, two `end`s for one operation | the operation, marked **malformed** |
+
+**A malformed line is never dropped silently.** A log that cannot be trusted is worse
+than a log that says it is damaged.
 
 ### The older format
 
@@ -187,19 +217,24 @@ line's. Nothing is recomputed: the log says what the run did, and the browser sh
 own text**, with a line above saying it is in the older format. Those logs are readable
 already, they are a handful, and the browser does not grow a second renderer for them.
 
-### The render does not hold the log in memory
+### How the render works
 
-**A full run's log is ~340 MB.** The reader makes **two passes** over the file:
+**A full run's log is ~340 MB, and it is read ONCE.**
 
-1. **find which operations failed** — reading the lines and keeping the failing ones'
-   numbers, and the first 200 successes';
-2. **collect the details of the ones it will show** — the lines of those operations only.
+The reader streams the file line by line and builds an entry for each operation as its
+lines arrive — the `begin` gives the pair and the plan, the `candidate` the source path,
+the `parent_restored` and `child_regenerated` the results, and the `end` the outcome and
+the times.
 
-**Neither pass holds the whole log.** The first pass keeps a few numbers; the second keeps
-the details of the operations being shown.
+**The log's TEXT is never held in memory** — only the entries are, and an entry is what
+the reader sees. A line at a time is read, parsed and dropped.
 
 **The render runs off the UI thread**, and the detail says it is reading while it does.
 A run of 292,400 operations is 1.5 million lines, and reading them takes seconds.
+
+**THE LIST IS VIRTUALIZED**, so the entries on screen are the only ones the UI holds.
+The app already shows a grid of 363,856 rows (the Finder's table), so a list of 292,400
+entries is within what it does.
 
 ## 6. What the detail does NOT do
 
@@ -239,9 +274,11 @@ not a view concern, and it is worth being able to check on its own.
 | 4 | Clicking an app log shows its text | click a row | **not built** |
 | 5 | The Recovery tab's tree is the dates, expanded, with the log files under each | open the tab | **not built** |
 | 6 | Clicking a recovery log shows it in human-readable form | click a file | **not built** |
-| 7 | The failures are shown first, in full, with their reason and their paths | open a log with failures | **not built** |
-| 8 | The failures and the successes are bounded, and the bounds are stated | open a log with many of each | **not built** |
-| 9 | An interrupted operation is shown with the failures | interrupt a run, open the log | **not built** |
-| 10 | The figures are the log's own, not recomputed | compare with the log file | **not built** |
-| 11 | The render holds neither the whole log nor the whole file in memory | open a full run's log | **not built** |
-| 12 | The browser writes nothing | check the folder before and after | **not built** |
+| 7 | EVERY operation in the log is shown - nothing is dropped or truncated | open a log, count the entries | **not built** |
+| 8 | The list copes with a log of any size, because it is virtualized | open a full run's log | **not built** |
+| 9 | The reader can narrow the list to the failures | open a log with failures | **not built** |
+| 10 | An operation that never ended is marked as interrupted | interrupt a run, open the log | **not built** |
+| 11 | A malformed line is counted and shown, never dropped silently | damage a log, open it | **not built** |
+| 12 | The figures are the log's own, not recomputed | compare with the log file | **not built** |
+| 13 | The render holds the log's text in memory at no point | open a full run's log | **not built** |
+| 14 | The browser writes nothing | check the folder before and after | **not built** |
