@@ -156,7 +156,13 @@ public static class ServerServiceCollectionExtensions
             });
         }, ServiceLifetime.Singleton);
 
+        // ONE writer at a time for ml.DropBoxNode, and it is SHARED: the walk and the
+        // two-phase sync's enrichment pass both write to that table, and two gates
+        // would let them deadlock against each other.
+        services.AddSingleton<DropBoxWriteGate>();
+
         services.AddSingleton<IDropBoxSyncService, DropBoxSyncService>();
+        services.AddSingleton<IDropBoxSyncTwoPhaseService, DropBoxSyncTwoPhaseService>();
         services.AddSingleton<IDropBoxTreeService, DropBoxTreeService>();
 
         // The dashboard's figures. A SINGLETON: they are read once at startup and shown

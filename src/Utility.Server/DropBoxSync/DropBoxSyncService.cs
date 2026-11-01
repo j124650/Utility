@@ -55,6 +55,7 @@ namespace Utility.Server.DropBoxSync;
 public sealed class DropBoxSyncService(
     IDropBoxDataService dropBox,
     IDbContextFactory<DropBoxDbContext> contextFactory,
+    DropBoxWriteGate writeGate,
     ILogger<DropBoxSyncService> logger) : IDropBoxSyncService
 {
     private readonly IDbContextFactory<DropBoxDbContext> _contextFactory = contextFactory;
@@ -76,7 +77,12 @@ public sealed class DropBoxSyncService(
     /// locks between this app's own workers, which is what a deadlock needs.
     /// </para>
     /// </summary>
-    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    /// <summary>
+    /// The write gate, SHARED with the two-phase sync's enrichment pass: two operations
+    /// write to this table, and "one writer at a time" has to mean one writer for the
+    /// TABLE.
+    /// </summary>
+    private readonly DropBoxWriteGate _writeGate = writeGate;
 
     /// <summary>
     /// How many times a write that was chosen as a deadlock victim is retried.
@@ -190,7 +196,7 @@ public sealed class DropBoxSyncService(
     /// is simply capped, and nothing adapts.
     /// </para>
     /// </summary>
-    private const int WalkWidth = 24;
+    internal const int WalkWidth = 24;
 
     /// <summary>
     /// The wait used when Dropbox did not say how long to wait.
@@ -983,7 +989,7 @@ public sealed class DropBoxSyncService(
         // folder is left unlisted for the next continuation to pick up.
         try
         {
-            await FlushAsync(ns, runId, folderId, path, pending, counts, batchSize, ct).ConfigureAwait(false);
+            await FlushAsync(ns, runId, folderId, path, pending, counts, batchSize, enrichFileMetadata, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -1423,7 +1429,8 @@ public sealed class DropBoxSyncService(
     /// </summary>
     private async Task FlushAsync(
         string ns, Guid runId, long folderId, string folderPath,
-        List<DropBoxNodeEntity> pending, SyncCounts counts, int batchSize, CancellationToken ct)
+        List<DropBoxNodeEntity> pending, SyncCounts counts, int batchSize,
+        bool enriched, CancellationToken ct)
     {
         if (pending.Count == 0)
         {
@@ -1479,14 +1486,37 @@ public sealed class DropBoxSyncService(
                     tracked.DropboxId = row.DropboxId;
                     tracked.SizeBytes = row.SizeBytes;
                     tracked.Rev = row.Rev;
+
+                    // THE DIMENSIONS ARE A PROPERTY OF THE CONTENT, and this is the
+                    // comparison that decides their fate. The hash is read BEFORE the
+                    // update, so it is the hash the row had.
+                    var sameContent = string.Equals(
+                        tracked.ContentHash, row.ContentHash, StringComparison.OrdinalIgnoreCase);
+
                     tracked.ContentHash = row.ContentHash;
-                    // Dimensions are overwritten unconditionally, including back to NULL.
-                    // A row synced with media info that is later re-synced without it must
-                    // NOT keep the old width/height: those would then describe an unknown
-                    // state that no read ever confirmed.
-                    tracked.WidthPixels = row.WidthPixels;
-                    tracked.HeightPixels = row.HeightPixels;
-                    tracked.MediaInfoTag = row.MediaInfoTag;
+
+                    // When the content has NOT CHANGED, the stored dimensions are still
+                    // TRUE - it is the same content - so a read that carried no media
+                    // info must not clear them. That happens on a LIST-ONLY pass, where
+                    // no read carries media info at all, and it happens when Dropbox
+                    // defers a file's media info. A dimension that describes content a
+                    // read CONFIRMED is not an unknown state.
+                    if (sameContent)
+                    {
+                        tracked.WidthPixels = row.WidthPixels ?? tracked.WidthPixels;
+                        tracked.HeightPixels = row.HeightPixels ?? tracked.HeightPixels;
+                        tracked.MediaInfoTag = row.MediaInfoTag ?? tracked.MediaInfoTag;
+                    }
+                    else
+                    {
+                        // The content CHANGED, so the stored dimensions describe the OLD
+                        // content and they go. A list-only pass has no read to replace
+                        // them, so the row is marked 'pending' - the schema's own word
+                        // for "ask again later" - and the enrichment phase fetches them.
+                        tracked.WidthPixels = row.WidthPixels;
+                        tracked.HeightPixels = row.HeightPixels;
+                        tracked.MediaInfoTag = row.MediaInfoTag ?? (enriched ? null : "pending");
+                    }
                     tracked.ServerModified = row.ServerModified;
                     tracked.ClientModified = row.ClientModified;
                     tracked.IsDownloadable = row.IsDownloadable;
@@ -1735,67 +1765,14 @@ public sealed class DropBoxSyncService(
     /// is not touched by any of this, and still runs six at a time.
     /// </para>
     /// </summary>
-    private async Task<T> WriteAsync<T>(Func<Task<T>> write, CancellationToken ct)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            await _writeGate.WaitAsync(ct).ConfigureAwait(false);
-            try
-            {
-                return await write().ConfigureAwait(false);
-            }
-            catch (SqlException ex) when (IsDeadlock(ex) && attempt < MaxWriteAttempts)
-            {
-                // The transaction was rolled back whole, so nothing was written and the
-                // write can be run again unchanged.
-                logger.LogWarning(
-                    ex,
-                    "Database write was chosen as a deadlock victim (attempt {Attempt} of {Max}); retrying.",
-                    attempt, MaxWriteAttempts);
-
-                // A short, growing pause: the other writer needs to finish and release
-                // its locks before this one can take them.
-                await Task.Delay(TimeSpan.FromMilliseconds(50 * attempt), ct).ConfigureAwait(false);
-            }
-            finally
-            {
-                _writeGate.Release();
-            }
-        }
-    }
+    private Task<T> WriteAsync<T>(Func<Task<T>> write, CancellationToken ct) =>
+        _writeGate.WriteAsync(write, ct);
 
     /// <summary>
     /// Runs a write against <c>ml.DropBoxNode</c> that returns nothing.
     /// </summary>
-    private async Task WriteAsync(Func<Task> write, CancellationToken ct)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            await _writeGate.WaitAsync(ct).ConfigureAwait(false);
-            try
-            {
-                await write().ConfigureAwait(false);
-                return;
-            }
-            catch (SqlException ex) when (IsDeadlock(ex) && attempt < MaxWriteAttempts)
-            {
-                // The transaction was rolled back whole, so nothing was written and the
-                // write can be run again unchanged.
-                logger.LogWarning(
-                    ex,
-                    "Database write was chosen as a deadlock victim (attempt {Attempt} of {Max}); retrying.",
-                    attempt, MaxWriteAttempts);
-
-                // A short, growing pause: the other writer needs to finish and release
-                // its locks before this one can take them.
-                await Task.Delay(TimeSpan.FromMilliseconds(50 * attempt), ct).ConfigureAwait(false);
-            }
-            finally
-            {
-                _writeGate.Release();
-            }
-        }
-    }
+    private Task WriteAsync(Func<Task> write, CancellationToken ct) =>
+        _writeGate.WriteAsync(write, ct);
 
     /// <summary>SQL Server's deadlock victim error number.</summary>
     private static bool IsDeadlock(SqlException ex) => ex.Number == 1205;

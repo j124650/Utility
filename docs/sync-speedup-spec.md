@@ -1,8 +1,8 @@
 # Making the sync faster — preliminary spec
 
-**Status: PRELIMINARY — the design is MEASURED AND PROVEN against the live database; the
-change to the sync itself is NOT built.** The measurements below were taken against the
-live account and the live `ml.DropBoxNode` on 2026-11-01.
+**Status: the two-phase service is BUILT and PROVEN against the live database. The UI is
+NOT built.** The measurements below were taken against the live account and the live
+`ml.DropBoxNode` on 2026-11-01.
 
 The question this answers: the DropBox files tab's **Build tree JSON** lists a folder tree
 in seconds. The sync walk takes a very long time. Is the tree browser a *cheaper
@@ -330,7 +330,42 @@ The speed-up must not cost any of these, because they are what makes the sync *c
 
 ---
 
-## 8. Acceptance
+## 8. What is built
+
+**`DropBoxSyncTwoPhaseService`** (`src/Utility.Server/DropBoxSync/`), behind
+`IDropBoxSyncTwoPhaseService`:
+
+| method | what it does |
+|---|---|
+| `ListAsync` | phase 1 — the walk with `enrichFileMetadata: false` |
+| `ContinueListAsync` | phase 1, continued from the frontier |
+| `EnrichAsync` | phase 2 — the rows marked `'pending'`, and only those |
+| `RunAsync` | both phases, in order |
+
+**It REUSES the walk rather than duplicating it.** One width (`WalkWidth = 24`, now
+`internal`, so both layers read the same number), the same `AdaptiveConcurrencyGate`, the
+same shared `DropboxRateLimitBrake` with its 429 retry, the same `WorkerPool`.
+
+**`DropBoxWriteGate` is a new shared service.** "One writer at a time" has to mean one
+writer for the TABLE, not one per operation: the walk and the enrichment pass both write
+to `ml.DropBoxNode`, and two gates would let them deadlock against each other. The
+deadlock-retry logic moved into it.
+
+**The flush's dimension rule changed**, in `DropBoxSyncService.FlushAsync`:
+
+- the content has NOT changed → the stored dimensions are still true → **kept**, even when
+  the read carried no media info;
+- the content HAS changed → they describe the old content → **cleared**, and the row
+  marked `'pending'`.
+
+The hash is read BEFORE the update, so the comparison is against the old value. This also
+closes a latent hazard in the existing sync: a `get_metadata` that came back empty used
+to wipe a known dimension.
+
+**`tools/two-phase-service-checks/`** runs the real service, resolved from the app's own
+DI, against the live account and the live table: 15/15 checks passed.
+
+## 9. Acceptance
 
 | # | Criterion | How it is checked | State |
 |---|---|---|---|
@@ -346,3 +381,6 @@ The speed-up must not cost any of these, because they are what makes the sync *c
 | 10 | The status semantics, the frontier, the single writer and the PathHash seek are unchanged | the existing harness plus a diff of the walk | **not built** |
 | 11 | A change-detecting re-sync notices a changed file and updates it | a harness that changes a file and re-syncs | **not built** |
 | 12 | A stored cursor per folder reports the changes since, deletions included | the cursor probe | **not built** (the mechanism measured) |
+| 13 | The two-phase service runs both phases, and leaves the database as the one-phase walk leaves it | `tools/two-phase-service-checks` | **built** (15/15) |
+| 14 | The walk and the enrichment pass share ONE write gate | the shared `DropBoxWriteGate` | **built** |
+| 15 | The UI for the two phases | — | **not built** |
