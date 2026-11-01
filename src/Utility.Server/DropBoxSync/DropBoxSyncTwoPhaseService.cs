@@ -112,7 +112,7 @@ public sealed class DropBoxSyncTwoPhaseService(
         }
 
         logger.LogInformation(
-            "Enriching {Count} row(s) marked 'pending' in {Namespace}.", pending.Count, ns);
+            "Enriching {Count} file(s) whose dimensions are unknown in {Namespace}.", pending.Count, ns);
 
         // The same three pieces the walk uses: a gate that bounds the in-flight calls, a
         // brake that holds EVERY worker when Dropbox rate-limits (the limit is per
@@ -373,12 +373,34 @@ public sealed class DropBoxSyncTwoPhaseService(
     /// <summary>One row of the work list.</summary>
     private sealed record PendingRow(long Id, string PathDisplay);
 
+    /// <summary>
+    /// THE WORK LIST: the files whose dimensions are NOT known.
+    /// <para>
+    /// The schema's own word for a file still asking is 'pending' - but a file the
+    /// one-phase walk never got to carries NO tag at all. That walk fetched each file's
+    /// metadata as it went, which is 47 hours of work for this catalogue, so it never
+    /// finished: 44,271 files sit with no dimensions and no tag. A work list of
+    /// 'pending' rows is therefore EMPTY while tens of thousands of files wait for
+    /// their dimensions.
+    /// </para>
+    /// <para>
+    /// The rule is the one the schema already implies - a row with unknown dimensions
+    /// is still enriched, and a hash match does not make an incomplete row complete.
+    /// So the set is the files whose dimensions are unknown, plus the rows still tagged
+    /// 'pending', which is the same set plus the rare row that has its dimensions and
+    /// is still asking.
+    /// </para>
+    /// </summary>
+    private static IQueryable<Entities.DropBoxNode> NeedsDimensions(IQueryable<Entities.DropBoxNode> query) =>
+        query.Where(n => !n.IsFolder &&
+            (n.WidthPixels == null || n.HeightPixels == null || n.MediaInfoTag == "pending"));
+
     private async Task<List<PendingRow>> ReadPendingAsync(string ns, string? pathPrefix, CancellationToken ct)
     {
         await using var db = await contextFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
 
-        var query = db.Nodes
-            .Where(n => n.NamespaceId == ns && !n.IsFolder && n.MediaInfoTag == "pending");
+        var query = NeedsDimensions(db.Nodes)
+            .Where(n => n.NamespaceId == ns);
 
         if (!string.IsNullOrEmpty(pathPrefix))
         {
@@ -401,8 +423,8 @@ public sealed class DropBoxSyncTwoPhaseService(
     {
         await using var db = await contextFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
 
-        var query = db.Nodes
-            .Where(n => n.NamespaceId == ns && !n.IsFolder && n.MediaInfoTag == "pending");
+        var query = NeedsDimensions(db.Nodes)
+            .Where(n => n.NamespaceId == ns);
 
         if (!string.IsNullOrEmpty(pathPrefix))
         {

@@ -38,11 +38,14 @@ listing. A file whose content hash is unchanged keeps its dimensions, because th
 content is the same and they are therefore still true. A file whose content hash
 changed has its dimensions cleared and is marked `pending`.
 
-**Phase 2 — ENRICH.** The metadata for the rows marked `pending`, and only those. The
-work list is `WHERE IsFolder = 0 AND MediaInfoTag = 'pending'`, a set the schema
-already defines: `pending` already means "the dimensions may be available on a
-re-read". A file left `pending` by a failed enrichment keeps its tag, so the next run
-picks it up again.
+**PHASE 2 — ENRICH.** The metadata for the files whose dimensions are not known, and
+only those. The work list is `WHERE IsFolder = 0 AND (WidthPixels IS NULL OR
+HeightPixels IS NULL OR MediaInfoTag = 'pending')`. The schema's own word for a file
+still asking is `pending`, and a file left `pending` by a failed enrichment keeps its
+tag, so the next run picks it up again — but a file the one-phase walk never reached
+carries **no tag at all**, so a work list of `pending` rows alone is empty while tens
+of thousands of files wait for their dimensions. A row with unknown dimensions is
+still enriched: a hash match does not make an incomplete row complete.
 
 ### The rules that belong to the algorithm
 
