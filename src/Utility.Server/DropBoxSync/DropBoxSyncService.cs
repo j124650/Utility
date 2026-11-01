@@ -1209,7 +1209,11 @@ public sealed class DropBoxSyncService(
                 // The refusal is reported ONCE, here - where it happened. The meter
                 // reports it again for the rest of the minute, and a controller that
                 // acted on the meter would halve the width once per report.
-                _controller?.OnRateLimited();
+                //
+                // The wait goes with it: the width does not climb again until the wait
+                // Dropbox asked for is over. Widening inside it would spend the next
+                // window's allowance before the walk had a chance to use it.
+                _controller?.OnRateLimited(TimeSpan.FromSeconds(wait));
 
                 logger.LogWarning(
                     "Dropbox rate limited while listing {Path} (attempt {Attempt}/{Max}); holding the walk for {Wait}s.",
@@ -1838,7 +1842,9 @@ public sealed class DropBoxSyncService(
 
                 _rateLimitBrake.Hold(wait);
 
-                _controller?.OnRateLimited();
+                // The width does not climb again until the wait Dropbox asked for is
+                // over - the same rule the listing path follows.
+                _controller?.OnRateLimited(TimeSpan.FromSeconds(wait));
 
                 logger.LogWarning(
                     "Dropbox rate limited while reading metadata for {Path} (attempt {Attempt}/{Max}); holding the walk for {Wait}s.",

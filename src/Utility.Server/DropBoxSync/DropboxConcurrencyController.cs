@@ -85,6 +85,18 @@ public sealed class DropboxConcurrencyController
     /// <summary>When the last 429 was seen.</summary>
     private DateTimeOffset _lastRateLimit = DateTimeOffset.MinValue;
 
+    /// <summary>
+    /// Until when a refusal holds the width down.
+    /// <para>
+    /// Dropbox says how long to wait, and the wait is not only about the requests: it
+    /// is the window in which the allowance is spent. Widening inside it would spend
+    /// the next window's allowance before the walk had a chance to use it, and be
+    /// refused again - which is how a walk ends up paying a five-minute hold for every
+    /// step it takes.
+    /// </para>
+    /// </summary>
+    private DateTimeOffset _blockedUntil = DateTimeOffset.MinValue;
+
     /// <summary>The latency the walk had when it was last healthy.</summary>
     private double _healthyLatencyMs;
 
@@ -198,6 +210,14 @@ public sealed class DropboxConcurrencyController
             return;
         }
 
+        // A refusal is still in force: Dropbox asked us to wait, and the width stays
+        // where the refusal put it until that wait is over. Widening inside the wait
+        // would spend the next window's allowance before the walk could use it.
+        if (now < _blockedUntil)
+        {
+            return;
+        }
+
         // Healthy: the width goes back UP toward the ceiling, one step at a time and
         // only after a settled period, because a wrong step up is paid for with rate
         // limits. This is how the walk gives back the width a refusal took away.
@@ -252,13 +272,20 @@ public sealed class DropboxConcurrencyController
     /// a walk from 24 to 1, and it stayed there for the rest of the run.
     /// </para>
     /// </summary>
-    public void OnRateLimited()
+    /// <param name="holdFor">
+    /// How long Dropbox asked the walk to wait. The width does not climb again until
+    /// that wait is over.
+    /// </param>
+    public void OnRateLimited(TimeSpan holdFor)
     {
         var now = DateTimeOffset.UtcNow;
         var refused = _gate.Limit;
 
         _lastRateLimit = now;
         _narrowCount++;
+
+        // The width does not climb again until the wait Dropbox asked for is over.
+        _blockedUntil = now + holdFor;
 
         // The width that was refused is REMEMBERED: the ceiling drops below it, so
         // the walk does not climb back into a width the API has already said no to.
@@ -309,6 +336,7 @@ public sealed class DropboxConcurrencyController
     {
         _lastChange = DateTimeOffset.MinValue;
         _lastRateLimit = DateTimeOffset.MinValue;
+        _blockedUntil = DateTimeOffset.MinValue;
         _healthyLatencyMs = 0;
         _narrowCount = 0;
     }
