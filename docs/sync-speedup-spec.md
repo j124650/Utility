@@ -254,6 +254,18 @@ right now, because nothing has changed. So a stored cursor per folder is enough 
 Dropbox "what changed since?" without re-listing, and the delta also reports
 **DELETIONS**, which the current walk never learns.
 
+**THE ACCOUNT IS EDITED WHILE THE APP IS NOT LOOKING, and the walk is built for that.**
+A full run from the catalogue root found ~1,460 rows that had never been synced, and
+882 files whose content hash no longer matched — spread over six brands, mostly in new
+seasons whose images had been re-exported. The design handled both without being asked:
+the new rows were written, and the 882 changed files had their dimensions cleared and
+were marked `'pending'`, so the enrichment phase fetched exactly those 882.
+
+**BUT THE WALK NEVER DELETES.** A file removed in Dropbox keeps its row, so the table
+grows to hold files that no longer exist. The delta reports deletions and nothing
+consumes them yet — that is the gap the cursor closes, and the strongest argument for
+adding it.
+
 **A RECURSIVE LISTING IS NOT THE ANSWER.** It does not deliver the dimensions either
 (§3), it asks Dropbox to do all the per-file work in one call, and a recursive walk is
 exactly what runs into the throttle. The non-recursive walk spreads that work over
