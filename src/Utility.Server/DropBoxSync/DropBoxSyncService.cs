@@ -218,15 +218,23 @@ public sealed class DropBoxSyncService(
     /// <summary>
     /// The walk's width: how many folders are expanded at once.
     /// <para>
-    /// Twelve, and the number is measured rather than guessed. The account's limit is
-    /// SUSTAINED, not a burst: the listing ramp carried 96 requests a second in
-    /// 200-call bursts without a refusal, while this walk was refused at a sustained
-    /// 40 - and the walk that synced the whole catalogue before this one sustained
-    /// about 29 requests a second and finished. Twelve folders at a time is about 24
-    /// requests a second, under the rate that is known to work.
+    /// Four, and the number is measured rather than guessed. The account's limit is a
+    /// COUNT of listing calls per window - Dropbox's own <c>Retry-After: 300</c> says
+    /// the window is five minutes - and not a rate: the ramp carried 96 requests a
+    /// second in short bursts without a refusal, while a walk sustained at 50 a second
+    /// spent the window in 77 seconds and was refused.
+    /// </para>
+    /// <para>
+    /// Four folders at a time is about eight listings a second, which is roughly two
+    /// thousand calls in a five-minute window - under the allowance the ramp proved by
+    /// spending an hour of it without a refusal. The walk that synced the whole
+    /// catalogue before this one never came near the limit, and the reason is worth
+    /// keeping: it enriched each file as it listed, so its listings were paced by the
+    /// enrichment and it spent the window a fraction at a time. The two-phase walk
+    /// lists everything first, so it has to pace itself instead.
     /// </para>
     /// </summary>
-    internal const int WalkWidth = 12;
+    internal const int WalkWidth = 4;
 
     /// <summary>
     /// The wait used when Dropbox did not say how long to wait.

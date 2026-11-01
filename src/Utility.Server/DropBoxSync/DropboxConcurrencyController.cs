@@ -225,8 +225,14 @@ public sealed class DropboxConcurrencyController
     /// <summary>
     /// How many settled windows must pass with no refusal before the ceiling is given
     /// back a step.
+    /// <para>
+    /// Half an hour. The account's allowance is a COUNT per window, and Dropbox's
+    /// <c>Retry-After</c> says the window is five minutes - so a ceiling that came back
+    /// after one window would climb straight back into a width the account has already
+    /// refused for this window, and pay for it with another refusal.
+    /// </para>
     /// </summary>
-    private const int QuietWindowsForCeiling = 10;
+    private const int QuietWindowsForCeiling = 60;
 
     /// <summary>
     /// A refusal happened: narrow the width, and remember the width that was refused.
