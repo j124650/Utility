@@ -77,6 +77,8 @@ public partial class MainWindow : Window
 
     private void OnNavFinderClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Finder);
 
+    private void OnNavLogsClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Logs);
+
     private void OnNavLiemListClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.LiemList);
 
     private void OnNavSettingsClick(object sender, RoutedEventArgs e) => ShowPage(NavigationKeys.Settings);
@@ -152,6 +154,12 @@ public partial class MainWindow : Window
                 break;
             case FinderViewModel finder:
                 _ = finder.EnsurePassAsync();
+                break;
+            case LogsViewModel logs:
+                // The logs folder changes while the app runs - a recovery that is going
+                // right now is writing into it - so the lists are read when the tab is
+                // shown rather than once at startup.
+                logs.Refresh();
                 break;
             case SettingsViewModel settings:
                 _ = settings.LoadAsync();

@@ -1,0 +1,285 @@
+<UserControl x:Class="Utility.UI.Views.LogsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Utility.UI.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:LogsViewModel}">
+
+    <UserControl.Resources>
+        <!-- The same card cell the Finder's table uses (§18.4). -->
+        <Style x:Key="RecordCell" TargetType="DataGridCell">
+            <Setter Property="Foreground" Value="#111827" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#EAF2FD" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- One line of an operation: a label and its value. -->
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#6B7280" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Width" Value="58" />
+        </Style>
+
+        <Style x:Key="FieldValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#334155" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Style="{StaticResource CardStyle}" Margin="0,0,0,10">
+            <StackPanel>
+                <Grid>
+                    <StackPanel>
+                        <TextBlock Text="Logs" Style="{StaticResource HeaderText}" />
+                        <TextBlock Text="The logs the app writes — the recovery's, and the app's own. It reads them; it writes nothing."
+                                   Style="{StaticResource SubHeaderText}" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                        <Button Content="Refresh" Command="{Binding RefreshCommand}" MinWidth="90" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- The two sub-tabs, each a master-detail form of its own. -->
+        <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0">
+
+            <!-- ================= RECOVERY ================= -->
+            <TabItem Header="Recovery">
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="320" MinWidth="240" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="320" />
+                    </Grid.ColumnDefinitions>
+
+                    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                                  Background="#E2E8F0" />
+
+                    <!-- Master: the days, and the log files under each. -->
+                    <Border Grid.Column="0" Style="{StaticResource CardStyle}" Padding="0">
+                        <TreeView x:Name="RecoveryTree"
+                                  ItemsSource="{Binding RecoveryDays}"
+                                  Background="Transparent" BorderThickness="0">
+                            <TreeView.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem">
+                                    <!-- The day nodes are expanded, so the reader sees the
+                                         log files under them without a click. -->
+                                    <Setter Property="IsExpanded" Value="True" />
+                                </Style>
+                            </TreeView.ItemContainerStyle>
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Label}" FontSize="12" />
+                                        <TextBlock Text="{Binding Count, StringFormat='({0})'}"
+                                                   FontSize="10" Foreground="#94A3B8" Margin="4,0,0,0"
+                                                   Visibility="{Binding IsFolder, Converter={StaticResource BoolToVis}}" />
+                                    </StackPanel>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </Border>
+
+                    <!-- Detail: the log, in human-readable form. -->
+                    <Border Grid.Column="2" Style="{StaticResource CardStyle}" Margin="10,0,0,0" Padding="16">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <!-- The figures, in the log's own words. -->
+                            <TextBlock Grid.Row="0" Text="{Binding RecoveryFigures}"
+                                       FontFamily="Consolas" FontSize="11" Foreground="#334155"
+                                       TextWrapping="Wrap" />
+
+                            <!-- The filter: it narrows the VIEW, never the set. -->
+                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,8">
+                                <CheckBox Content="Failures only"
+                                          IsChecked="{Binding ShowFailuresOnly}"
+                                          VerticalAlignment="Center"
+                                          Visibility="{Binding HasRecoveryLog, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+
+                            <!-- Every operation, in the log's order. -->
+                            <ListBox Grid.Row="2" ItemsSource="{Binding Operations}"
+                                     Background="Transparent" BorderThickness="0"
+                                     ScrollViewer.CanContentScroll="True"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling"
+                                     HorizontalContentAlignment="Stretch">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0,0,0,8" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#F9FAFB" CornerRadius="6" Padding="10">
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Number}" FontSize="11" FontWeight="SemiBold"
+                                                               Foreground="#94A3B8" Width="34" />
+                                                    <TextBlock Text="{Binding ParentName}" FontSize="12" FontWeight="SemiBold"
+                                                               Foreground="#111827" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding Folder}" FontSize="10" Foreground="#94A3B8"
+                                                               Margin="8,1,0,0" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="INTERRUPTED" FontSize="10" FontWeight="SemiBold"
+                                                               Foreground="#DC2626" Margin="8,1,0,0"
+                                                               Visibility="{Binding IsInterrupted, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBlock Text="MALFORMED" FontSize="10" FontWeight="SemiBold"
+                                                               Foreground="#DC2626" Margin="8,1,0,0"
+                                                               Visibility="{Binding IsMalformed, Converter={StaticResource BoolToVis}}" />
+                                                </StackPanel>
+
+                                                <Grid Margin="34,4,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="58" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
+
+                                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="plan" Style="{StaticResource FieldLabel}" />
+                                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Plan}" Style="{StaticResource FieldValue}" />
+
+                                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="outcome" Style="{StaticResource FieldLabel}" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Outcome}" Style="{StaticResource FieldValue}" />
+
+                                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="reason" Style="{StaticResource FieldLabel}" />
+                                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Reason}" Style="{StaticResource FieldValue}"
+                                                               ToolTip="{Binding Reason}" />
+
+                                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="from" Style="{StaticResource FieldLabel}" />
+                                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Source}" Style="{StaticResource FieldValue}"
+                                                               ToolTip="{Binding Source}" />
+
+                                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="into" Style="{StaticResource FieldLabel}" />
+                                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding CopiedTo}" Style="{StaticResource FieldValue}"
+                                                               ToolTip="{Binding CopiedTo}" />
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <!-- A log in the OLDER format, shown as it was written. -->
+                            <TextBox Grid.Row="2" Text="{Binding RecoveryText, Mode=OneWay}"
+                                     IsReadOnly="True" AcceptsReturn="True"
+                                     FontFamily="Consolas" FontSize="11"
+                                     Background="Transparent" BorderThickness="0"
+                                     TextWrapping="NoWrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     Visibility="{Binding RecoveryIsLegacy, Converter={StaticResource BoolToVis}}" />
+
+                            <!-- The states that are not the list. -->
+                            <Grid Grid.Row="2" IsHitTestVisible="False">
+                                <TextBlock Text="Select a recovery log to read it."
+                                           Foreground="#94A3B8" FontSize="12"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Visibility="{Binding HasRecoveryLog, Converter={StaticResource InverseBoolToVis}}" />
+                                <TextBlock Text="Reading the log…"
+                                           Foreground="#94A3B8" FontSize="12"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Visibility="{Binding IsReading, Converter={StaticResource BoolToVis}}" />
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ================= APP ================= -->
+            <TabItem Header="App">
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3*" MinWidth="320" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="2*" MinWidth="280" />
+                    </Grid.ColumnDefinitions>
+
+                    <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                                  Background="#E2E8F0" />
+
+                    <!-- Master: the app's own log files, most recent first. -->
+                    <DataGrid Grid.Column="0"
+                              ItemsSource="{Binding AppLogs}"
+                              SelectedItem="{Binding SelectedAppLog}"
+                              EnableRowVirtualization="True"
+                              EnableColumnVirtualization="True"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              ScrollViewer.CanContentScroll="True"
+                              CanUserSortColumns="False"
+                              CellStyle="{StaticResource RecordCell}"
+                              AutoGenerateColumns="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="File" Binding="{Binding Name}" Width="2*" />
+                            <DataGridTextColumn Header="Last written" Binding="{Binding LastWrittenDisplay}" Width="1.2*" />
+                            <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="80" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <!-- Detail: the file's text, as it was written. -->
+                    <Border Grid.Column="2" Style="{StaticResource CardStyle}" Margin="10,0,0,0" Padding="16">
+                        <Grid>
+                            <TextBox Text="{Binding AppText, Mode=OneWay}"
+                                     IsReadOnly="True" AcceptsReturn="True"
+                                     FontFamily="Consolas" FontSize="11"
+                                     Background="Transparent" BorderThickness="0"
+                                     TextWrapping="NoWrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     Visibility="{Binding HasAppLog, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock Text="Select a log to read it."
+                                       Foreground="#94A3B8" FontSize="12"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding HasAppLog, Converter={StaticResource InverseBoolToVis}}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</UserControl>

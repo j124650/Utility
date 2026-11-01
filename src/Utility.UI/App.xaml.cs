@@ -144,12 +144,18 @@ private static async Task WarmUpAsync(IServiceProvider services)
         builder.Services.AddSingleton<FinderViewModel>();
         builder.Services.AddSingleton<LiemListViewModel>();
 
+        // The LOGS tab's view model is a singleton too: it holds the tree and the lists
+        // the reader has scrolled to, and re-reading the folder every time the tab is
+        // opened would lose the reader's place.
+        builder.Services.AddSingleton<LogsViewModel>();
+
         builder.Services.AddSingleton<MainWindow>();
         builder.Services.AddTransient<DashboardView>();
         builder.Services.AddTransient<DropBoxView>();
         builder.Services.AddTransient<MediaView>();
         builder.Services.AddTransient<FinderView>();
         builder.Services.AddTransient<LiemListView>();
+        builder.Services.AddTransient<LogsView>();
         builder.Services.AddTransient<SettingsView>();
 
         builder.Logging.AddSimpleConsole();

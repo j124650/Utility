@@ -133,6 +133,8 @@
                              Visibility="Collapsed" />
                 <RadioButton x:Name="NavFinder" GroupName="Nav" Content="Finder"
                              Style="{StaticResource NavButtonStyle}" Checked="OnNavFinderClick" />
+                <RadioButton x:Name="NavLogs" GroupName="Nav" Content="Logs"
+                             Style="{StaticResource NavButtonStyle}" Checked="OnNavLogsClick" />
                 <!--
                   The Liem's List tab is hidden. The view and its view model are still there,
                   so it can come back without being rebuilt - but it is not offered.

@@ -268,17 +268,30 @@ not a view concern, and it is worth being able to check on its own.
 
 | # | Criterion | How it is checked | State |
 |---|---|---|---|
-| 1 | The tab is in the nav strip, named Logs | open the app | **not built** |
-| 2 | The tab has two sub-tabs — Recovery and App | open the tab | **not built** |
-| 3 | The App tab's list is the app's own logs, newest first | open the tab | **not built** |
-| 4 | Clicking an app log shows its text | click a row | **not built** |
-| 5 | The Recovery tab's tree is the dates, expanded, with the log files under each | open the tab | **not built** |
-| 6 | Clicking a recovery log shows it in human-readable form | click a file | **not built** |
-| 7 | EVERY operation in the log is shown - nothing is dropped or truncated | open a log, count the entries | **not built** |
-| 8 | The list copes with a log of any size, because it is virtualized | open a full run's log | **not built** |
-| 9 | The reader can narrow the list to the failures | open a log with failures | **not built** |
-| 10 | An operation that never ended is marked as interrupted | interrupt a run, open the log | **not built** |
-| 11 | A malformed line is counted and shown, never dropped silently | damage a log, open it | **not built** |
-| 12 | The figures are the log's own, not recomputed | compare with the log file | **not built** |
-| 13 | The render holds the log's text in memory at no point | open a full run's log | **not built** |
-| 14 | The browser writes nothing | check the folder before and after | **not built** |
+| 1 | The tab is in the nav strip, named Logs | open the app | **built** |
+| 2 | The tab has two sub-tabs — Recovery and App | open the tab | **built** |
+| 3 | The App tab's list is the app's own logs, newest first | open the tab | **built** |
+| 4 | Clicking an app log shows its text | click a row | **built** |
+| 5 | The Recovery tab's tree is the dates, expanded, with the log files under each | open the tab | **built** |
+| 6 | Clicking a recovery log shows it in human-readable form | click a file | **built** |
+| 7 | EVERY operation in the log is shown - nothing is dropped or truncated | open a log, count the entries | **built** (`tools/logs-checks`) |
+| 8 | The list copes with a log of any size, because it is virtualized | open a full run's log | **built** |
+| 9 | The reader can narrow the list to the failures | open a log with failures | **built** |
+| 10 | An operation that never ended is marked as interrupted | interrupt a run, open the log | **built** (`tools/logs-checks`) |
+| 11 | A malformed line is counted and shown, never dropped silently | damage a log, open it | **built** (`tools/logs-checks`) |
+| 12 | The figures are the log's own, not recomputed | compare with the log file | **built** |
+| 13 | The render holds the log's text in memory at no point | open a full run's log | **built** |
+| 14 | The browser writes nothing | check the folder before and after | **built** |
+
+### A log in the OLDER format
+
+The logs written before the format changed are `key=value` pairs on a line, and the
+browser shows those as their own TEXT, because they are readable already. The reader
+recognises them by the first line that says anything not beginning with a brace.
+
+### Where the recovery logs are found
+
+A recovery log is found by its NAME wherever it is: in the dated folder the run wrote
+it into, or flat in the logs folder when it was written before the dated folders
+existed. A flat recovery log is filed under the date in its own name, so every recovery
+log stays reachable and there is one rule, not two.
