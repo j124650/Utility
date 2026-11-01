@@ -215,7 +215,18 @@ public sealed class DropBoxSyncService(
     /// is simply capped, and nothing adapts.
     /// </para>
     /// </summary>
-    internal const int WalkWidth = 24;
+    /// <summary>
+    /// The walk's width: how many folders are expanded at once.
+    /// <para>
+    /// Twelve, and the number is measured rather than guessed. The account's limit is
+    /// SUSTAINED, not a burst: the listing ramp carried 96 requests a second in
+    /// 200-call bursts without a refusal, while this walk was refused at a sustained
+    /// 40 - and the walk that synced the whole catalogue before this one sustained
+    /// about 29 requests a second and finished. Twelve folders at a time is about 24
+    /// requests a second, under the rate that is known to work.
+    /// </para>
+    /// </summary>
+    internal const int WalkWidth = 12;
 
     /// <summary>
     /// The wait used when Dropbox did not say how long to wait.
