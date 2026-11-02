@@ -197,7 +197,8 @@ otherwise its handler would outlive the page and keep it alive.
 ## 8. Acceptance criteria
 
 Measured against the live account and the live `ml.DropBoxNode`, on the branch
-`/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/Amazon`.
+`/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/Amazon` and on
+`/Images-Catalogs Team Folder/LightBoxPics/Virtual Catalog/Champion/Archive/ATHLETIC F23`.
 
 | # | Criterion | How it is checked | State |
 |---|---|---|---|
@@ -205,9 +206,9 @@ Measured against the live account and the live `ml.DropBoxNode`, on the branch
 | 2 | It reads the branch the address bar shows | navigated to the branch, clicked the button, the run's path was that branch | measured |
 | 3 | It runs the two-phase algorithm | the log shows the listing phase, then the enrichment of what it marked | measured |
 | 4 | The enrichment covers only the branch | 5 files enriched, against 44,321 pending namespace-wide | measured |
-| 5 | The busy screen covers the whole window and carries **Stop** | the app, on screen | not measured — the run finished in ~3 s, so the screen was never caught on screen |
-| 6 | The screen shows the phase, and it changes between the phases | the app, on screen | not measured — same reason |
-| 7 | Stop ends the run, and the rows written are kept | the app, on screen, and the row count afterwards | not measured — no run was stopped |
+| 5 | The busy screen covers the whole window and carries **Stop** | the app, on screen | measured — caught on screen during a run over `…/ATHLETIC F23`: the phase line, the level table, the traffic line, the app blurred behind, and the **Stop** button |
+| 6 | The screen shows the phase, and it changes between the phases | the app, on screen | measured in part — `PHASE: Listing the structure` was on screen; the enrichment phase's own label was not caught, but the log shows that phase ran and **Stop** cancelled it |
+| 7 | Stop ends the run, and the rows written are kept | the app, on screen, and the row count afterwards | measured — **Stop** pressed during the enrichment: `The sync was stopped. The rows already written are kept.`, and the rows were still there afterwards (5,588 files, 212 folders) |
 | 8 | The button is disabled while the one-phase Sync is running | start that sync on the DropBox DB page, navigate to the files tab, look at the button | not measured |
 | 9 | The button is disabled in the personal space | switch the namespace to Personal, look at the button | not measured — the click needed an approval that did not arrive; the rule is in `CanSyncFromHere` |
 | 10 | A run in the personal space is refused with a reason | the status line carries the reason | not measured — same reason |
@@ -217,10 +218,14 @@ Measured against the live account and the live `ml.DropBoxNode`, on the branch
 | 14 | The branch prefix does not catch a sibling | the prefix is the branch plus a separator | measured — the bare prefix would have caught 1 sibling row that the prefixed one does not |
 | 15 | The path box follows the navigation | press **Up** from a branch | measured — the box becomes the parent branch, and the grid shows the parent's contents |
 
-**The one thing this run did not prove is the busy screen itself.** The branch is small,
-so the run finished in about three seconds and the screen was never on screen during a
-capture. The screen is the existing one, unchanged, and **Sync New** uses it the same
-way — but this feature's use of it is not observed.
+**The busy screen is now proven on screen.** A later run over
+`…/Champion/Archive/ATHLETIC F23` — 212 folders, 5,588 files — was caught on screen with
+the phase line, the level table and the **Stop** button, and **Stop** was pressed during
+it. The listing phase finished (24.5 s, 213 Dropbox requests, 428 SQL round trips), the
+enrichment was the part cancelled, the status line said `The sync was stopped. The rows
+already written are kept.`, and the rows were still there afterwards. What was not caught
+is the enrichment phase's own label on the screen: the phase changed, and the log shows
+that phase running, but the line itself was never photographed.
 
 **The five files that stayed without dimensions are PNGs.** The enrichment fetched them
 (5 of 5, 0 failed) and Dropbox returned no media info for them, so there were no
