@@ -14,31 +14,19 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Toolbar: namespace, path navigation, tree controls -->
-        <Border Grid.Row="0" Style="{StaticResource CardStyle}">
+        <!--
+          The toolbar: up, the namespace, the path, and the actions that work on what
+          the path shows.
+
+          It wears the app's own toolbar look - a white panel, a light border, rounded
+          corners - the same as the Finder's toolbar and the dashboard's, so the tabs
+          read as one app. The ToolBar inside it is transparent, so the border around it
+          is the only one.
+        -->
+        <Border Grid.Row="0"
+                Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1"
+                CornerRadius="8" Padding="14,10" Margin="0,0,0,12">
             <StackPanel>
-                <TextBlock Text="Dropbox" Style="{StaticResource HeaderText}" />
-                <TextBlock Text="Browse folder structure and file metadata. Team folders only appear in their team namespace."
-                           Style="{StaticResource SubHeaderText}" />
-
-                <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock Grid.Column="0" Text="Namespace" Style="{StaticResource FieldLabel}"
-                               VerticalAlignment="Center" Margin="0,0,8,0" />
-
-                    <ComboBox Grid.Column="1" ItemsSource="{Binding Namespaces}"
-                              SelectedItem="{Binding SelectedNamespace}"
-                              DisplayMemberPath="DisplayLabel"
-                              MinWidth="260" Margin="0,0,8,0" Padding="6,4"
-                              ToolTip="Personal space, or a team root. Team folders are not visible in Personal." />
-                </Grid>
-
-                <!-- Path bar -->
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -46,40 +34,113 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <Button Grid.Column="0" Content="Up" Command="{Binding GoUpCommand}"
-                            IsEnabled="{Binding CanGoUp}" />
+                    <!-- Up, and the namespace the path belongs to -->
+                    <DockPanel Grid.Column="0">
+                        <ToolBarTray DockPanel.Dock="Top" Background="Transparent">
+                            <ToolBar Style="{StaticResource FlatToolBar}">
+                                <Button Style="{StaticResource ToolbarButton}"
+                                        Command="{Binding GoUpCommand}"
+                                        IsEnabled="{Binding CanGoUp}"
+                                        ToolTip="Up one level">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE74A;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="13"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,6,0" />
+                                        <TextBlock Text="Up" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
 
+                                <!--
+                                  The namespace, with no label in front of it: the drop-down
+                                  says which namespace the path belongs to, and its own
+                                  tooltip names it.
+                                -->
+                                <ComboBox ItemsSource="{Binding Namespaces}"
+                                          SelectedItem="{Binding SelectedNamespace}"
+                                          DisplayMemberPath="DisplayLabel"
+                                          MaxWidth="320" Margin="8,0,0,0" Padding="6,4"
+                                          VerticalAlignment="Center"
+                                          ToolTip="Personal space, or a team root. Team folders are not visible in Personal." />
+                            </ToolBar>
+                        </ToolBarTray>
+                    </DockPanel>
+
+                    <!-- The path the grid is showing -->
                     <TextBox Grid.Column="1" Text="{Binding PathInput, UpdateSourceTrigger=PropertyChanged}"
-                             FontFamily="Consolas" Margin="8,0"
+                             FontFamily="Consolas" Margin="0,0,12,0"
+                             VerticalContentAlignment="Center"
                              KeyDown="OnPathKeyDown">
                         <TextBox.ToolTip>
                             <TextBlock Text="Type a path and press Enter, e.g. /Images-Catalogs Team Folder/LightBoxPics" />
                         </TextBox.ToolTip>
                     </TextBox>
 
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
-                        <Button Content="Go" Command="{Binding GoToPathCommand}" />
-                        <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+                    <!-- The actions that work on what the path shows -->
+                    <DockPanel Grid.Column="2">
+                        <ToolBarTray DockPanel.Dock="Top" Background="Transparent">
+                            <ToolBar Style="{StaticResource FlatToolBar}">
+                                <Button Style="{StaticResource ToolbarButton}"
+                                        Command="{Binding GoToPathCommand}"
+                                        ToolTip="Go to this path">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE8AD;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="13"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,6,0" />
+                                        <TextBlock Text="Go" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
 
-                        <!--
-                          Sync From Here: the two-phase sync, started at the branch the
-                          tab is showing. The enrichment is scoped to that branch, so
-                          the run does not spend the account's allowance on the rest of
-                          the namespace.
+                                <Button Style="{StaticResource ToolbarButton}"
+                                        Command="{Binding RefreshCommand}"
+                                        ToolTip="Re-read this folder">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE72C;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="13"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,6,0" />
+                                        <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
 
-                          It is disabled in the personal space (a path means nothing
-                          without a team root) and while a walk is running.
-                        -->
-                        <Button Content="Sync From Here"
-                                Command="{Binding SyncFromHereCommand}"
-                                IsEnabled="{Binding CanSyncFromHere}"
-                                ToolTip="{Binding SyncFromHereHint}"
-                                Margin="8,0,0,0" />
-                    </StackPanel>
+                                <!--
+                                  Sync From Here: the two-phase sync, started at the branch the
+                                  tab is showing. The enrichment is scoped to that branch, so
+                                  the run does not spend the account's allowance on the rest of
+                                  the namespace.
+
+                                  It is disabled in the personal space (a path means nothing
+                                  without a team root) and while a walk is running.
+                                -->
+                                <Button Style="{StaticResource ToolbarButton}"
+                                        Command="{Binding SyncFromHereCommand}"
+                                        IsEnabled="{Binding CanSyncFromHere}"
+                                        ToolTip="{Binding SyncFromHereHint}"
+                                        Margin="8,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE896;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="13"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,6,0" />
+                                        <TextBlock Text="Sync From Here" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </ToolBar>
+                        </ToolBarTray>
+                    </DockPanel>
                 </Grid>
 
-                <!-- Tree JSON controls -->
-                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                <!--
+                  Tree depth and the tree's outputs. Hidden, not removed: the commands and
+                  the view model's properties stay, so the row comes back by changing one
+                  flag.
+                -->
+                <StackPanel Orientation="Horizontal" Visibility="Collapsed">
                     <TextBlock Text="Tree depth" Style="{StaticResource FieldLabel}"
                                VerticalAlignment="Center" Margin="0,0,6,0" />
                     <TextBox Text="{Binding TreeDepth}" Width="46" Margin="0,0,8,0"
