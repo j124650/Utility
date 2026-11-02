@@ -173,7 +173,10 @@ the two-phase service already publishes.
 
 ## 5. Not in scope
 
-- **Replacing the existing Sync button.** It stays, and it keeps its own busy screen.
+- **Replacing the existing Sync button.** It stays, and it keeps its own busy screen —
+  though the button itself is **hidden for now** (`Visibility="Collapsed"` in
+  `DashboardView.xaml`). Its command and the busy screen behind it are untouched, so it
+  comes back by changing one attribute.
 - **Changing the algorithm.** The width rule, the ceiling and the refusal handling are
   the algorithm's, and they are specified elsewhere.
 - **A depth limit, or a per-file enrichment toggle**, on the new button. The run

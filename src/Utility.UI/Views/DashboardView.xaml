@@ -173,7 +173,13 @@
                           typed.
                         -->
                         <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            <!--
+                              The one-phase "Sync" button is HIDDEN for now. The command
+                              and the view model behind it are untouched, so it can come
+                              back by changing one attribute.
+                            -->
                             <Button Content="Sync" Command="{Binding RunSyncCommand}"
+                                    Visibility="Collapsed"
                                     Padding="14,5" MinWidth="72" Margin="0,0,6,0"
                                     IsEnabled="{Binding CanRunSync}" />
                             <Button Content="Sync New" Command="{Binding RunSyncNewCommand}"
