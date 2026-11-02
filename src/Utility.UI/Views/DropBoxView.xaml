@@ -26,6 +26,40 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <!--
+          The cells.
+
+          The grid's own cell template draws a black border around the cell that was
+          clicked, even though what is selected is the row. The row is the selection -
+          it is what fills the item-info pane - so the cell's own border goes, and
+          the content sits centred in the row.
+        -->
+        <Style x:Key="GridCell" TargetType="DataGridCell">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border x:Name="CellBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter ContentSource="Content"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="true">
+                                <Setter TargetName="CellBorder" Property="Background"
+                                        Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -197,6 +231,9 @@
                 <Border Style="{StaticResource BlurWhileListing}">
                     <DataGrid x:Name="FilesGrid" ItemsSource="{Binding Entries}"
                               SelectionMode="Single"
+                              CellStyle="{StaticResource GridCell}"
+                              FontSize="14.4"
+                              RowHeight="30"
                               SelectionChanged="OnSelectionChanged"
                               MouseDoubleClick="OnRowDoubleClick">
                         <DataGrid.Columns>
