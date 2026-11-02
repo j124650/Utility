@@ -377,7 +377,59 @@ public sealed class DropBoxSyncTwoPhaseService(
         string? namespaceId = null,
         IProgress<DropBoxSyncProgress>? listProgress = null,
         IProgress<DropBoxTwoPhaseEnrichProgress>? enrichProgress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        await RunBothPhasesAsync(startPath, namespaceId, null, listProgress, enrichProgress, ct)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// The two phases, with the enrichment scoped to the branch.
+    /// <para>
+    /// The listing walks the branch; the enrichment asks only about the files UNDER
+    /// that branch. The prefix is the branch's own path, so the enrichment's work list
+    /// is the branch's files and nothing else.
+    /// </para>
+    /// </summary>
+    public async Task<DropBoxTwoPhaseResult> SyncBranch(
+        string branchPath,
+        string? namespaceId = null,
+        IProgress<DropBoxSyncProgress>? listProgress = null,
+        IProgress<DropBoxTwoPhaseEnrichProgress>? enrichProgress = null,
+        CancellationToken ct = default) =>
+        await RunBothPhasesAsync(branchPath, namespaceId, BranchPrefix(branchPath), listProgress, enrichProgress, ct)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// The prefix that scopes the enrichment to ONE branch.
+    /// <para>
+    /// The trailing separator is what makes it exact. A file under the branch has the
+    /// branch's path followed by a separator and then its own name, so the branch plus
+    /// that separator matches the branch's own files and everything beneath them — and
+    /// a SIBLING whose name merely starts with the branch's name is not caught by it.
+    /// The bare branch path would catch that sibling.
+    /// </para>
+    /// </summary>
+    private static string? BranchPrefix(string branchPath)
+    {
+        var trimmed = branchPath.TrimEnd('/');
+
+        return trimmed.Length == 0 ? null : trimmed + "/";
+    }
+
+    /// <summary>
+    /// Both phases, in order: list the structure, then enrich.
+    /// </summary>
+    /// <param name="startPath">Where the listing starts.</param>
+    /// <param name="namespaceId">The team namespace, or null for the personal space.</param>
+    /// <param name="enrichPrefix">
+    /// The path the enrichment is limited to, or null for the whole namespace.
+    /// </param>
+    private async Task<DropBoxTwoPhaseResult> RunBothPhasesAsync(
+        string startPath,
+        string? namespaceId,
+        string? enrichPrefix,
+        IProgress<DropBoxSyncProgress>? listProgress,
+        IProgress<DropBoxTwoPhaseEnrichProgress>? enrichProgress,
+        CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
 
@@ -391,7 +443,7 @@ public sealed class DropBoxSyncTwoPhaseService(
                 false, list, default, sw.Elapsed, list.Error ?? "The listing did not finish.");
         }
 
-        var enrich = await EnrichAsync(namespaceId, null, enrichProgress, ct).ConfigureAwait(false);
+        var enrich = await EnrichAsync(namespaceId, enrichPrefix, enrichProgress, ct).ConfigureAwait(false);
 
         sw.Stop();
 

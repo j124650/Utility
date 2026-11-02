@@ -180,7 +180,27 @@ public sealed class SyncNewViewModel : ObservableObject
     /// Runs the sync: the structure first, then whatever it marked for enrichment.
     /// </summary>
     /// <param name="path">The Dropbox folder to start from.</param>
-    public async Task StartAsync(string path)
+    public Task StartAsync(string path) =>
+        RunAsync(path, namespaceId: null, scopedToBranch: false);
+
+    /// <summary>
+    /// Runs the sync from a BRANCH: the branch is listed, and then the files UNDER it
+    /// are enriched.
+    /// <para>
+    /// The difference from <see cref="StartAsync"/> is the enrichment's scope. A sync
+    /// started at a path enriches every pending file in the namespace; a sync started at
+    /// a branch must not spend the account's allowance on the rest of the namespace.
+    /// </para>
+    /// </summary>
+    /// <param name="branchPath">The branch to sync from.</param>
+    /// <param name="namespaceId">The team namespace the branch lives in.</param>
+    public Task StartBranchAsync(string branchPath, string? namespaceId) =>
+        RunAsync(branchPath, namespaceId, scopedToBranch: true);
+
+    /// <summary>
+    /// Runs the sync: the structure first, then whatever it marked for enrichment.
+    /// </summary>
+    private async Task RunAsync(string path, string? namespaceId, bool scopedToBranch)
     {
         if (IsBusy || string.IsNullOrWhiteSpace(path))
         {
@@ -206,7 +226,9 @@ public sealed class SyncNewViewModel : ObservableObject
             var listProgress = new Progress<DropBoxSyncProgress>(_ => OnListingProgress());
             var enrichProgress = new Progress<DropBoxTwoPhaseEnrichProgress>(OnEnrichProgress);
 
-            var result = await _twoPhase.SyncFrom(path, null, listProgress, enrichProgress, token);
+            var result = scopedToBranch
+                ? await _twoPhase.SyncBranch(path, namespaceId, listProgress, enrichProgress, token)
+                : await _twoPhase.SyncFrom(path, namespaceId, listProgress, enrichProgress, token);
 
             if (result.Completed)
             {
@@ -238,6 +260,16 @@ public sealed class SyncNewViewModel : ObservableObject
         {
             IsBusy = false;
             OnPropertyChanged(nameof(IsEnriching));
+
+            // The listing phase ran THROUGH the one-phase sync service, so that service
+            // is holding a finished run's result. Nothing acknowledges it - the screen
+            // that would is collapsed in the markup - and the service's IsBusy covers
+            // "a result waiting to be acknowledged", so the flag would stay set for the
+            // rest of the session.
+            //
+            // This run's outcome is reported on THIS screen, so the result has been
+            // seen: acknowledging it is what clears the flag.
+            _sync.AcknowledgeResult();
 
             _cts?.Dispose();
             _cts = null;

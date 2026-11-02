@@ -6,7 +6,7 @@ using Utility.UI.ViewModels;
 
 namespace Utility.UI.Views;
 
-public partial class DropBoxView : UserControl
+public partial class DropBoxView : UserControl, IDisposable
 {
     public DropBoxView(IServiceProvider services)
     {
@@ -37,5 +37,19 @@ public partial class DropBoxView : UserControl
 
         e.Handled = true;
         await vm.GoToPathAsync();
+    }
+
+    /// <summary>
+    /// Releases the view model.
+    /// <para>
+    /// The view model listens to the sync services, which are singletons — so without
+    /// this the page's handler would outlive the page and keep it alive. The window
+    /// disposes the page it navigates away from.
+    /// </para>
+    /// </summary>
+    public void Dispose()
+    {
+        (DataContext as IDisposable)?.Dispose();
+        DataContext = null;
     }
 }

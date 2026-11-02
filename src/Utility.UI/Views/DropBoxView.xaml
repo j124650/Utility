@@ -60,6 +60,21 @@
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <Button Content="Go" Command="{Binding GoToPathCommand}" />
                         <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+
+                        <!--
+                          Sync From Here: the two-phase sync, started at the branch the
+                          tab is showing. The enrichment is scoped to that branch, so
+                          the run does not spend the account's allowance on the rest of
+                          the namespace.
+
+                          It is disabled in the personal space (a path means nothing
+                          without a team root) and while a walk is running.
+                        -->
+                        <Button Content="Sync From Here"
+                                Command="{Binding SyncFromHereCommand}"
+                                IsEnabled="{Binding CanSyncFromHere}"
+                                ToolTip="{Binding SyncFromHereHint}"
+                                Margin="8,0,0,0" />
                     </StackPanel>
                 </Grid>
 

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Utility.DropBox.Models;
 using Utility.DropBox.Options;
 using Utility.DropBox.Services;
+using Utility.Server.DropBoxSync;
 using Utility.UI.Mvvm;
 using Utility.UI.Services;
 
@@ -19,16 +20,21 @@ namespace Utility.UI.ViewModels;
 /// download stays an explicit per-file action behind a save dialog.
 /// </para>
 /// </summary>
-public sealed class DropBoxViewModel(
-    IDropBoxDataService dropBox,
-    ILogSink log) : ViewModelBase
+public sealed class DropBoxViewModel : ViewModelBase, IDisposable
 {
+    private readonly IDropBoxDataService _dropBox;
+    private readonly ILogSink _log;
+    private readonly SyncNewViewModel _syncNew;
+    private readonly IDropBoxSyncService _sync;
+    private readonly IDropBoxSyncStatsService _stats;
+
     private AsyncRelayCommand? _refresh;
     private AsyncRelayCommand? _goUp;
     private AsyncRelayCommand? _goToPath;
     private AsyncRelayCommand? _buildTree;
     private AsyncRelayCommand? _saveJson;
     private AsyncRelayCommand? _download;
+    private AsyncRelayCommand? _syncFromHere;
 
     private string _currentPath = string.Empty;
     private string _pathInput = string.Empty;
@@ -40,6 +46,50 @@ public sealed class DropBoxViewModel(
     private bool _isTreeBuilding;
     private FileEntry? _selectedEntry;
     private CancellationTokenSource? _treeCts;
+
+    /// <summary>
+    /// Creates the view model over the Dropbox browser, the two-phase run and the
+    /// index's figures.
+    /// </summary>
+    public DropBoxViewModel(
+        IDropBoxDataService dropBox,
+        ILogSink log,
+        SyncNewViewModel syncNew,
+        IDropBoxSyncService sync,
+        IDropBoxSyncStatsService stats)
+    {
+        _dropBox = dropBox;
+        _log = log;
+        _syncNew = syncNew;
+        _sync = sync;
+        _stats = stats;
+
+        // The one-phase sync's busy screen is collapsed in the markup, so that run
+        // blurs the app but leaves it navigable — this page stays reachable during it,
+        // and the button's state has to follow the run.
+        _sync.PropertyChanged += OnSyncStateChanged;
+
+        // The two-phase run's own state: its busy screen is up while it runs, and the
+        // button must not start a second run behind it.
+        _syncNew.PropertyChanged += OnSyncStateChanged;
+    }
+
+    /// <summary>
+    /// Unsubscribes from the singletons' state.
+    /// <para>
+    /// This view model is transient, and the services it listens to are not — so
+    /// without this the page's handler would outlive the page and keep it alive.
+    /// </para>
+    /// </summary>
+    public void Dispose()
+    {
+        _sync.PropertyChanged -= OnSyncStateChanged;
+        _syncNew.PropertyChanged -= OnSyncStateChanged;
+    }
+
+    /// <summary>The sync service's state changed, so the button's state may have.</summary>
+    private void OnSyncStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) =>
+        OnPropertyChanged(nameof(CanSyncFromHere));
 
     public ObservableCollection<FileEntry> Entries { get; } = [];
 
@@ -58,6 +108,35 @@ public sealed class DropBoxViewModel(
 
     public AsyncRelayCommand DownloadCommand => _download ??= new AsyncRelayCommand(DownloadAsync);
 
+    /// <summary>
+    /// Starts the two-phase sync from the folder the tab is showing.
+    /// </summary>
+    public AsyncRelayCommand SyncFromHereCommand => _syncFromHere ??= new AsyncRelayCommand(SyncFromHereAsync);
+
+    /// <summary>
+    /// True when the button may be pressed.
+    /// <para>
+    /// Three things forbid it: the personal space cannot be synced by path, the
+    /// namespace root is not a folder, and a walk must not start while another is
+    /// running — two walks over the same table would fight each other.
+    /// </para>
+    /// </summary>
+    public bool CanSyncFromHere =>
+        SelectedNamespace is { IsPersonal: false } &&
+        !string.IsNullOrEmpty(CurrentPath) &&
+        !_sync.IsRunning &&
+        !_syncNew.IsBusy;
+
+    /// <summary>Why the button is disabled, in words.</summary>
+    public string SyncFromHereHint =>
+        SelectedNamespace is null
+            ? "Choose a namespace first."
+            : SelectedNamespace.IsPersonal
+                ? "The personal space cannot be synced by path — a path means nothing without a team root."
+                : string.IsNullOrEmpty(CurrentPath)
+                    ? "Open a folder first — the button syncs the branch the tab is showing."
+                    : $"Syncs {PathDisplay} into the index: lists the structure, then enriches the files under it.";
+
     public DropBoxNamespace? SelectedNamespace
     {
         get => _selectedNamespace;
@@ -72,6 +151,8 @@ public sealed class DropBoxViewModel(
             // different things in each namespace, and team paths 404 in personal space.
             CurrentPath = string.Empty;
             OnPropertyChanged(nameof(NamespaceLabel));
+            OnPropertyChanged(nameof(CanSyncFromHere));
+            OnPropertyChanged(nameof(SyncFromHereHint));
             _ = RefreshAsync();
         }
     }
@@ -88,6 +169,15 @@ public sealed class DropBoxViewModel(
             {
                 OnPropertyChanged(nameof(PathDisplay));
                 OnPropertyChanged(nameof(CanGoUp));
+                OnPropertyChanged(nameof(CanSyncFromHere));
+                OnPropertyChanged(nameof(SyncFromHereHint));
+
+                // The path box FOLLOWS the navigation. It is the same branch the grid
+                // is showing, so every way of moving - Up, opening a folder, changing
+                // the namespace - has to move it too. Without this, Up left the box
+                // showing the path the tab had left, and the box and the grid
+                // disagreed about where the tab was.
+                PathInput = value;
             }
         }
     }
@@ -213,13 +303,13 @@ public sealed class DropBoxViewModel(
 
     private bool RequireConfigured()
     {
-        if (dropBox.IsConfigured)
+        if (_dropBox.IsConfigured)
         {
             return true;
         }
 
         Status = "Dropbox is not configured. Add credentials to HKCU\\Software\\BbcUtility\\DropBox.";
-        log.Warn("Dropbox operation skipped: not configured.");
+        _log.Warn("Dropbox operation skipped: not configured.");
         return false;
     }
 
@@ -240,7 +330,7 @@ public sealed class DropBoxViewModel(
             if (Namespaces.Count == 0)
             {
                 Status = "Connecting…";
-                var namespaces = await dropBox.GetNamespacesAsync();
+                var namespaces = await _dropBox.GetNamespacesAsync();
 
                 Namespaces.Clear();
                 foreach (var ns in namespaces)
@@ -259,10 +349,10 @@ public sealed class DropBoxViewModel(
                     OnPropertyChanged(nameof(NamespaceLabel));
                 }
 
-                log.Info($"Loaded {Namespaces.Count} Dropbox namespace(s).");
+                _log.Info($"Loaded {Namespaces.Count} Dropbox namespace(s).");
             }
 
-            var entries = await dropBox.ListFolderAsync(CurrentPath, ActiveNamespaceId);
+            var entries = await _dropBox.ListFolderAsync(CurrentPath, ActiveNamespaceId);
 
             Entries.Clear();
             foreach (var entry in entries)
@@ -276,7 +366,7 @@ public sealed class DropBoxViewModel(
         catch (Exception ex)
         {
             Status = Describe(ex);
-            log.Error($"List failed: {ex.Message}");
+            _log.Error($"List failed: {ex.Message}");
         }
         finally
         {
@@ -369,7 +459,7 @@ public sealed class DropBoxViewModel(
             var depth = Math.Clamp(TreeDepth, 1, 10);
             Status = $"Building tree from {PathDisplay} (depth {depth})…";
 
-            var tree = await dropBox.GetFolderTreeAsync(CurrentPath, ActiveNamespaceId, depth, 24, false, ct);
+            var tree = await _dropBox.GetFolderTreeAsync(CurrentPath, ActiveNamespaceId, depth, 24, false, ct);
             if (ct.IsCancellationRequested)
             {
                 Status = "Tree build cancelled.";
@@ -379,7 +469,7 @@ public sealed class DropBoxViewModel(
             Tree = tree;
             TreeJson = tree.ToJson();
             Status = $"Tree ready: {TreeSummary}.";
-            log.Info($"Dropbox tree built: {TreeSummary}");
+            _log.Info($"Dropbox tree built: {TreeSummary}");
         }
         catch (OperationCanceledException)
         {
@@ -388,7 +478,7 @@ public sealed class DropBoxViewModel(
         catch (Exception ex)
         {
             Status = Describe(ex);
-            log.Error($"Tree build failed: {ex.Message}");
+            _log.Error($"Tree build failed: {ex.Message}");
         }
         finally
         {
@@ -422,12 +512,12 @@ public sealed class DropBoxViewModel(
         {
             await File.WriteAllTextAsync(dialog.FileName, TreeJson);
             Status = $"Saved tree JSON to {dialog.FileName}.";
-            log.Info($"Dropbox tree JSON saved to {dialog.FileName}.");
+            _log.Info($"Dropbox tree JSON saved to {dialog.FileName}.");
         }
         catch (Exception ex)
         {
             Status = $"Could not save JSON: {ex.Message}";
-            log.Error($"Saving tree JSON failed: {ex.Message}");
+            _log.Error($"Saving tree JSON failed: {ex.Message}");
         }
     }
 
@@ -467,18 +557,57 @@ public sealed class DropBoxViewModel(
         IsBusy = true;
         try
         {
-            await dropBox.DownloadAsync(entry.PathDisplay, dialog.FileName, ActiveNamespaceId);
+            await _dropBox.DownloadAsync(entry.PathDisplay, dialog.FileName, ActiveNamespaceId);
             Status = $"Downloaded {entry.Name} to {dialog.FileName}.";
-            log.Info($"Downloaded {entry.Name}.");
+            _log.Info($"Downloaded {entry.Name}.");
         }
         catch (Exception ex)
         {
             Status = Describe(ex);
-            log.Error($"Download failed: {ex.Message}");
+            _log.Error($"Download failed: {ex.Message}");
         }
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Runs the two-phase sync from the folder the tab is showing.
+    /// <para>
+    /// The branch is the one in the address bar, and the namespace is the one the tab
+    /// is browsing. The run's own busy screen covers the whole window — the same one
+    /// the DropBox DB page's **Sync New** uses — and the run lives in the singleton
+    /// that owns it, so navigating away does not lose it.
+    /// </para>
+    /// </summary>
+    private async Task SyncFromHereAsync()
+    {
+        if (!RequireConfigured())
+        {
+            return;
+        }
+
+        if (!CanSyncFromHere)
+        {
+            Status = SyncFromHereHint;
+            return;
+        }
+
+        var path = CurrentPath;
+        var ns = SelectedNamespace!;
+
+        await _syncNew.StartBranchAsync(path, ns.Id);
+
+        // The figures are read again: the run wrote rows the index counts.
+        await _stats.LoadAsync();
+
+        var message = _syncNew.Error ?? _syncNew.Outcome;
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            Status = message;
+            _log.Info(message);
         }
     }
 }

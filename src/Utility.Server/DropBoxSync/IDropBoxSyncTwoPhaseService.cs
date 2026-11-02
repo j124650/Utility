@@ -56,6 +56,29 @@ public interface IDropBoxSyncTwoPhaseService
         CancellationToken ct = default);
 
     /// <summary>
+    /// THE WHOLE THING, from a BRANCH: the branch is listed, and then the files under
+    /// that branch are enriched.
+    /// <para>
+    /// This is <see cref="SyncFrom"/> with the enrichment SCOPED to the branch. A sync
+    /// started at a path enriches every pending file in the namespace, because the
+    /// namespace is what the run is about. A sync started at a BRANCH must not spend
+    /// the account's allowance on the rest of the namespace: the files it lists are
+    /// the files it enriches.
+    /// </para>
+    /// </summary>
+    /// <param name="branchPath">The branch to sync from.</param>
+    /// <param name="namespaceId">The team namespace, or null for the personal space.</param>
+    /// <param name="listProgress">The listing phase's progress.</param>
+    /// <param name="enrichProgress">The enrichment phase's progress.</param>
+    /// <param name="ct">Cancelling ends the sync.</param>
+    Task<DropBoxTwoPhaseResult> SyncBranch(
+        string branchPath,
+        string? namespaceId = null,
+        IProgress<DropBoxSyncProgress>? listProgress = null,
+        IProgress<DropBoxTwoPhaseEnrichProgress>? enrichProgress = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// PHASE 1 — walks the tree from a path and writes every row, with no per-file
     /// metadata call.
     /// </summary>
