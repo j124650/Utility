@@ -11,11 +11,12 @@
 *.user
 
 ## Local secrets and per-machine config.
-## appsettings.json IS tracked (it holds placeholders), but anything that can carry a
-## real connection string or token must not be committed. Registry-stored Dropbox
-## credentials live in HKCU and never touch the repo.
-appsettings.*.local.json
-appsettings.user.json
+## There is no appsettings.json in the repo: the SQL and Dropbox settings live in the
+## Windows registry and the registry is the source of truth. The app still reads a
+## per-machine appsettings.{MACHINE}.json - optional, and reloaded on change - for the
+## values the registry does not carry, and that file is where a real connection string
+## lands. Nothing named appsettings* may be committed.
+appsettings*.json
 *.env
 secrets.json
 
