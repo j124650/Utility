@@ -34,6 +34,9 @@
           clicked, even though what is selected is the row. The row is the selection -
           it is what fills the item-info pane - so the cell's own border goes, and
           the content sits centred in the row.
+
+          The border is written out as nothing rather than bound from the cell, so
+          nothing can paint an edge inside one.
         -->
         <Style x:Key="GridCell" TargetType="DataGridCell">
             <!--
@@ -42,13 +45,15 @@
               single cell - which reads as if the cell were selected.
             -->
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="DataGridCell">
                         <Border x:Name="CellBorder"
                                 Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
+                                BorderBrush="Transparent"
+                                BorderThickness="0"
                                 SnapsToDevicePixels="True">
                             <ContentPresenter ContentSource="Content"
                                               VerticalAlignment="Center"
@@ -65,6 +70,11 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- The row carries no focus indication either. -->
+        <Style x:Key="GridRow" TargetType="DataGridRow">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         </Style>
     </UserControl.Resources>
 
@@ -238,6 +248,7 @@
                     <DataGrid x:Name="FilesGrid" ItemsSource="{Binding Entries}"
                               SelectionMode="Single"
                               CellStyle="{StaticResource GridCell}"
+                              RowStyle="{StaticResource GridRow}"
                               FontSize="14.4"
                               RowHeight="30"
                               SelectionChanged="OnSelectionChanged"
