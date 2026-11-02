@@ -35,6 +35,11 @@
 --      INSERT..SELECT that tries to resolve parents in the same statement
 --      silently inserts every ParentId as NULL, because SQL Server gives no
 --      ordering guarantee across the join. See ResolveDropBoxNodeParents.sql.
+--    * The column ORDER below is not the live table's order. The live table was
+--      built by this script and then altered, so the columns added later sit
+--      at its end. Order changes nothing - the columns are named everywhere -
+--      but a fresh build from this script will differ from the live table in
+--      that one respect.
 -- =============================================================================
 
 SET QUOTED_IDENTIFIER ON;
@@ -183,10 +188,11 @@ GO
 
 -- Supports "every image" once dimensions are populated. Filtered to rows that actually
 -- have a media tag; rows without one can never match the predicate.
-CREATE NONCLUSTERED INDEX IX_DropBoxNode_Dimensions
-    ON ml.DropBoxNode (NamespaceId, WidthPixels, HeightPixels)
-    INCLUDE (PathDisplay, SizeBytes)
-    WHERE MediaInfoTag IS NOT NULL AND MediaInfoTag <> 'pending';
+--
+-- NOT CREATED HERE: the live table does not have this index. DropUnusedDropBoxNodeIndexes.sql
+-- dropped it (0 seeks, 3,384 updates) - nothing read it, and it cost ~220 bytes of
+-- PathDisplay per index entry on every row update. The CREATE statement is kept there,
+-- commented out, for the way back if a query that needs it is ever written.
 GO
 
 -- Serves "which files are called this name" - the Finder's candidate lookup joins
@@ -207,8 +213,9 @@ GO
 -- scans the whole index instead of seeking.
 --
 -- Filtered to files, since only files can be candidates.
-CREATE NONCLUSTERED INDEX IX_DropBoxNode_NameKey
-    ON ml.DropBoxNode (NameKey)
-    INCLUDE (Name, SizeBytes, WidthPixels, HeightPixels, PathDisplay, ServerModified)
-    WHERE IsFolder = 0;
+--
+-- NOT CREATED HERE: the live table does not have this index. DropUnusedDropBoxNodeIndexes.sql
+-- dropped it (0 seeks, 4,649 updates) - nothing read it, and it cost ~220 bytes of
+-- PathDisplay per index entry on every row update. The CREATE statement is kept there,
+-- commented out, for the way back if a query that needs it is ever written.
 GO

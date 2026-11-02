@@ -19,7 +19,7 @@
 --
 --  WHAT THEY COST
 --
---  Every row UPDATE maintains them, and each carries PathDisplay nvarchar(4096) as an
+--  Every row UPDATE maintains them, and each carries PathDisplay nvarchar(2048) as an
 --  INCLUDE - about 220 bytes of path per index entry. Three such indexes are why a row
 --  update wrote about 1 KB. With them gone, the write is the clustered row and the one
 --  index whose key changed.
