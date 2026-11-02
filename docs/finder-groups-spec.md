@@ -2,7 +2,8 @@
 
 > **Preliminary.** This spec states what the **Groups** button does and what it shows — the
 > grouping rule, the window, and the figures it carries. **This is built and verified**;
-> see §8 for what was checked against the live library.
+> see §8 for what was checked against the live library. **The button is hidden for now**
+> (§9) — the feature is dormant, not gone.
 >
 > **This is an OPTIONAL TEST FEATURE.** The Groups window is a diagnostic tool, not a
 > product feature: it exists to answer a question while the recovery is being planned and
@@ -14,12 +15,14 @@
 ## 1. What it is
 
 A button in the Finder's toolbar, after **Recover Selected**, that opens a window listing the
-distinct parent file names, **grouped by the path they sit in**.
+distinct parent file names, **grouped by the path they sit in**. **The button is hidden for
+now** (§9): the command and the window are as they were, and nothing in the toolbar shows
+it.
 
 | | |
 |---|---|
 | **Name** | Groups |
-| **Where** | The Finder's toolbar, fourth button |
+| **Where** | The Finder's toolbar, fourth button — **hidden for now** (§9) |
 | **Opens** | A modal window owned by the main window |
 | **Shows** | The distinct parent file names, grouped by the parent's path (`ml.Media.Path`) — one row per path, with the number of names in it |
 | **Writes** | Nothing |
@@ -194,7 +197,7 @@ in the click: the rows are already loaded, and the grouping is a partition of th
 
 | # | Criterion | How it is checked | State |
 |---|---|---|---|
-| 1 | The button is in the Finder's toolbar, named Groups | open the Finder | **built** |
+| 1 | The button is in the Finder's toolbar, named Groups | open the Finder | **hidden** — collapsed for now (§9); the command and the window are unchanged |
 | 2 | It opens a modal window owned by the main window | click it | **built** |
 | 3 | The list holds one row per distinct `ml.Media.Path` | `tools/groups-checks` | **verified** — 27,736 |
 | 4 | A row's count is the number of distinct parent file names in that path | `tools/groups-checks` | **verified** — 357,156 across them |
@@ -226,6 +229,10 @@ written two ways. It is not part of the product the Finder is becoming.
 
 **It may be removed at any time, in whole or in part.** Removing it is a normal change,
 not a repair of a mistake.
+
+**The button is hidden for now.** The feature is dormant, not gone: the command, the
+window and the checks are as they were, and the button comes back by removing one
+attribute from the view.
 
 **Nothing depends on it.** The Finder's pass, the table, the filters, the verdicts, the
 recovery and Liem's List are all unaffected by the button's absence. The window reads the

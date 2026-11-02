@@ -388,10 +388,15 @@
                               Groups: the paths the parent file names sit in, with the
                               number of names in each. It reads the rows the pass produced,
                               so its figures are the library's and not the filters'.
+
+                              Hidden for now: the feature is dormant, not gone. The command
+                              and the window are as they were, and the button comes back by
+                              removing the collapsed flag.
                             -->
                             <Button Command="{Binding ShowGroupsCommand}"
                                     Style="{StaticResource ToolbarButton}"
-                                    ToolTip="The paths the parent file names sit in.">
+                                    ToolTip="The paths the parent file names sit in."
+                                    Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE8D7;"
                                                FontFamily="Segoe MDL2 Assets"
