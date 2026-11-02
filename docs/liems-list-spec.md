@@ -2,6 +2,10 @@
 
 > **Preliminary.** This spec states what the report is and where each of its values comes
 > from. It has not been built.
+>
+> **The HTML report this spec describes is DORMANT.** The **Liam's List** button now writes a
+> **CSV** instead — see `docs/liems-list-csv-spec.md`. The HTML writer, its window and its
+> view stay in the tree, unwired; this spec still describes them.
 
 ---
 
