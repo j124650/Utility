@@ -260,6 +260,11 @@ public sealed class DashboardViewModel : ViewModelBase
     {
         var result = await _sync.ContinueAsync();
 
+        // Acknowledged for the same reason as the one-phase sync above: the outcome is
+        // reported on the page's status line, and the flag it would leave behind keeps
+        // the service's IsBusy set - which the app's blur is bound to.
+        _sync.AcknowledgeResult();
+
         if (result.Completed)
         {
             StatusMessage = $"Listed {result.FoldersWritten:N0} folder(s), {result.FilesWritten:N0} file(s).";
@@ -337,6 +342,16 @@ public sealed class DashboardViewModel : ViewModelBase
         }
 
         var result = await _sync.SyncAsync(path);
+
+        // The service keeps a finished run's result so the busy screen can show it
+        // until it is dismissed - and the service's IsBusy covers "a result waiting to
+        // be acknowledged". The screen that would dismiss it is collapsed in the
+        // markup, so nothing ever clears the flag, and the app stays blurred for the
+        // rest of the session.
+        //
+        // The outcome is reported on the page's status line below, so the result has
+        // been seen: acknowledging it is what clears the flag.
+        _sync.AcknowledgeResult();
 
         if (result.Completed)
         {

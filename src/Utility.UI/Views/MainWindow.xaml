@@ -67,14 +67,26 @@
                   blur, and the overlay above it is left translucent - that is what lets
                   the blurred shapes show through the dark scrim.
 
-                  The trigger reads IsBusy off the overlay's own DataContext (the sync
-                  service), so the blur and the scrim always appear and disappear
-                  together. The Finder's pass gets the same treatment: a second trigger,
-                  and the last one that matches wins.
+                  The triggers read WHAT IS ACTUALLY UP, not a service's "busy" flag:
+                  a walk in flight (Sync.IsRunning) for the one-phase sync, the
+                  two-phase run (SyncNew.IsBusy) for its own screen, and the Finder's
+                  pass (Finder.IsPassing). The last one that matches wins.
+
+                  The one-phase trigger is IsRunning and NOT IsBusy. IsBusy also covers
+                  "a finished run waiting to be acknowledged", and the screen that would
+                  acknowledge it is collapsed in the markup - so that flag never clears
+                  and the blur would stay on for the rest of the session.
                 -->
                 <Style x:Key="BlurBehindOverlay" TargetType="FrameworkElement">
                     <Style.Triggers>
-                        <DataTrigger Binding="{Binding Sync.IsBusy, RelativeSource={RelativeSource AncestorType={x:Type Window}}}" Value="True">
+                        <DataTrigger Binding="{Binding Sync.IsRunning, RelativeSource={RelativeSource AncestorType={x:Type Window}}}" Value="True">
+                            <Setter Property="Effect">
+                                <Setter.Value>
+                                    <BlurEffect Radius="10" />
+                                </Setter.Value>
+                            </Setter>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding SyncNew.IsBusy, RelativeSource={RelativeSource AncestorType={x:Type Window}}}" Value="True">
                             <Setter Property="Effect">
                                 <Setter.Value>
                                     <BlurEffect Radius="10" />

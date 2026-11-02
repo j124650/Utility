@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private readonly IDropBoxSyncService _sync;
     private readonly IDropBoxSyncStatsService _stats;
     private readonly FinderViewModel _finder;
+    private readonly SyncNewViewModel _syncNew;
     private UserControl? _current;
 
     /// <summary>
@@ -28,11 +29,17 @@ public partial class MainWindow : Window
     public IDropBoxSyncService Sync => _sync;
 
     /// <summary>
-    /// The Finder's view model, exposed for the same reason the sync service is: the app
+    /// The Finder's view model, exposed for the same reason as the sync service: the app
     /// content BEHIND the Finder's busy screen needs to know whether the pass is running,
     /// because that is what decides whether the blur is applied.
     /// </summary>
     public FinderViewModel Finder => _finder;
+
+    /// <summary>
+    /// The two-phase sync's view model, exposed for the same reason: the app behind its
+    /// busy screen needs to know whether the run is in flight.
+    /// </summary>
+    public SyncNewViewModel SyncNew => _syncNew;
 
     public MainWindow(
         IServiceProvider services,
@@ -47,6 +54,7 @@ public partial class MainWindow : Window
         _sync = sync;
         _stats = stats;
         _finder = services.GetRequiredService<FinderViewModel>();
+        _syncNew = services.GetRequiredService<SyncNewViewModel>();
 
         InitializeComponent();
 
