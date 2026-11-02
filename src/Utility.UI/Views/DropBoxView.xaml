@@ -7,6 +7,27 @@
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=vm:DropBoxViewModel}">
 
+    <UserControl.Resources>
+        <!--
+          The blur behind the listing's busy cover.
+
+          WPF has no backdrop filter: an element's Effect blurs THAT element, never
+          what sits behind it. So the grid carries the blur and the cover above it is
+          left translucent - that is what lets the blurred shapes show through.
+        -->
+        <Style x:Key="BlurWhileListing" TargetType="FrameworkElement">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <BlurEffect Radius="6" />
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -165,18 +186,38 @@
                 <ColumnDefinition Width="1*" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Margin="0,0,0,8" MinHeight="180">
-                <DataGrid x:Name="FilesGrid" ItemsSource="{Binding Entries}"
-                          SelectionMode="Single"
-                          SelectionChanged="OnSelectionChanged"
-                          MouseDoubleClick="OnRowDoubleClick">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*" />
-                        <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="80" />
-                        <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedDisplay}" Width="140" />
-                    </DataGrid.Columns>
-                </DataGrid>
-            </Border>
+            <!--
+              The listing, and the local busy screen over it.
+
+              While the folder is being fetched the grid still shows the old
+              contents, so the grid is blurred and covered: a click on a row that is
+              about to be replaced would navigate somewhere the user did not mean.
+            -->
+            <Grid Grid.Column="0" Margin="0,0,0,8" MinHeight="180">
+                <Border Style="{StaticResource BlurWhileListing}">
+                    <DataGrid x:Name="FilesGrid" ItemsSource="{Binding Entries}"
+                              SelectionMode="Single"
+                              SelectionChanged="OnSelectionChanged"
+                              MouseDoubleClick="OnRowDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*" />
+                            <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="80" />
+                            <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedDisplay}" Width="140" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+
+                <!--
+                  The cover: translucent, so the blurred grid shows through, and
+                  hit-testable, so the grid underneath cannot be clicked.
+                -->
+                <Grid Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+                    <Border Background="#FFFFFF" Opacity="0.6" />
+                    <TextBlock Text="Please wait.."
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="13" Foreground="#6B7280" />
+                </Grid>
+            </Grid>
 
             <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
                           Background="Transparent" />

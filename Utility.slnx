@@ -5,6 +5,7 @@
     <Project Path="src/Utility.UI/Utility.UI.csproj" />
   </Folder>
   <Folder Name="/docs/">
+    <File Path="docs/dropbox-files-busy-spec.md" />
     <File Path="docs/dropbox-files-toolbar-spec.md" />
     <File Path="docs/finder-groups-spec.md" />
     <File Path="docs/finder-recover-spec.md" />
