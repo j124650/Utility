@@ -41,7 +41,7 @@ the configuration file: a connection string in `appsettings.json` is not read at
 | The value | `HKCU\Software\BbcUtility\Sql` → `ConnectionString` |
 | What changes | the `Database=` part only — every other part is copied over unchanged |
 | When | at startup, so the app is **restarted** after the change |
-| Confirm | the Settings page's **Test Database** button |
+| Confirm | the Dashboard's **Objects** figure — see §6.4 |
 | Back | the same value with `Database=apps_ml_dev` |
 
 The registry is per-user, so the switch is per-user and reversible by writing one value
@@ -49,6 +49,10 @@ back.
 
 **The app must not be running while the value is changed.** A sync in flight holds its
 connection to whichever database the value named when it started.
+
+**Test Database does not confirm the switch.** The probe reports *"Connected."* and
+nothing more — it never names the database, so it cannot tell the copy from the working
+one. It confirms that the connection string is well formed and the server answers.
 
 ## §3 The order
 
@@ -154,6 +158,10 @@ WITH MOVE 'apps_ml_dev'     TO '<data path>\util_scratch.mdf',
 **The `MOVE` clauses are required.** Restoring a second copy on the same server
 without them collides with the original's files.
 
+**The restore refuses to overwrite.** It fails if a database named `util_scratch`
+already exists, so a leftover copy from an earlier run is dropped first rather than
+being silently replaced.
+
 ### 6.2 Point the app at the copy
 
 Take the connection string the registry holds, change its `Database=` part to
@@ -164,7 +172,11 @@ reg add "HKCU\Software\BbcUtility\Sql" /v ConnectionString /t REG_SZ /f ^
   /d "<the current string, with Database=util_scratch>"
 ```
 
-Restart the app, then press **Test Database** on the Settings page.
+Restart the app.
+
+**The switch is confirmed in §6.4**, before the one step that writes. **Test Database
+does not confirm it** — the probe reports only *"Connected."* and never names the
+database, so it cannot tell the copy from the working one.
 
 ### 6.3 Recreate the sync's table in the copy
 
@@ -176,15 +188,37 @@ The copy carries the `ml` schema, so the script's prerequisite is met. The scrip
 drops and recreates the sync's table; nothing else in the copy references it, so the
 drop succeeds.
 
+**The `-d` argument is the safety line.** The script drops the table it is pointed at,
+so `-d util_scratch` is what keeps it away from the working database. Check it before
+pressing enter.
+
 The script emits one warning — the 1700-byte index key limit on the path's unique
 constraint — which is inherent to the schema and not a fault.
 
 ### 6.4 Sync the branch
 
-In the app: the DropBox files tab, the team namespace, navigate to the branch in §4,
-press **Sync From Here**.
+**Before pressing the button, confirm the app is inside the copy.** The Dashboard's
+**Objects** figure counts the rows in the sync's table of whichever database the app is
+connected to. The copy's table was emptied in §6.3, so:
+
+| The figure reads | The app is on | Do this |
+|---|---|---|
+| nothing — the table is empty | the **copy** | press **Sync From Here** |
+| the working database's full count | the **working database** | **stop** — the switch did not take (§2) |
+
+**This check is what stands between the branch sync and the working database.** A sync
+that ran against the working database would rewrite the branch's rows in place — updated
+rather than inserted — and the branch's enrichment would re-fetch dimensions it already
+has.
+
+Then, in the app: the DropBox files tab, the team namespace, navigate to the branch in
+§4, press **Sync From Here**.
 
 ### 6.5 Clean up
+
+**Put the registry back first.** Write the same connection string with
+`Database=apps_ml_dev` and restart the app, so it is never left pointing at a database
+that is about to be dropped.
 
 ```sql
 ALTER DATABASE util_scratch SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
@@ -215,8 +249,8 @@ Nothing has been measured yet. Every row is outstanding.
 |---|---|---|---|
 | 1 | The copy is created under a second name, and the working database is untouched by it | the restore succeeds; the working database's row count and file sizes are unchanged | not measured |
 | 2 | The copy carries the media library | the copy's media row count matches the working database's | not measured |
-| 3 | The app runs against the copy | the app's index figures read the copy's row count, and the working database's count is unchanged | not measured |
-| 4 | **Test Database** reports the connection is live after the registry change | the Settings page, after a restart | not measured |
+| 3 | The app runs against the copy | the Dashboard's **Objects** figure reads the copy's empty table after §6.3, and the working database's count is unchanged | not measured |
+| 4 | The switch is confirmed before any write | the Dashboard's **Objects** figure, read before **Sync From Here** is pressed (§6.4) | not measured |
 | 5 | The read paths work against the copy | the Finder lists candidates; Liem's List exports a CSV; the tree renders | not measured |
 | 6 | The create script runs in the copy | the script completes; the table is present with the script's indexes | not measured |
 | 7 | The branch sync writes the branch's rows into the script's table | the row count under the branch, and the branch root's row | not measured |
