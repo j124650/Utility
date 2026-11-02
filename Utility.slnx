@@ -4,4 +4,16 @@
     <Project Path="src/Utility.Server/Utility.Server.csproj" />
     <Project Path="src/Utility.UI/Utility.UI.csproj" />
   </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/finder-groups-spec.md" />
+    <File Path="docs/finder-recover-spec.md" />
+    <File Path="docs/finder-spec.md" />
+    <File Path="docs/liems-list-spec.md" />
+    <File Path="docs/logs-spec.md" />
+    <File Path="docs/sync-from-here-spec.md" />
+    <File Path="docs/sync-new-spec.md" />
+    <File Path="docs/sync-optimisation-plan.md" />
+    <File Path="docs/sync-speedup-spec.md" />
+    <File Path="docs/sync-walk-spec.md" />
+  </Folder>
 </Solution>
