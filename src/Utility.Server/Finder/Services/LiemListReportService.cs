@@ -103,6 +103,11 @@ public sealed class LiemListReportService(IFinderScanState scanState) : ILiemLis
             // angle within it, and the two are set on two lines (§6.3).
             AngleLines = AngleLines(row),
 
+            // The split the CSV carries: the child's category decides which of the two
+            // columns holds a value (docs/liems-list-csv-spec.md §3).
+            Angle = AngleValue(row),
+            FeaturedType = FeaturedTypeValue(row),
+
             DateAdded = row.ParentDateAdded,
             DateAddedDisplay = row.ParentDateAdded?.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) ?? string.Empty,
 
@@ -142,4 +147,28 @@ public sealed class LiemListReportService(IFinderScanState scanState) : ILiemLis
     /// <summary>Whether the category is the numbered shots — <c>24 Angles</c>.</summary>
     private static bool IsAngles(string? categoryName) =>
         string.Equals(categoryName, "24 Angles", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The angle column's value: the child's variant where the row carries one, and
+    /// <c>24 Angles</c> where it does not. Empty for a featured shot
+    /// (docs/liems-list-csv-spec.md §3).
+    /// </summary>
+    private static string AngleValue(FinderRow row)
+    {
+        if (!IsAngles(row.ChildCategoryName))
+        {
+            return string.Empty;
+        }
+
+        return string.IsNullOrWhiteSpace(row.ChildVariantName)
+            ? row.ChildCategoryName
+            : row.ChildVariantName;
+    }
+
+    /// <summary>
+    /// The featured type column's value: the child's category, as it stands. Empty for an
+    /// angle (docs/liems-list-csv-spec.md §3).
+    /// </summary>
+    private static string FeaturedTypeValue(FinderRow row) =>
+        IsAngles(row.ChildCategoryName) ? string.Empty : row.ChildCategoryName;
 }

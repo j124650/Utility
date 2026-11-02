@@ -25,7 +25,7 @@ public sealed class FinderViewModel(
     IFinderService finder,
     IFinderScanState scanState,
     IDropBoxPreviewClient preview,
-    ILiemListReportPresenter reports,
+    ILiemListCsvExporter exporter,
     IFinderRepairService repair,
     ILogSink log) : ViewModelBase
 {
@@ -648,17 +648,22 @@ public sealed class FinderViewModel(
     }
 
     /// <summary>
-    /// Writes Liem's List and shows it in a window (§14.5).
+    /// Writes Liem's List as a CSV and opens it (docs/liems-list-csv-spec.md §6).
     /// </summary>
     /// <remarks>
-    /// The report is written to a temporary file and opened in the app's own window. The
-    /// window is modal, so the Finder cannot be used while the report is up.
+    /// The reader chooses where the file goes, and the dialog starts in their own
+    /// Documents folder. A cancelled dialog writes nothing and says nothing.
     /// </remarks>
     private async Task ShowLiemListAsync()
     {
         try
         {
-            var path = await reports.ShowAsync();
+            var path = await exporter.ExportAsync();
+
+            if (string.IsNullOrEmpty(path))
+            {
+                return;
+            }
 
             SetStatus($"Liem's List written to {path}.");
         }

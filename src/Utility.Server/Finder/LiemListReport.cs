@@ -129,6 +129,20 @@ public sealed record LiemListPair
     /// </summary>
     public required IReadOnlyList<string> AngleLines { get; init; }
 
+    /// <summary>
+    /// The angle, when the child is one: <c>24 Angles</c>, or the angle's own name
+    /// (<c>Angle 22</c>). Empty when the child is a featured shot
+    /// (docs/liems-list-csv-spec.md §3).
+    /// </summary>
+    public required string Angle { get; init; }
+
+    /// <summary>
+    /// The featured type, when the child is one: <c>Featured</c>, <c>Top</c>,
+    /// <c>Bottom</c>, <c>Thumbnail</c>, <c>Outsole</c>, <c>Back</c> or <c>Artwork</c>.
+    /// Empty when the child is an angle (docs/liems-list-csv-spec.md §3).
+    /// </summary>
+    public required string FeaturedType { get; init; }
+
     /// <summary>When the parent row was added to the library — the row's date (§3).</summary>
     public required DateTimeOffset? DateAdded { get; init; }
 

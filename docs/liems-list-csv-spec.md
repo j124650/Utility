@@ -1,6 +1,7 @@
 # Liem's List as a CSV
 
-**Status:** SPECIFIED — nothing here has been built yet.
+**Status:** BUILT — the code is in the tree. Nothing has been measured yet: every row of
+§10 is still outstanding.
 
 ## §1 What this is
 

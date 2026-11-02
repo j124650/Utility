@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 
 namespace Utility.Server.Finder.Repair;
 
@@ -47,7 +46,7 @@ public static class RecoveryFailureCsv
     {
         var written = 0;
 
-        writer.WriteLine(string.Join(",", Columns.Select(Quote)));
+        writer.WriteLine(string.Join(",", Columns.Select(CsvText.Quote)));
 
         foreach (var operation in failures)
         {
@@ -69,36 +68,11 @@ public static class RecoveryFailureCsv
                 operation.StartedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                 operation.EndedAt?.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) ?? string.Empty,
                 operation.Duration?.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture) ?? string.Empty,
-            }.Select(Quote)));
+            }.Select(CsvText.Quote)));
 
             written++;
         }
 
         return written;
-    }
-
-    /// <summary>
-    /// Quotes a field the way a spreadsheet reads it: always quoted, an embedded quote
-    /// doubled, so a path with a comma or a quote in it survives the round trip.
-    /// </summary>
-    private static string Quote(string value)
-    {
-        var builder = new StringBuilder(value.Length + 2);
-
-        builder.Append('"');
-
-        foreach (var character in value)
-        {
-            if (character == '"')
-            {
-                builder.Append('"');
-            }
-
-            builder.Append(character);
-        }
-
-        builder.Append('"');
-
-        return builder.ToString();
     }
 }
