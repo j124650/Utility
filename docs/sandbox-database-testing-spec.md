@@ -233,6 +233,18 @@ starts and cached; it does not change by itself when the table is emptied from o
 **Read / Refresh** re-reads it. Without that, the figure still shows the count from
 startup and the check above reads *wrong*.
 
+**If the figure cannot be read at all, confirm the switch from the server instead.**
+The dashboard's totals query sums over the table, and a sum over an empty table is NULL,
+so a build that predates the `ISNULL` fix cannot read the state this check depends on.
+The sessions say which database the app is on:
+
+```sql
+SELECT DB_NAME(s.database_id) AS db, s.program_name, COUNT(*) AS sessions
+FROM sys.dm_exec_sessions s
+WHERE s.program_name LIKE '%SqlClient%' OR s.program_name LIKE 'EFCore%'
+GROUP BY DB_NAME(s.database_id), s.program_name;
+```
+
 **This check is what stands between the branch sync and the working database.** A sync
 that ran against the working database would rewrite the branch's rows in place — updated
 rather than inserted — and the branch's enrichment would re-fetch dimensions it already
@@ -274,18 +286,18 @@ Nothing has been measured yet. Every row is outstanding.
 
 | # | Criterion | How it is checked | State |
 |---|---|---|---|
-| 1 | The copy is created under a second name, and the working database is untouched by it | the restore succeeds; the working database's row count and file sizes are unchanged | not measured |
-| 2 | The copy carries the media library | the copy's media row count matches the working database's | not measured |
-| 3 | The app runs against the copy | the Dashboard's **Objects** figure reads the copy's empty table after §6.4, and the working database's count is unchanged | not measured |
-| 4 | The switch is confirmed before any write | the Dashboard's **Objects** figure, read before **Sync From Here** is pressed (§6.5) | not measured |
-| 5 | The read paths work against the copy | the Finder lists candidates; Liem's List exports a CSV; the tree renders | not measured |
-| 6 | The create script runs in the copy | the script completes; the table is present with the script's indexes | not measured |
-| 7 | The branch sync writes the branch's rows into the script's table | the row count under the branch, and the branch root's row | not measured |
-| 8 | The branch sync's enrichment covers only the branch | the enriched rows are all under the branch; the count elsewhere is unchanged | not measured |
-| 9 | The branch sync deletes nothing | the row count outside the branch is unchanged | not measured |
-| 10 | The branch's ancestors show as synthetic, and the branch root's parent id is null | the tree pane | not measured |
-| 11 | The working database's row count is unchanged after the whole procedure | the count before and after | not measured |
-| 12 | The repair was not exercised, or the library root was redirected in the copy first | which of the two §5 arrangements was taken | not measured |
-| 13 | The copy and the backup file are gone at the end | the database is absent; the file is absent | not measured |
-| 14 | The enrichment covered the whole branch | every file under the branch has its dimensions; the count enriched matches the branch's file count | not measured |
+| 1 | The copy is created under a second name, and the working database is untouched by it | the restore succeeds; the working database's row count and file sizes are unchanged | measured — the restore succeeded; the working database held 423,709 nodes before and after |
+| 2 | The copy carries the media library | the copy's media row count matches the working database's | measured — 765,908 in the copy |
+| 3 | The app runs against the copy | the app's sessions are on the copy, and the figures it shows are the copy's | measured — the app's SqlClient session was on the copy, with no session to the working database |
+| 4 | The switch is confirmed before any write | the database the app is connected to, read before **Sync From Here** is pressed (§6.5) | measured — confirmed by the session list, not by the dashboard: the dashboard could not read the empty table (§6.5) |
+| 5 | The read paths work against the copy | the Finder lists candidates; Liem's List exports a CSV; the tree renders | measured in part — the Dashboard's figures and the tree read the copy; the Finder's candidates and the Liam's List CSV were not exercised |
+| 6 | The create script runs in the copy | the script completes; the table is present with the script's indexes | measured — exit 0, the table rebuilt from 423,709 rows to 0, and the five indexes were the live set |
+| 7 | The branch sync writes the branch's rows into the script's table | the row count under the branch, and the branch root's row | measured — 2,584 rows: the branch root, 222 folders and 2,361 files |
+| 8 | The branch sync's enrichment covers only the branch | the enriched rows are all under the branch; the count elsewhere is unchanged | measured — 2,361 files enriched, every one with dimensions and `MediaInfoTag = 'photo'`, 0 pending, 0 failures; nothing outside the branch |
+| 9 | The branch sync deletes nothing | the row count outside the branch is unchanged | measured — one row outside the branch prefix (the branch root itself); the run's counters recorded 0 deletes |
+| 10 | The branch's ancestors show as synthetic, and the branch root's parent id is null | the tree pane, and the branch root's row | measured in part — the branch root's `ParentId` is NULL; the ancestors-as-synthetic was not caught on screen |
+| 11 | The working database's row count is unchanged after the whole procedure | the count before and after | measured — 423,709 before and after |
+| 12 | The repair was not exercised, or the library root was redirected in the copy first | which of the two §5 arrangements was taken | measured — the repair was not exercised |
+| 13 | The copy and the backup file are gone at the end | the database is absent; the file is absent | measured — the copy dropped, the backup file deleted, and the registry put back to the working database before the drop |
+| 14 | The enrichment covered the whole branch | every file under the branch has its dimensions; the count enriched matches the branch's file count | measured — 2,361 of 2,361 files enriched |
 

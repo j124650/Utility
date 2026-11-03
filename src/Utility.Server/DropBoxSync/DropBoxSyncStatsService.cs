@@ -54,11 +54,11 @@ public sealed class DropBoxSyncStatsService(
     /// </summary>
     private const string TotalsSql = """
         SELECT COUNT(*)                                                      AS TotalObjects,
-               SUM(CASE WHEN IsFolder = 1 THEN 1 ELSE 0 END)                 AS Folders,
-               SUM(CASE WHEN IsFolder = 0 THEN 1 ELSE 0 END)                 AS Files,
-               SUM(CASE WHEN WidthPixels IS NOT NULL
-                         AND HeightPixels IS NOT NULL THEN 1 ELSE 0 END)      AS FilesWithDimensions,
-               SUM(CASE WHEN IsFolder = 0 THEN ISNULL(SizeBytes, 0) ELSE 0 END) AS TotalBytes,
+               ISNULL(SUM(CASE WHEN IsFolder = 1 THEN 1 ELSE 0 END), 0)      AS Folders,
+               ISNULL(SUM(CASE WHEN IsFolder = 0 THEN 1 ELSE 0 END), 0)      AS Files,
+               ISNULL(SUM(CASE WHEN WidthPixels IS NOT NULL
+                               AND HeightPixels IS NOT NULL THEN 1 ELSE 0 END), 0) AS FilesWithDimensions,
+               ISNULL(SUM(CASE WHEN IsFolder = 0 THEN ISNULL(SizeBytes, 0) ELSE 0 END), 0) AS TotalBytes,
                MAX(SyncedUtc)                                               AS LastSyncedUtc
         FROM ml.DropBoxNode
         """;
