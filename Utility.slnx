@@ -15,6 +15,7 @@
     <File Path="docs/liems-list-spec.md" />
     <File Path="docs/logs-spec.md" />
     <File Path="docs/sandbox-database-testing-spec.md" />
+    <File Path="docs/settings-spec.md" />
     <File Path="docs/sync-from-here-spec.md" />
     <File Path="docs/sync-new-spec.md" />
     <File Path="docs/sync-optimisation-plan.md" />
