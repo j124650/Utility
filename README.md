@@ -65,25 +65,72 @@ a human.
 | **Candidate** | an indexed Dropbox file that might be that original |
 | **Liem's List** | the report of the pairs that could not be repaired |
 
-## Running it
+## Installation
 
-Windows, .NET 10, a SQL Server carrying the `ml` schema, and a Dropbox app with a refresh
-token.
+### What you need
+
+| | |
+|---|---|
+| **Windows** | the app is a WPF desktop application |
+| **.NET** | the 10 SDK to build it, the 10 desktop runtime to run it |
+| **SQL Server** | a database carrying the `ml` schema — the media library's tables. The app writes one table of its own, `ml.DropBoxNode`, and no others |
+| **Dropbox** | an app of your own with a **refresh** token, created at <https://www.dropbox.com/developers/apps> |
+
+The `ml` schema belongs to the system that owns the media library. This app reads those
+tables and never writes to them.
+
+### 1. Build it
+
+```
+git clone https://github.com/j124650/Utility.git
+cd Utility
+dotnet build Utility.slnx
+```
+
+### 2. Create the app's table
+
+```
+sqlcmd -S <server> -d <database> -E -I -i src/Utility.Server/Sql/CreateDropBoxNode.sql
+```
+
+`sqlcmd` comes with the SQL Server client tools. `-I` is required: the table has PERSISTED
+computed columns, and SQL Server rejects them when QUOTED_IDENTIFIER is off. The `ml`
+schema must already exist — the script creates the table inside it, not the schema.
+
+**THE SCRIPT DROPS AND RECREATES THE TABLE.** On a fresh database that is what you want.
+On an existing installation it destroys every synced row: use the `Alter*.sql` scripts in
+`src/Utility.Server/Sql/` instead, which add one change at a time and are safe to run
+again.
+
+### 3. Run it, then configure it
 
 ```
 dotnet run --project src/Utility.UI
 ```
 
-The **Settings** tab writes the connection string and the Dropbox credentials to the
-registry, and the registry is what the app reads:
+Open the **Settings** tab: the SQL Server card takes the connection string, the Dropbox
+card takes the app key, the app secret if you have one, and the refresh token. **Save
+all** writes them to the registry, and the registry is what the app reads:
 
 | | |
 |---|---|
 | `HKCU\Software\BbcUtility\Sql` | the SQL connection string and the timeouts |
 | `HKCU\Software\BbcUtility\DropBox` | the app key, the app secret and the refresh token |
 
-Nothing secret is in the repository, and the token in the registry is a **refresh** token,
-not an access token.
+Nothing secret is in the repository — the app reads no connection string and no token from
+a file in it — and the token in the registry is a **refresh** token, not an access token.
+
+**Save all takes effect on the next start**, so restart the app afterwards.
+
+### 4. Check it
+
+**Test connection** reports that the connection worked; it does not say which database it
+reached. The **DropBox DB** tab shows the index — the folders and files the sync has
+walked, and how many of them have their image dimensions. It is empty until the first
+sync.
+
+To exercise a change against a copy of the database rather than the live one, follow
+[the sandbox procedure](docs/sandbox-database-testing-spec.md).
 
 ## The documents
 
