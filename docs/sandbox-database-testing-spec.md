@@ -41,7 +41,7 @@ the configuration file: a connection string in `appsettings.json` is not read at
 | The value | `HKCU\Software\BbcUtility\Sql` → `ConnectionString` |
 | What changes | the `Database=` part only — every other part is copied over unchanged |
 | When | at startup, so the app is **restarted** after the change |
-| Confirm | the Dashboard's **Objects** figure — see §6.4 |
+| Confirm | the Dashboard's **Objects** figure — see §6.5 |
 | Back | the same value with `Database=apps_ml_dev` |
 
 The registry is per-user, so the switch is per-user and reversible by writing one value
@@ -61,13 +61,14 @@ one. It confirms that the connection string is well formed and the server answer
 The order is the whole point of the procedure, and each step destroys the previous
 step's starting condition:
 
-| # | Step | What it needs | What it costs |
-|---|---|---|---|
-| 1 | Restore the copy | nothing | a backup file and a restore |
-| 2 | Point the app at the copy (§2) | step 1 | a restart |
-| 3 | Exercise the read paths — the Finder, Liem's List, the tree, the CSV export | steps 1–2, and the **full** copy | nothing |
-| 4 | Recreate the sync's table with the create script | step 3 | the copy's synced rows |
-| 5 | Sync one branch (§4) | step 4 | Dropbox quota |
+| # | Step | What it needs | What it costs | The commands |
+|---|---|---|---|---|
+| 1 | Restore the copy | nothing | a backup file and a restore | §6.1 |
+| 2 | Point the app at the copy (§2) | step 1 | a restart | §6.2 |
+| 3 | Exercise the read paths — the Finder, Liem's List, the tree, the CSV export | steps 1–2, and the **full** copy | nothing | §6.3 |
+| 4 | Recreate the sync's table with the create script | step 3 | the copy's synced rows | §6.4 |
+| 5 | Sync one branch (§4) | step 4 | Dropbox quota | §6.5 |
+| — | Clean up | step 5 | the copy | §6.6 |
 
 **Step 3 comes before step 4 because step 4 empties the table.** Recreating the
 sync's table leaves the copy holding one branch's rows while the media library still
@@ -174,11 +175,20 @@ reg add "HKCU\Software\BbcUtility\Sql" /v ConnectionString /t REG_SZ /f ^
 
 Restart the app.
 
-**The switch is confirmed in §6.4**, before the one step that writes. **Test Database
+**The switch is confirmed in §6.5**, before the one step that writes. **Test Database
 does not confirm it** — the probe reports only *"Connected."* and never names the
 database, so it cannot tell the copy from the working one.
 
-### 6.3 Recreate the sync's table in the copy
+### 6.3 Exercise the read paths
+
+In the app, against the copy, with its full data: the Finder's browse and candidate
+matching, **Liem's List** and its CSV export, the tree, and the busy screen.
+
+**This step needs the full copy**, so it comes before §6.4 empties the table. The
+Finder's candidate lookup joins the media library's file names against the synced
+Dropbox file names, so a copy with one branch's rows has almost nothing to match.
+
+### 6.4 Recreate the sync's table in the copy
 
 ```
 sqlcmd -S <server> -d util_scratch -I -i src/Utility.Server/Sql/CreateDropBoxNode.sql
@@ -195,16 +205,21 @@ pressing enter.
 The script emits one warning — the 1700-byte index key limit on the path's unique
 constraint — which is inherent to the schema and not a fault.
 
-### 6.4 Sync the branch
+### 6.5 Sync the branch
 
 **Before pressing the button, confirm the app is inside the copy.** The Dashboard's
 **Objects** figure counts the rows in the sync's table of whichever database the app is
-connected to. The copy's table was emptied in §6.3, so:
+connected to. The copy's table was emptied in §6.4, so:
 
 | The figure reads | The app is on | Do this |
 |---|---|---|
 | nothing — the table is empty | the **copy** | press **Sync From Here** |
 | the working database's full count | the **working database** | **stop** — the switch did not take (§2) |
+
+**Press the Dashboard's Read / Refresh first.** The figure is read once when the app
+starts and cached; it does not change by itself when the table is emptied from outside.
+**Read / Refresh** re-reads it. Without that, the figure still shows the count from
+startup and the check above reads *wrong*.
 
 **This check is what stands between the branch sync and the working database.** A sync
 that ran against the working database would rewrite the branch's rows in place — updated
@@ -214,7 +229,7 @@ has.
 Then, in the app: the DropBox files tab, the team namespace, navigate to the branch in
 §4, press **Sync From Here**.
 
-### 6.5 Clean up
+### 6.6 Clean up
 
 **Put the registry back first.** Write the same connection string with
 `Database=apps_ml_dev` and restart the app, so it is never left pointing at a database
@@ -249,8 +264,8 @@ Nothing has been measured yet. Every row is outstanding.
 |---|---|---|---|
 | 1 | The copy is created under a second name, and the working database is untouched by it | the restore succeeds; the working database's row count and file sizes are unchanged | not measured |
 | 2 | The copy carries the media library | the copy's media row count matches the working database's | not measured |
-| 3 | The app runs against the copy | the Dashboard's **Objects** figure reads the copy's empty table after §6.3, and the working database's count is unchanged | not measured |
-| 4 | The switch is confirmed before any write | the Dashboard's **Objects** figure, read before **Sync From Here** is pressed (§6.4) | not measured |
+| 3 | The app runs against the copy | the Dashboard's **Objects** figure reads the copy's empty table after §6.4, and the working database's count is unchanged | not measured |
+| 4 | The switch is confirmed before any write | the Dashboard's **Objects** figure, read before **Sync From Here** is pressed (§6.5) | not measured |
 | 5 | The read paths work against the copy | the Finder lists candidates; Liem's List exports a CSV; the tree renders | not measured |
 | 6 | The create script runs in the copy | the script completes; the table is present with the script's indexes | not measured |
 | 7 | The branch sync writes the branch's rows into the script's table | the row count under the branch, and the branch root's row | not measured |
