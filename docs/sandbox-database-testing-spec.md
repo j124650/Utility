@@ -99,6 +99,11 @@ enrichment is limited to the files under it by the branch path **plus a trailing
 separator** — so a sibling whose name merely starts with the branch's name is not
 caught.
 
+**Enriching the branch enriches that branch and nothing else.** The work list is the
+files under the branch path plus the separator, so no file above the branch and no file
+in a sibling folder is fetched. Syncing `…/Champion/S27-Champion Final` enriches its
+own files and leaves the rest of the namespace alone.
+
 **A branch run deletes nothing.** No code deletes rows from the sync's table, so a
 branch run cannot remove rows outside the branch.
 
@@ -278,15 +283,25 @@ Nothing has been measured yet. Every row is outstanding.
 
 ## §9 Open question
 
-**Should the branch sync's enrichment run over the whole branch, or over one folder
-inside it?**
+**How much of the branch should the enrichment cover?**
 
-Against the script's fresh table, every file under the branch needs its dimensions
-fetched, so the enrichment spends one metadata call per file — real quota on the
-account, and minutes of wall clock.
+**The scope is not in question.** Syncing the branch enriches exactly the files under it
+and its subfolders — the branch path plus a trailing separator is the work list's
+filter, so nothing above the branch and nothing beside it is enriched.
 
-*Recommendation:* the whole branch. It exercises the walk across the branch's levels
-and the enrichment at a scale worth measuring, and the quota is a fraction of the
-account's allowance. The cheaper variant — one folder inside the branch — proves the
-same code path in seconds, and is the right choice if the point is to check that the
+The choice is how much of that branch to enrich, and it is a question of cost:
+
+| Variant | Files enriched | Metadata calls |
+|---|---|---|
+| the whole branch | every file under it | one per file |
+| one style folder inside it | that folder's files only | one per file |
+
+Against the script's fresh table every file needs its dimensions fetched, so the
+enrichment spends one metadata call per file — real quota on the account, and minutes
+of wall clock.
+
+*Recommendation:* the whole branch. It exercises the walk across the branch's levels and
+the enrichment at a scale worth measuring, and the quota is a fraction of the account's
+allowance. The cheaper variant — one style folder inside the branch — proves the same
+code path in seconds, and is the right choice if the point is to check that the
 script's table accepts a sync at all.
