@@ -64,21 +64,28 @@ step's starting condition:
 | # | Step | What it needs | What it costs | The commands |
 |---|---|---|---|---|
 | 1 | Restore the copy | nothing | a backup file and a restore | §6.1 |
-| 2 | Point the app at the copy (§2) | step 1 | a restart | §6.2 |
+| 2 | Point the app at the copy (§2) | step 1 | nothing yet — the app is not running | §6.2 |
 | 3 | Recreate the sync's table with the create script | step 2 | the copy's synced rows | §6.3 |
-| 4 | Exercise the read paths — the Finder, Liem's List, the tree, the CSV export | step 3 | nothing | §6.4 |
+| 4 | Start the app | step 3 | nothing | §6.4 |
 | 5 | Sync one branch (§4) | step 4 | Dropbox quota | §6.5 |
-| — | Clean up | step 5 | the copy | §6.6 |
+| 6 | Exercise the read paths — the Finder, Liem's List, the tree, the CSV export | step 5 | nothing | §6.6 |
+| — | Clean up | step 6 | the copy | §6.7 |
 
-**Step 4 exercises the read paths against an EMPTY index.** Step 3 recreated the
-table, so the copy holds no synced rows while the media library still holds every
-row it had — the Finder's candidate lookup has almost nothing to match. What step 4
-proves is that the surfaces survive the state a fresh deployment has: the figures
-read zero, the tree is empty, the CSV exports nothing, and nothing throws.
+**THE APP STARTS AFTER THE RECREATE, SO ITS FIRST READ SEES THE EMPTY TABLE.** The
+app reads the index once at startup and holds the figures. Started before the
+recreate, it would read the copy's old rows and the page would carry a stale count
+from the outset — a number that looks live and is not. Started after it, the first
+thing the page shows is the empty index, which is the state under test.
 
-**Step 5 comes after step 4 because that is what step 3 is for.** A branch synced
-into a table the script built proves the script's table accepts a real sync. The
-same branch synced into the restored table would only exercise the upsert.
+**THE SYNC COMES BEFORE THE READ PATHS, so they see the branch's rows.** Against an
+empty index the Finder still lists every pair the media library holds — 363,856 of
+them, every verdict *"nothing to do / no size match"*, because there is no synced file
+to compare against — and Liam's List is slow at that scale. After the sync the index
+holds the branch, so the candidates are real.
+
+**Step 5 comes after step 3 because that is what step 3 is for.** A branch synced into
+a table the script built proves the script's table accepts a real sync. The same branch
+synced into the restored table would only exercise the upsert.
 
 **The working database is never touched by any of this.**
 
@@ -186,7 +193,8 @@ reg add "HKCU\Software\BbcUtility\Sql" /v ConnectionString /t REG_SZ /f ^
   /d "<the current string, with Database=util_scratch>"
 ```
 
-Restart the app.
+Restart the app — but only after §6.3, so its first read of the index sees the
+recreated (empty) table. The app is not running while the value is changed.
 
 **The switch is confirmed in §6.5**, before the one step that writes. **Test Database
 does not confirm it** — the probe reports only *"Connected."* and never names the
@@ -209,16 +217,15 @@ pressing enter.
 The script emits one warning — the 1700-byte index key limit on the path's unique
 constraint — which is inherent to the schema and not a fault.
 
-### 6.4 Exercise the read paths
+### 6.4 Start the app
 
-In the app, against the copy: the Finder's browse and candidate matching, **Liem's
-List** and its CSV export, the tree, and the busy screen.
+**Start the app here.** Its first read of the index must see the table §6.3 recreated
+— an empty one — so the figures it shows are the state under test and not a count
+carried over from before the recreate.
 
-**The copy's table is empty here** — §6.3 recreated it — while the media library
-still holds all its rows. The Finder's candidate lookup joins the media library's file
-names against the synced Dropbox file names, so it has almost nothing to match. What
-this step proves is that the surfaces survive the state a fresh deployment has: the
-figures read zero, the tree is empty, the CSV exports nothing, and nothing throws.
+The app reads the index once at startup and holds the figures. Started before the
+recreate, it would read the copy's old rows and the page would carry a stale count
+from the outset — a number that looks live and is not.
 
 ### 6.5 Sync the branch
 
@@ -256,7 +263,20 @@ has.
 Then, in the app: the DropBox files tab, the team namespace, navigate to the branch in
 §4, press **Sync From Here**.
 
-### 6.6 Clean up
+### 6.6 Exercise the read paths
+
+**The read paths come after the sync**, so they see the branch's rows rather than an
+empty index.
+
+Against an empty index the Finder still lists every pair the media library holds —
+**363,856 of them**, every verdict *"nothing to do / no size match"*, because there is
+no synced file to compare against — and **Liem's List** is slow at that scale. After
+the sync the index holds the branch, so the candidates are real.
+
+In the app: the Finder's browse and candidate matching, **Liem's List** and its CSV
+export, the tree, and the busy screen.
+
+### 6.7 Clean up
 
 **Put the registry back first.** Write the same connection string with
 `Database=apps_ml_dev` and restart the app, so it is never left pointing at a database
@@ -293,7 +313,7 @@ Nothing has been measured yet. Every row is outstanding.
 | 2 | The copy carries the media library | the copy's media row count matches the working database's | measured — 765,908 in the copy |
 | 3 | The app runs against the copy | the app's sessions are on the copy, and the figures it shows are the copy's | measured — the app's SqlClient session was on the copy, with no session to the working database |
 | 4 | The switch is confirmed before any write | the database the app is connected to, read before **Sync From Here** is pressed (§6.5) | measured — confirmed by the session list, not by the dashboard: the dashboard could not read the empty table (§6.5) |
-| 5 | The read paths survive an empty synced index | the figures read zero, the tree is empty, the CSV exports nothing, and nothing throws | measured in part — the figures read zero and the tree was empty; the Finder's candidates and the Liam's List CSV were not exercised |
+| 5 | The read paths work against the synced branch | the Finder lists candidates from the branch; Liem's List exports a CSV; the tree renders | not measured |
 | 6 | The create script runs in the copy | the script completes; the table is present with the script's indexes | measured — exit 0, the table rebuilt from 423,709 rows to 0, and the five indexes were the live set |
 | 7 | The branch sync writes the branch's rows into the script's table | the row count under the branch, and the branch root's row | measured — 2,584 rows: the branch root, 222 folders and 2,361 files |
 | 8 | The branch sync's enrichment covers only the branch | the enriched rows are all under the branch; the count elsewhere is unchanged | measured — 2,361 files enriched, every one with dimensions and `MediaInfoTag = 'photo'`, 0 pending, 0 failures; nothing outside the branch |
