@@ -104,6 +104,13 @@ files under the branch path plus the separator, so no file above the branch and 
 in a sibling folder is fetched. Syncing `…/Champion/S27-Champion Final` enriches its
 own files and leaves the rest of the namespace alone.
 
+**The whole branch is enriched, not one folder inside it.** Every file under the branch
+gets its dimensions fetched — the branch holds 222 style folders of 2 to 11 files each,
+so that is 2,361 files and one metadata call apiece. The reason is the machinery: the
+walk fans out across those 222 siblings with the concurrency gate and the rate-limit
+brake under load, which a single folder would never reach. A run that never contends
+proves the code path but not the behaviour that breaks first in production.
+
 **A branch run deletes nothing.** No code deletes rows from the sync's table, so a
 branch run cannot remove rows outside the branch.
 
@@ -280,28 +287,5 @@ Nothing has been measured yet. Every row is outstanding.
 | 11 | The working database's row count is unchanged after the whole procedure | the count before and after | not measured |
 | 12 | The repair was not exercised, or the library root was redirected in the copy first | which of the two §5 arrangements was taken | not measured |
 | 13 | The copy and the backup file are gone at the end | the database is absent; the file is absent | not measured |
+| 14 | The enrichment covered the whole branch | every file under the branch has its dimensions; the count enriched matches the branch's file count | not measured |
 
-## §9 Open question
-
-**How much of the branch should the enrichment cover?**
-
-**The scope is not in question.** Syncing the branch enriches exactly the files under it
-and its subfolders — the branch path plus a trailing separator is the work list's
-filter, so nothing above the branch and nothing beside it is enriched.
-
-The choice is how much of that branch to enrich, and it is a question of cost:
-
-| Variant | Files enriched | Metadata calls |
-|---|---|---|
-| the whole branch | every file under it | one per file |
-| one style folder inside it | that folder's files only | one per file |
-
-Against the script's fresh table every file needs its dimensions fetched, so the
-enrichment spends one metadata call per file — real quota on the account, and minutes
-of wall clock.
-
-*Recommendation:* the whole branch. It exercises the walk across the branch's levels and
-the enrichment at a scale worth measuring, and the quota is a fraction of the account's
-allowance. The cheaper variant — one style folder inside the branch — proves the same
-code path in seconds, and is the right choice if the point is to check that the
-script's table accepts a sync at all.
