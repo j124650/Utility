@@ -263,6 +263,11 @@ has.
 Then, in the app: the DropBox files tab, the team namespace, navigate to the branch in
 §4, press **Sync From Here**.
 
+**The run's own counters do not say what it wrote.** On a branch that is new to the
+table, the summary line reports `0 insert` and `0 row(s) changed` while the rows are
+plainly there — the counters under-report on the insert path. Judge a sync by the row
+counts in the table, not by that line.
+
 ### 6.6 Exercise the read paths
 
 **The read paths come after the sync**, so they see the branch's rows rather than an
