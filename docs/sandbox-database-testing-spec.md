@@ -276,6 +276,11 @@ the sync the index holds the branch, so the candidates are real.
 In the app: the Finder's browse and candidate matching, **Liem's List** and its CSV
 export, the tree, and the busy screen.
 
+**Liem's List asks where to put the file.** The button opens a **Save Liem's List**
+dialog, defaulting to `Liem's List <timestamp>` with the type **CSV file (*.csv)**; the
+export runs once a destination is confirmed. It is big and slow: the run against an
+empty index wrote **363,493 rows / 22.4 MB** and took about **three minutes**.
+
 ### 6.7 Clean up
 
 **Put the registry back first.** Write the same connection string with
@@ -312,8 +317,8 @@ Nothing has been measured yet. Every row is outstanding.
 | 1 | The copy is created under a second name, and the working database is untouched by it | the restore succeeds; the working database's row count and file sizes are unchanged | measured — the restore succeeded; the working database held 423,709 nodes before and after |
 | 2 | The copy carries the media library | the copy's media row count matches the working database's | measured — 765,908 in the copy |
 | 3 | The app runs against the copy | the app's sessions are on the copy, and the figures it shows are the copy's | measured — the app's SqlClient session was on the copy, with no session to the working database |
-| 4 | The switch is confirmed before any write | the database the app is connected to, read before **Sync From Here** is pressed (§6.5) | measured — confirmed by the session list, not by the dashboard: the dashboard could not read the empty table (§6.5) |
-| 5 | The read paths work against the synced branch | the Finder lists candidates from the branch; Liem's List exports a CSV; the tree renders | not measured |
+| 4 | The switch is confirmed before any write | the database the app is connected to, read before **Sync From Here** is pressed (§6.5) | measured — the app's sessions were on the copy with none to the working database, and the dashboard read 0 objects at startup, confirming the switch before the sync |
+| 5 | The read paths work against the synced branch | the Finder lists candidates from the branch; Liem's List exports a CSV; the tree renders | measured in part — the Finder ran its pass and rendered 363,856 pairs with verdicts; Liem's List reached its **Save Liem's List** dialog defaulting to CSV; the pairs *from the branch* were not isolated with the folder filter, and the tree pane was not checked |
 | 6 | The create script runs in the copy | the script completes; the table is present with the script's indexes | measured — exit 0, the table rebuilt from 423,709 rows to 0, and the five indexes were the live set |
 | 7 | The branch sync writes the branch's rows into the script's table | the row count under the branch, and the branch root's row | measured — 2,584 rows: the branch root, 222 folders and 2,361 files |
 | 8 | The branch sync's enrichment covers only the branch | the enriched rows are all under the branch; the count elsewhere is unchanged | measured — 2,361 files enriched, every one with dimensions and `MediaInfoTag = 'photo'`, 0 pending, 0 failures; nothing outside the branch |
