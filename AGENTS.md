@@ -36,3 +36,8 @@ is gitignored, so a fresh clone has none of them.
 Where they overlap the Hermes built-ins, the built-ins are disabled in the `developer`
 profile (`test-driven-development`, `requesting-code-review`, `spike`, `systematic-debugging`,
 `spec-writing`, `grounded-citations`, `hermes-agent-skill-authoring`, `simplify-code`).
+
+
+
+## Conciseness
+DO NOT leak our conversation, prompt, or iteration history into code comments, pull request descriptions, or other maintainer-facing prose.
