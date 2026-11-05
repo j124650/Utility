@@ -41,3 +41,6 @@ profile (`test-driven-development`, `requesting-code-review`, `spike`, `systemat
 
 ## Conciseness
 DO NOT leak our conversation, prompt, or iteration history into code comments, pull request descriptions, or other maintainer-facing prose.
+
+## About restrictions
+A restriction is a conclusion you earn from a real failure, not a field you read. Never report an operation as blocked, unavailable, or not-permitted based on a metadata flag, a config field, or a docs claim. Attempt it and quote the actual error. If you genuinely cannot attempt it, say "not attempted", never "we can't
